@@ -1,0 +1,23 @@
+# vox — VoxCPM2 TTS sunucusu + gerçek zamanlı WebSocket köprüsü bağımlılıkları.
+# Kurulum:  pip install -r requirements.txt
+# Not: voxcpm + torch GPU sürümü VPS'te (NVIDIA) ayrıca kurulur.
+
+# --- HTTP + WebSocket sunucusu (server.py) ---
+fastapi==0.136.3
+# uvicorn[standard]: WebSocket sürücüsünü (websockets/wsproto) getirir.
+# DÜZ "uvicorn" ile /ws ÇALIŞMAZ — [standard] zorunlu.
+uvicorn[standard]==0.48.0
+starlette==1.1.0
+anyio==4.13.0
+pydantic==2.13.4
+
+# --- Ses / sayısal ---
+numpy==2.4.6
+soundfile==0.13.1
+torch==2.12.0
+
+# --- TTS modeli (VPS'te yüklenir) ---
+voxcpm
+
+# --- Gradio arayüzü (app.py, opsiyonel) ---
+gradio==6.14.0

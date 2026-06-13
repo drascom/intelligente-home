@@ -1,0 +1,1 @@
+Merhaba, bu bir Türkçe seslendirme testidir. VoxCPM2 ile uzun kitapları sesli kitaba dönüştürebilirsiniz.

@@ -1,0 +1,40 @@
+# macOS istemcisi — mate-ios'tan KOPYALANMIŞ bağımsız kaynaklarla derlenir
+# (Mate/ klasörü). Kopyalar birebir tutuldu (#if os(...) blokları dahil) ki
+# bir düzeltmeyi diğer projeye taşımak diff ile kolay olsun.
+# DİKKAT: ortak mantıkta yapılan düzeltmeler İKİ projeye de uygulanmalı
+# (mate-ios/Mate ve mate-mac/Mate).
+name: MateMac
+options:
+  bundleIdPrefix: uk.drascom
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+targets:
+  MateMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Mate
+    info:
+      path: Info.plist
+      properties:
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        CFBundleDisplayName: Mate
+        NSMicrophoneUsageDescription: "Mate sesini dinlemek ve cevap üretmek için mikrofona erişir."
+        NSSpeechRecognitionUsageDescription: "Wake word algılaması (örn: \"candan\") için cihaz üzerinde konuşma tanıma kullanır."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.drascom.mate-mac
+        PRODUCT_NAME: Mate
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "59P494J56R"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        # Dev aracı: App Sandbox kapalı — mikrofon/speech izinleri TCC
+        # prompt'larıyla (usage description) çalışır.
+        ENABLE_APP_SANDBOX: "NO"

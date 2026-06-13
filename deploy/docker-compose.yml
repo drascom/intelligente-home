@@ -1,0 +1,130 @@
+
+
+# Home AI Server stack — see ../SYSTEM_PLAN.md §1.1
+# Runs on the Linux GPU server. `docker compose up -d` after filling in .env.
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - vllm-cache:/root/.cache/huggingface
+    command: >
+      --model ${VLLM_MODEL}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-16384}
+      --gpu-memory-utilization ${VLLM_GPU_UTIL:-0.85}
+      --enable-auto-tool-choice
+      --tool-call-parser ${VLLM_TOOL_PARSER:-hermes}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  whisper:
+    image: rhasspy/wyoming-whisper:latest
+    container_name: whisper
+    restart: unless-stopped
+    ports:
+      - "10300:10300"
+    volumes:
+      - whisper-data:/data
+    command: --model ${WHISPER_MODEL:-medium-int8} --language ${WHISPER_LANGUAGE:-tr} --device cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Primary TTS for the brain (satellites + apps): VoxCPM2, 48kHz, cloned voices
+  vox:
+    build: ../vox
+    container_name: vox
+    restart: unless-stopped
+    ports:
+      - "8808:8808"
+    environment:
+      - VOX_API_KEY=${VOX_API_KEY:-}
+      - VOX_STANDARD_VOICE=${VOX_STANDARD_VOICE:-nese}
+    volumes:
+      - vox-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Wyoming TTS kept for HA's own Assist pipeline (Voice PE path)
+  piper:
+    image: rhasspy/wyoming-piper:latest
+    container_name: piper
+    restart: unless-stopped
+    ports:
+      - "10200:10200"
+    volumes:
+      - piper-data:/data
+    command: --voice ${PIPER_VOICE:-tr_TR-fettah-medium}
+
+  openwakeword:
+    image: rhasspy/wyoming-openwakeword:latest
+    container_name: openwakeword
+    restart: unless-stopped
+    ports:
+      - "10400:10400"
+    command: --preload-model ${WAKE_WORD:-ok_nabu}
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-passwd:/mosquitto/passwd
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    network_mode: host          # needed for mDNS/ESPHome discovery
+    privileged: true
+    volumes:
+      - ha-config:/config
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - mosquitto
+
+  brain:
+    build: ../mate-brain/brain
+    container_name: brain
+    restart: unless-stopped
+    ports:
+      - "8800:8800"
+    env_file: .env
+    volumes:
+      - brain-data:/data
+    depends_on:
+      - mosquitto
+
+volumes:
+  vllm-cache:
+  whisper-data:
+  vox-cache:
+  piper-data:
+  mosquitto-data:
+  mosquitto-passwd:
+  ha-config:
+  brain-data:

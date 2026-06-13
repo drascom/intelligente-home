@@ -1,0 +1,59 @@
+name: Mate
+options:
+  bundleIdPrefix: uk.drascom
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+targets:
+  Mate:
+    type: application
+    platform: iOS
+    sources:
+      - path: Mate
+        excludes:
+          - Info.plist
+    info:
+      path: Mate/Info.plist
+      properties:
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "2"
+        # Yalnız standart iOS HTTPS/TLS kullanılıyor (özel kripto yok) → export
+        # compliance muaf; App Store Connect'te şifreleme sorusu sorulmaz.
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UILaunchScreen:
+          UIColorName: ""
+        NSMicrophoneUsageDescription: "Mate sesini dinlemek ve cevap üretmek için mikrofona erişir."
+        NSSpeechRecognitionUsageDescription: "Wake word algılaması (örn: \"mate\") için cihaz üzerinde konuşma tanıma kullanır."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UIBackgroundModes:
+          - audio
+    postBuildScripts:
+      # Her arşiv (Release build) build numarasını +1 artırır. Sayaç build.number
+      # dosyasında tutulur (xcodegen Info.plist'i her sefer ürettiği için kalıcı
+      # sayaç dışarıda saklanır). Debug/⌘R'de çalışmaz. İlk arşiv → 2.
+      - name: "Build numarasını artır (Release/arşiv)"
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${CONFIGURATION}" != "Release" ]; then exit 0; fi
+          counter="${PROJECT_DIR}/build.number"
+          n=$(cat "$counter" 2>/dev/null || echo 1)
+          n=$((n + 1))
+          echo "$n" > "$counter"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          echo "[build] CFBundleVersion -> $n"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.drascom.mate
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        ENABLE_PREVIEWS: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "59P494J56R"
+        CODE_SIGN_IDENTITY: "Apple Development"
