@@ -17,8 +17,9 @@ FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
 
 class FCMSender:
-    def __init__(self, credentials_path: str = ""):
+    def __init__(self, credentials_path: str = "", bus=None):
         self.credentials_path = credentials_path
+        self.bus = bus  # EventBus or None (izleme düzlemi)
         self._credentials = None
         self._project_id: str | None = None
         if credentials_path:
@@ -82,4 +83,9 @@ class FCMSender:
                     sent += 1
             except Exception as e:
                 log.warning("fcm: %s için gönderilemedi: %s", client.get("name"), e)
+        if self.bus:
+            mode = "live" if self.live else "dry-run"
+            self.bus.emit("fcm", "notify", f"push {sent}/{len(clients)} ({mode})",
+                          payload={"title": title, "body": body, "sent": sent,
+                                   "total": len(clients), "live": self.live})
         return sent

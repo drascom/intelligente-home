@@ -9,12 +9,14 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from brain.api import client_api, openai_compat, voice
+from brain.api import client_api, monitor, openai_compat, voice
 from brain.config import settings
 from brain.db import Database
 from brain.ha.mirror import HAMirror
 from brain.intent.router import IntentRouter
+from brain.monitor.bus import EventBus
 from brain.router.agent import Agent
 from brain.router.llm import LLMClient
 from brain.voice.satellite import Satellite, parse_satellites
@@ -30,7 +32,11 @@ async def lifespan(app: FastAPI):
     mirror = HAMirror(settings.ha_url, settings.ha_token)
     llm = LLMClient()
 
-    intent = IntentRouter() if settings.intent_fastpath else None
+    # İzleme düzlemi: braine gelip giden olayları dashboard'a akıtan veriyolu.
+    bus = EventBus()
+    app.state.bus = bus
+
+    intent = IntentRouter(bus=bus) if settings.intent_fastpath else None
     pi_backend = None
     if settings.llm_backend == "pi":
         from brain.router.pi_backend import PiBackend
@@ -40,7 +46,7 @@ async def lifespan(app: FastAPI):
 
     app.state.db = db
     app.state.mirror = mirror
-    app.state.agent = Agent(llm, mirror, intent, pi_backend)
+    app.state.agent = Agent(llm, mirror, intent, pi_backend, bus=bus)
     tasks = [asyncio.create_task(mirror.run())]
     if intent:
         tasks.append(asyncio.create_task(intent.start()))
@@ -61,13 +67,13 @@ async def lifespan(app: FastAPI):
     if settings.mqtt_host:
         from brain.nodes.manager import NodeManager
 
-        app.state.nodes = NodeManager(settings, db)
+        app.state.nodes = NodeManager(settings, db, bus=bus)
         tasks.append(asyncio.create_task(app.state.nodes.run()))
 
     # Announce/bildirim altyapısı
     from brain.notify.fcm import FCMSender
 
-    app.state.fcm = FCMSender(settings.fcm_credentials_path)
+    app.state.fcm = FCMSender(settings.fcm_credentials_path, bus=bus)
     app.state.ws_clients = set()
 
     if not settings.brain_admin_token:
@@ -84,9 +90,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Home AI Brain", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.monitor_cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.include_router(openai_compat.router)
 app.include_router(client_api.router)
 app.include_router(voice.router)
+app.include_router(monitor.router)
 
 
 if __name__ == "__main__":

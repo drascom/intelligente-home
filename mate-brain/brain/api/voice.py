@@ -35,6 +35,7 @@ from fastapi.websockets import WebSocketDisconnect
 from wyoming.event import Event as WyomingEvent
 
 from brain.config import settings
+from brain.monitor.bus import emit_turn
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_f32le
 
@@ -77,6 +78,11 @@ async def voice_bridge(websocket: WebSocket):
     app = websocket.app
     conversation_id = f"client-{client['id']}"  # shared with /api/ws and /api/chat
     active: dict[str, asyncio.Task] = {}
+    bus = getattr(app.state, "bus", None)
+    if bus:
+        bus.emit("client_connect", "voice", f"{client['name']} (voice) bağlandı",
+                 payload={"transport": "voice"},
+                 conversation_id=conversation_id, client_id=client["id"])
 
     async def send_json(obj: dict) -> None:
         await websocket.send_text(json.dumps(obj, ensure_ascii=False))
@@ -91,6 +97,7 @@ async def voice_bridge(websocket: WebSocket):
             answer = await app.state.agent.respond(history, text)
             await db.add_message(conversation_id, "user", text)
             await db.add_message(conversation_id, "assistant", answer)
+            emit_turn(bus, conversation_id, client["id"], text, answer)
             await send_json({"type": "reply", "id": turn_id, "text": answer})
             if want_audio and answer:
                 await stream_tts(turn_id, answer, msg.get("voice"))
@@ -254,3 +261,7 @@ async def voice_bridge(websocket: WebSocket):
             await stt["session"].abort()
         for task in active.values():
             task.cancel()
+        if bus:
+            bus.emit("client_disconnect", "voice", f"{client['name']} (voice) ayrıldı",
+                     payload={"transport": "voice"},
+                     conversation_id=conversation_id, client_id=client["id"])

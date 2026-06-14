@@ -95,11 +95,12 @@ def system_prompt(mirror: HAMirror) -> str:
 
 
 class Agent:
-    def __init__(self, llm: LLMClient, mirror: HAMirror, intent=None, pi_backend=None):
+    def __init__(self, llm: LLMClient, mirror: HAMirror, intent=None, pi_backend=None, bus=None):
         self.llm = llm
         self.mirror = mirror
         self.intent = intent  # IntentRouter or None
         self.pi = pi_backend  # PiBackend (dev) or None (prod: native tool loop)
+        self.bus = bus  # EventBus or None (izleme düzlemi; None ise emit no-op)
 
     async def respond(self, history: list[dict], user_text: str) -> str:
         if self.pi is not None:
@@ -150,6 +151,16 @@ class Agent:
         except json.JSONDecodeError:
             return {"error": "invalid tool arguments"}
         log.info("tool %s %s", name, args)
+        if self.bus:
+            self.bus.emit("tool_call", "agent", f"{name} {json.dumps(args, ensure_ascii=False)}",
+                          payload={"name": name, "args": args})
+        result = await self._dispatch(name, args)
+        if self.bus:
+            self.bus.emit("tool_result", "agent", f"{name} → {self._result_summary(result)}",
+                          payload={"name": name, "result": result})
+        return result
+
+    async def _dispatch(self, name: str, args: dict):
         try:
             if name == "list_entities":
                 return self.mirror.list_entities(args.get("area"), args.get("domain"))
@@ -168,3 +179,15 @@ class Agent:
             return {"error": f"unknown tool {name}"}
         except Exception as e:
             return {"error": str(e)}
+
+    @staticmethod
+    def _result_summary(result) -> str:
+        if isinstance(result, list):
+            return f"{len(result)} sonuç"
+        if isinstance(result, dict):
+            if "error" in result:
+                return f"hata: {result['error']}"
+            if result.get("ok"):
+                return "ok"
+            return result.get("state") or result.get("name") or "sonuç"
+        return "sonuç"

@@ -16,6 +16,7 @@ from array import array
 
 from wyoming.event import Event, async_read_event, async_write_event
 
+from brain.monitor.bus import emit_turn
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_s16le
 
@@ -160,6 +161,7 @@ class Satellite:
             answer = "Sorry, something went wrong."
         await self.db.add_message(self.conversation_id, "user", text)
         await self.db.add_message(self.conversation_id, "assistant", answer)
+        emit_turn(getattr(self.agent, "bus", None), self.conversation_id, None, text, answer)
 
         await self.speak(answer, writer)
 

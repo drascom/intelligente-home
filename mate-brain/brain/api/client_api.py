@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from brain.api.auth import admin_only, current_client
 from brain.config import settings
+from brain.monitor.bus import emit_turn
 
 log = logging.getLogger("brain.api")
 
@@ -116,6 +117,7 @@ async def chat(
     answer = await request.app.state.agent.respond(history, body.message)
     await db.add_message(conv, "user", body.message)
     await db.add_message(conv, "assistant", answer)
+    emit_turn(getattr(request.app.state, "bus", None), conv, client["id"], body.message, answer)
     return {"conversation_id": conv, "reply": answer}
 
 
@@ -138,6 +140,10 @@ async def ws_chat(websocket: WebSocket):
     if not hasattr(app.state, "ws_clients"):
         app.state.ws_clients = set()
     app.state.ws_clients.add(websocket)
+    bus = getattr(app.state, "bus", None)
+    if bus:
+        bus.emit("client_connect", "ws", f"{client['name']} (ws) bağlandı",
+                 payload={"transport": "ws"}, conversation_id=conv, client_id=client["id"])
     try:
         while True:
             raw = await websocket.receive_text()
@@ -149,11 +155,15 @@ async def ws_chat(websocket: WebSocket):
             answer = await app.state.agent.respond(history, msg["text"])
             await db.add_message(conv, "user", msg["text"])
             await db.add_message(conv, "assistant", answer)
+            emit_turn(bus, conv, client["id"], msg["text"], answer)
             await websocket.send_json({"type": "reply", "text": answer})
     except WebSocketDisconnect:
         pass
     finally:
         app.state.ws_clients.discard(websocket)
+        if bus:
+            bus.emit("client_disconnect", "ws", f"{client['name']} (ws) ayrıldı",
+                     payload={"transport": "ws"}, conversation_id=conv, client_id=client["id"])
 
 
 # ---- nodes (MQTT yönetim düzlemi) ----
@@ -248,6 +258,12 @@ async def announce(
     if body.push and fcm is not None:
         clients = await app.state.db.clients_with_fcm()
         pushed = await fcm.broadcast(clients, body.title, text)
+
+    bus = getattr(app.state, "bus", None)
+    if bus:
+        bus.emit("announce", "client_api", text,
+                 payload={"title": body.title, "text": text, "satellites": spoken,
+                          "ws_clients": ws_sent, "push_sent": pushed})
 
     return {"satellites": spoken, "ws_clients": ws_sent, "push_sent": pushed}
 

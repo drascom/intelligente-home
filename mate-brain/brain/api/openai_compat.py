@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from brain.api.auth import current_client
+from brain.monitor.bus import emit_turn
 
 router = APIRouter()
 
@@ -48,6 +49,8 @@ async def chat_completions(
     else:
         user_text = history.pop()["content"]
         answer = await agent.respond(history, user_text)
+        emit_turn(getattr(request.app.state, "bus", None), "ha-assist", client["id"],
+                  user_text, answer)
 
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     created = int(time.time())

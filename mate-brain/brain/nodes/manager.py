@@ -25,9 +25,10 @@ RECONNECT_DELAY = 5.0
 
 
 class NodeManager:
-    def __init__(self, settings, db):
+    def __init__(self, settings, db, bus=None):
         self.settings = settings
         self.db = db
+        self.bus = bus  # EventBus or None (izleme düzlemi)
         self.connected = False
         # node_id -> {"online": bool, "kind", "version", "last_seen", "telemetry": dict}
         self.nodes: dict[str, dict] = {}
@@ -89,6 +90,11 @@ class NodeManager:
             await self.db.upsert_node(node_id, online, kind=kind, version=version, meta=meta)
             log.info("node %s: %s%s", node_id, "online" if online else "offline",
                      f" ({kind} {version})" if kind or version else "")
+            if self.bus:
+                self.bus.emit("node_status", "nodes",
+                              f"{node_id}: {'online' if online else 'offline'}",
+                              payload={"node_id": node_id, "online": online,
+                                       "kind": kind, "version": version})
 
         elif channel == "telemetry":
             entry = self.nodes.setdefault(node_id, {"telemetry": {}})
@@ -98,6 +104,9 @@ class NodeManager:
             except json.JSONDecodeError:
                 entry["telemetry"] = {"raw": text}
             await self.db.upsert_node(node_id, online=True)
+            if self.bus:
+                self.bus.emit("telemetry", "nodes", f"{node_id} telemetri",
+                              payload={"node_id": node_id, "telemetry": entry["telemetry"]})
 
     @staticmethod
     def _parse_status(text: str) -> tuple[bool, str | None, str | None, str | None]:

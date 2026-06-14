@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # FCM push (HTTP v1). Service-account JSON yolu; boş = dry-run (sadece log).
     fcm_credentials_path: str = ""
 
+    # Dashboard SPA için CORS origin'leri (virgülle ayrık). Dev Vite varsayılanı.
+    monitor_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

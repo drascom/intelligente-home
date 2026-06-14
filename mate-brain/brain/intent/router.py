@@ -17,9 +17,10 @@ log = logging.getLogger("brain.intent")
 
 
 class IntentRouter:
-    def __init__(self, reject_below_margin: float = 0.03):
+    def __init__(self, reject_below_margin: float = 0.03, bus=None):
         self.reject_below_margin = reject_below_margin
         self._clf = None
+        self.bus = bus  # EventBus or None (izleme düzlemi)
 
     @property
     def ready(self) -> bool:
@@ -57,4 +58,10 @@ class IntentRouter:
             text, pred.label, pred.score, pred.margin,
             " ABSTAIN" if pred.abstain else "",
         )
+        if self.bus:
+            label = "abstain" if pred.abstain else pred.label
+            self.bus.emit("intent", "intent", f"{label} ({pred.score:.2f})",
+                          payload={"text": text, "label": pred.label,
+                                   "score": pred.score, "margin": pred.margin,
+                                   "abstain": pred.abstain})
         return pred
