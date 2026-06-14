@@ -1,0 +1,21 @@
+name: Deploy to test server
+
+# Mac'te geliştir → main'e push → self-hosted runner (test sunucusu, 192.168.0.25)
+# deploy scriptini çalıştırır. VPS özel LAN IP'sinde olduğu için bulut runner
+# kullanılamaz; runner sunucunun kendisinde çalışır (GitHub'a outbound bağlanır).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Aynı anda tek deploy; yenisi gelince eskisini iptal et
+concurrency:
+  group: deploy-test-server
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Deploy (git pull + restart + health)
+        run: sudo /opt/intelligente-home/deploy/server-deploy.sh

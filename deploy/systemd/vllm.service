@@ -1,0 +1,24 @@
+[Unit]
+Description=vLLM OpenAI-compatible LLM server (brain backend)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Test sunucusu paylaşımlı 24GB GPU (~5GB host'taki başka guest'te) → 7B-AWQ + util 0.45,
+# whisper+vox'a yer kalsın. Daha büyük GPU/dedicated'da 14B-AWQ + util 0.85'e çıkılabilir.
+ExecStart=/opt/vllm-venv/bin/python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-7B-Instruct-AWQ \
+  --max-model-len 8192 \
+  --gpu-memory-utilization 0.45 \
+  --tool-call-parser hermes \
+  --enable-auto-tool-choice \
+  --host 127.0.0.1 --port 8000
+Environment=HF_HOME=/opt/hf-cache
+Restart=on-failure
+RestartSec=10
+# Model indirme + yükleme ilk başlatmada uzun sürer
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=vox VoxCPM2 TTS bridge (GPU)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/intelligente-home/vox
+ExecStart=/opt/intelligente-home/vox/.venv/bin/python server.py
+Environment=VOX_STANDARD_VOICE=nese
+Environment=VOX_MAX_CHARS=120
+Environment=HF_HOME=/opt/hf-cache
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
