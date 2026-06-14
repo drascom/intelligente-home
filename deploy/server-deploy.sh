@@ -22,6 +22,9 @@ fi
 if changed 'vox/requirements.txt'; then
   echo "→ vox requirements değişti, kuruluyor"; vox/.venv/bin/pip install -q -r vox/requirements.txt
 fi
+if changed 'mate-brain/package.json'; then
+  echo "→ pi/npm bağımlılıkları değişti, kuruluyor"; (cd mate-brain && npm install --no-audit --no-fund -s)
+fi
 
 # systemd unit'leri değiştiyse senkronla
 if changed 'deploy/systemd/'; then
