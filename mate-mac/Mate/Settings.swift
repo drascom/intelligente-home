@@ -25,11 +25,12 @@ final class SettingsStore: ObservableObject {
     @Published var macOutputDeviceUID: String { didSet { defaults.set(macOutputDeviceUID, forKey: "macOutputDeviceUID") } }
 
     init() {
-        // Brain'in client token'ı (/api/clients ile bu telefon için üretildi).
-        // Eski sunucudan kalan anahtarlar geçersiz — yenisine taşı.
-        let defaultToken = "Y9td20fpS9mJ3BqRmFPt5zs7TF8Y0Rr3o1xxerc_sQ0"
+        // Brain'in client token'ı (test sunucusu /api/clients ile "mate-mac" için üretildi).
+        // Eski sunuculardan kalan anahtarlar geçersiz — yenisine taşı.
+        let defaultToken = "MHflKga-51Pk6klAkL6AbQ31jHlQ0Z0C8dZPaEWJXM0"
+        let staleTokens = ["benimsecrettokenim", "Y9td20fpS9mJ3BqRmFPt5zs7TF8Y0Rr3o1xxerc_sQ0"]
         let storedKey = defaults.string(forKey: "bridgeApiKey") ?? ""
-        self.bridgeApiKey = (storedKey.isEmpty || storedKey == "benimsecrettokenim")
+        self.bridgeApiKey = (storedKey.isEmpty || staleTokens.contains(storedKey))
             ? defaultToken : storedKey
         // Eski sunucudan kalan ses adlarını brain'in varsayılanına taşı.
         let storedVoice = defaults.string(forKey: "voice") ?? "nese"
@@ -42,17 +43,16 @@ final class SettingsStore: ObservableObject {
         self.bargeInEnabled = defaults.object(forKey: "bargeInEnabled") as? Bool ?? true
         self.useOnDeviceTTS = defaults.object(forKey: "useOnDeviceTTS") as? Bool ?? false
         self.onDeviceVoiceId = defaults.string(forKey: "onDeviceVoiceId") ?? ""
-        // Brain'in Bridge v0 voice endpoint'i (dev: Mac, LAN üzerinden mDNS).
-        // Eski vox sunucusu adresi kayıtlıysa brain'e taşı.
-        // macOS istemcisi brain ile aynı makinede çalışıyor → loopback.
-        #if os(macOS)
-        let defaultURL = "ws://127.0.0.1:8800/api/voice"
-        #else
-        let defaultURL = "ws://drascoms-macbook-pro.local:8800/api/voice"
-        #endif
+        // Brain artık TEST SUNUCUSUNDA (192.168.0.25); Mac sadece istemci.
+        // Eski adresler (loopback/mac mDNS/vox sunucusu) kayıtlıysa sunucuya taşı.
+        let defaultURL = "ws://192.168.0.25:8800/api/voice"
         let storedURL = defaults.string(forKey: "bridgeWSURL") ?? ""
-        self.bridgeWSURL = (storedURL.isEmpty || storedURL.contains("mate.drascom.uk"))
-            ? defaultURL : storedURL
+        let staleURL = storedURL.isEmpty
+            || storedURL.contains("mate.drascom.uk")
+            || storedURL.contains("127.0.0.1")
+            || storedURL.contains("localhost")
+            || storedURL.contains("drascoms-macbook")
+        self.bridgeWSURL = staleURL ? defaultURL : storedURL
         self.macInputDeviceUID = defaults.string(forKey: "macInputDeviceUID") ?? ""
         self.macOutputDeviceUID = defaults.string(forKey: "macOutputDeviceUID") ?? ""
     }
