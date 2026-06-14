@@ -146,6 +146,18 @@ struct ContentView: View {
                 devicePopover
             }
             #endif
+            // Geçici sessize alma: mic'i kapat/aç (oturum/bridge korunur).
+            Button {
+                conversation.toggleMute()
+            } label: {
+                Image(systemName: conversation.muted ? "mic.slash.fill" : "mic.fill")
+                    .font(.title2)
+                    .foregroundStyle(conversation.muted ? .red : .white.opacity(0.7))
+                    .padding(10)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!conversation.isRunning)
             Button {
                 showSettings = true
             } label: {

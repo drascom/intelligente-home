@@ -59,6 +59,9 @@ final class ConversationManager: ObservableObject {
     /// false iken ana ekranda "Sunucu bağlantısı yok" banner'ı gösterilir.
     @Published private(set) var serverConnected: Bool?
     @Published var isRunning: Bool = false
+    // Geçici sessize alma: mic kapatılır (recorder+wake durur) ama bridge/oturum
+    // korunur. true iken hiçbir dinleme döngüsü mic'i yeniden açmaz.
+    @Published private(set) var muted: Bool = false
     // SwiftUI nested ObservableObject re-render etmiyor; recorder.level ve
     // player.amplitude'ı buradan re-publish edip view'lar conversation'a
     // bağlandığında otomatik güncellensin.
@@ -394,6 +397,24 @@ final class ConversationManager: ObservableObject {
         if isRunning { stop() } else { start() }
     }
 
+    /// Geçici sessize alma: mic'i kapat/aç. Bridge bağlantısı ve oturum korunur
+    /// (stop()'tan farkı bu). Sadece uygulama çalışırken anlamlı.
+    func toggleMute() {
+        guard isRunning else { return }
+        if muted {
+            muted = false
+            Task { await enterIdleOrListen() }   // mic'i geri aç (wake/dinleme)
+        } else {
+            muted = true
+            cancelLiveSTT()
+            _ = recorder.stop()
+            AudioPipeline.shared.pause()
+            wake.stop()
+            state = .idle
+            diagnosticStatus = "Mikrofon kapalı (sessize alındı)"
+        }
+    }
+
     private func startListeningCycle() async {
         guard await checkRequiredServices() else { return }
         state = .waitingPermission
@@ -453,7 +474,7 @@ final class ConversationManager: ObservableObject {
     }
 
     private func enterIdleOrListen() async {
-        guard isRunning else { return }
+        guard isRunning, !muted else { return }
         if settings?.wakeWordEnabled == true {
             startWakeListening()
         } else {
@@ -462,7 +483,7 @@ final class ConversationManager: ObservableObject {
     }
 
     private func startWakeListening() {
-        guard isRunning, let settings else { return }
+        guard isRunning, !muted, let settings else { return }
         // Wake kendi AVAudioEngine'ini kullanıyor — recorder tap'ını tamamen
         // kaldırıp pipeline engine'i durdur ki iki engine mic donanımını
         // çekiştirmesin. Aksi halde wake sonrası ilk cümlede stale tap / paused
@@ -479,7 +500,7 @@ final class ConversationManager: ObservableObject {
     }
 
     private func handleWakeDetected() {
-        guard isRunning else { return }
+        guard isRunning, !muted else { return }
         print("[Wake] detected → switching to listening")
         // Tek bip: ısınma bitince "konuş" bip'i (beginListening içinde) çalar.
         // Algılama anında ayrı bip YOK.
@@ -496,7 +517,7 @@ final class ConversationManager: ObservableObject {
         playReadyCueAfterCalibration: Bool = false,
         echoSettle: Double = 0
     ) async {
-        guard isRunning else { return }
+        guard isRunning, !muted else { return }
         if !preserveVAD {
             resetVAD()
             readyCuePending = playReadyCueAfterCalibration
