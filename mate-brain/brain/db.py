@@ -17,12 +17,29 @@ CREATE TABLE IF NOT EXISTS clients (
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY,
     conversation_id TEXT NOT NULL,
+    session_id INTEGER,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     speaker TEXT,
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+-- Oturumlar (session): konuşma hafızasının kapsamı. scope_key routing anahtarı:
+--   tanınan kişi → 'user-<speakerId>' (cihazdan bağımsız süreklilik),
+--   bilinmeyen/metin → 'client-<id>' | 'satellite-<ad>' (cihaz kapsamı).
+-- Şimdilik scope başına 1 aktif oturum; ileride çok-oturum/başlık/geri-çağırma
+-- (status/title alanları hazır) sadece "yeni oturum + listele" ile eklenir.
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,            -- speakers.id; NULL = bilinmeyen/cihaz kapsamı
+    scope_key TEXT NOT NULL,
+    title TEXT,                 -- ileride LLM auto-title
+    status TEXT NOT NULL DEFAULT 'active',  -- active | archived (ileride pending/done)
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope_key, status, updated_at);
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     kind TEXT,
@@ -58,6 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_samples_speaker ON speaker_samples(speaker_id);
 # Eski DB'ler için additive migration'lar (CREATE TABLE IF NOT EXISTS sütun eklemez).
 MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN speaker TEXT",
+    "ALTER TABLE messages ADD COLUMN session_id INTEGER",
 ]
 
 
@@ -151,24 +169,60 @@ class Database:
 
     # ---- conversation memory ----
 
+    # ---- sessions + conversation memory ----
+
+    async def resolve_session(self, scope_key: str, user_id: int | None = None) -> int:
+        """scope_key için en güncel AKTİF oturumun id'sini ver; yoksa oluştur.
+        scope_key: tanınan kişi → 'user-<id>', bilinmeyen → 'client-<id>' vb."""
+        cur = await self._db.execute(
+            "SELECT id FROM sessions WHERE scope_key = ? AND status = 'active'"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (scope_key,),
+        )
+        row = await cur.fetchone()
+        if row:
+            return row["id"]
+        now = time.time()
+        cur = await self._db.execute(
+            "INSERT INTO sessions (user_id, scope_key, status, created_at, updated_at)"
+            " VALUES (?, ?, 'active', ?, ?)",
+            (user_id, scope_key, now, now),
+        )
+        await self._db.commit()
+        return cur.lastrowid
+
     async def add_message(
-        self, conversation_id: str, role: str, content: str, speaker: str | None = None
+        self, session_id: int, role: str, content: str, speaker: str | None = None
     ) -> None:
+        now = time.time()
+        # conversation_id NOT NULL → session-türevli değerle doldur (sorgular session_id ile).
         await self._db.execute(
-            "INSERT INTO messages (conversation_id, role, content, speaker, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (conversation_id, role, content, speaker, time.time()),
+            "INSERT INTO messages (conversation_id, session_id, role, content, speaker, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (f"session-{session_id}", session_id, role, content, speaker, now),
+        )
+        await self._db.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id)
         )
         await self._db.commit()
 
-    async def recent_messages(self, conversation_id: str, limit: int = 20) -> list[dict]:
+    async def recent_messages(self, session_id: int, limit: int = 20) -> list[dict]:
         cur = await self._db.execute(
-            "SELECT role, content FROM messages WHERE conversation_id = ?"
+            "SELECT role, content FROM messages WHERE session_id = ?"
             " ORDER BY id DESC LIMIT ?",
-            (conversation_id, limit),
+            (session_id, limit),
         )
         rows = await cur.fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+    async def list_sessions(self, user_id: int | None = None) -> list[dict]:
+        if user_id is None:
+            cur = await self._db.execute("SELECT * FROM sessions ORDER BY updated_at DESC")
+        else:
+            cur = await self._db.execute(
+                "SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)
+            )
+        return [dict(r) for r in await cur.fetchall()]
 
     # ---- speakers (voice-ID) ----
 

@@ -179,15 +179,21 @@ class Satellite:
             data["speaker"] = speaker
         await async_write_event(Event(type="transcript", data=data), writer)
 
-        history = await self.db.recent_messages(self.conversation_id)
+        # Tanınan kişi → kullanıcı-kapsamlı oturum; yoksa bu satellite'ın cihaz kapsamı.
+        speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
+        scope_key, user_id = (
+            (f"user-{speaker_id}", speaker_id) if speaker_id else (self.conversation_id, None)
+        )
+        session_id = await self.db.resolve_session(scope_key, user_id)
+        history = await self.db.recent_messages(session_id)
         try:
             answer = await self.agent.respond(history, text)
         except Exception as e:
             log.error("satellite %s: agent failed: %s", self.name, e)
             answer = "Sorry, something went wrong."
-        await self.db.add_message(self.conversation_id, "user", text, speaker=speaker)
-        await self.db.add_message(self.conversation_id, "assistant", answer)
-        emit_turn(getattr(self.agent, "bus", None), self.conversation_id, None, text, answer,
+        await self.db.add_message(session_id, "user", text, speaker=speaker)
+        await self.db.add_message(session_id, "assistant", answer)
+        emit_turn(getattr(self.agent, "bus", None), scope_key, None, text, answer,
                   speaker=speaker)
 
         await self.speak(answer, writer)

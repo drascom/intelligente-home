@@ -23,10 +23,13 @@ CHUNK_DATA = {"rate": 16000, "width": 2, "channels": 1}
 
 
 class FakeDB:
-    async def recent_messages(self, conv):
+    async def resolve_session(self, scope_key, user_id=None):
+        return 1
+
+    async def recent_messages(self, session_id):
         return []
 
-    async def add_message(self, conv, role, content, speaker=None):
+    async def add_message(self, session_id, role, content, speaker=None):
         pass
 
 

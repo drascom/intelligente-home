@@ -112,13 +112,14 @@ async def chat(
     body: ChatRequest, request: Request, client: dict = Depends(current_client)
 ):
     db = request.app.state.db
-    conv = body.conversation_id or f"client-{client['id']}"
-    history = await db.recent_messages(conv)
+    scope_key = body.conversation_id or f"client-{client['id']}"
+    session_id = await db.resolve_session(scope_key)
+    history = await db.recent_messages(session_id)
     answer = await request.app.state.agent.respond(history, body.message)
-    await db.add_message(conv, "user", body.message)
-    await db.add_message(conv, "assistant", answer)
-    emit_turn(getattr(request.app.state, "bus", None), conv, client["id"], body.message, answer)
-    return {"conversation_id": conv, "reply": answer}
+    await db.add_message(session_id, "user", body.message)
+    await db.add_message(session_id, "assistant", answer)
+    emit_turn(getattr(request.app.state, "bus", None), scope_key, client["id"], body.message, answer)
+    return {"conversation_id": scope_key, "reply": answer}
 
 
 @router.websocket("/ws")
@@ -151,10 +152,11 @@ async def ws_chat(websocket: WebSocket):
             if msg.get("type") != "chat" or not msg.get("text"):
                 await websocket.send_json({"type": "error", "error": "expected {type:'chat', text}"})
                 continue
-            history = await db.recent_messages(conv)
+            session_id = await db.resolve_session(conv)
+            history = await db.recent_messages(session_id)
             answer = await app.state.agent.respond(history, msg["text"])
-            await db.add_message(conv, "user", msg["text"])
-            await db.add_message(conv, "assistant", answer)
+            await db.add_message(session_id, "user", msg["text"])
+            await db.add_message(session_id, "assistant", answer)
             emit_turn(bus, conv, client["id"], msg["text"], answer)
             await websocket.send_json({"type": "reply", "text": answer})
     except WebSocketDisconnect:

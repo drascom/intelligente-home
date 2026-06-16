@@ -66,6 +66,7 @@ class SpeakerID:
         self._lock = threading.Lock()  # extractor stream'i seri kullanılsın
         self._names: list[str] = []
         self._centroids = np.zeros((0, self.dim), dtype=np.float32)  # L2-normalize
+        self._name_to_id: dict[str, int] = {}  # session routing için (user-<id>)
 
     # ---- embedding ----
 
@@ -105,12 +106,17 @@ class SpeakerID:
     def num_speakers(self) -> int:
         return len(self._names)
 
+    def id_for(self, name: str | None) -> int | None:
+        """Tanınan ismin DB speaker id'si (session'ı user-<id>'ye yönlendirmek için)."""
+        return self._name_to_id.get(name) if name else None
+
     def reload(self, speakers: list[dict]) -> None:
         """DB'deki kişileri belleğe al. Her kişi: örnek embedding'leri normalize
         et, ortala, normalize et = centroid. model_id/dim uyuşmayan kişiyi atla
         (tutarlılık kilidi)."""
         names: list[str] = []
         cents: list[np.ndarray] = []
+        name_to_id: dict[str, int] = {}
         for sp in speakers:
             if sp.get("model_id") and sp["model_id"] != self.model_id:
                 log.warning(
@@ -128,7 +134,10 @@ class SpeakerID:
                 continue
             cents.append(_l2(np.mean(np.stack(embs), axis=0)))
             names.append(sp["name"])
+            if sp.get("id") is not None:
+                name_to_id[sp["name"]] = sp["id"]
         self._names = names
+        self._name_to_id = name_to_id
         self._centroids = (
             np.stack(cents) if cents else np.zeros((0, self.dim), dtype=np.float32)
         )

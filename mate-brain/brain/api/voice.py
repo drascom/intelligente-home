@@ -91,14 +91,21 @@ async def voice_bridge(websocket: WebSocket):
         turn_id = msg.get("id") or ""
         text = msg["text"]
         want_audio = msg.get("want_audio", True)
-        speaker = msg.get("speaker")  # voice-ID sonucu (varsa)
+        speaker = msg.get("speaker")        # voice-ID sonucu (ad)
+        speaker_id = msg.get("speaker_id")  # voice-ID sonucu (DB id)
         db = app.state.db
         try:
-            history = await db.recent_messages(conversation_id)
+            # Tanınan kişi → kullanıcı-kapsamlı oturum (cihazdan bağımsız süreklilik);
+            # bilinmeyen → cihaz-kapsamlı oturum.
+            scope_key, user_id = (
+                (f"user-{speaker_id}", speaker_id) if speaker_id else (conversation_id, None)
+            )
+            session_id = await db.resolve_session(scope_key, user_id)
+            history = await db.recent_messages(session_id)
             answer = await app.state.agent.respond(history, text)
-            await db.add_message(conversation_id, "user", text, speaker=speaker)
-            await db.add_message(conversation_id, "assistant", answer)
-            emit_turn(bus, conversation_id, client["id"], text, answer, speaker=speaker)
+            await db.add_message(session_id, "user", text, speaker=speaker)
+            await db.add_message(session_id, "assistant", answer)
+            emit_turn(bus, scope_key, client["id"], text, answer, speaker=speaker)
             await send_json({"type": "reply", "id": turn_id, "text": answer})
             if want_audio and answer:
                 await stream_tts(turn_id, answer, msg.get("voice"))
@@ -197,6 +204,8 @@ async def voice_bridge(websocket: WebSocket):
             log.info("transcript looks hallucinated, dropping: %r", text[:80])
             text = ""
         speaker = await identify_speaker(current) if text else None
+        sp = getattr(app.state, "speaker", None)
+        speaker_id = sp.id_for(speaker) if (sp and speaker) else None
         transcript_msg = {"type": "transcript", "id": turn_id, "text": text}
         if speaker:
             transcript_msg["speaker"] = speaker
@@ -207,7 +216,8 @@ async def voice_bridge(websocket: WebSocket):
             task.cancel()
         active.clear()
         active[turn_id] = asyncio.create_task(
-            handle_turn({**current["msg"], "id": turn_id, "text": text, "speaker": speaker})
+            handle_turn({**current["msg"], "id": turn_id, "text": text,
+                         "speaker": speaker, "speaker_id": speaker_id})
         )
 
     try:

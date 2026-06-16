@@ -106,10 +106,13 @@ async def test_db() -> int:
     allsp = await db.all_speaker_embeddings()
     assert len(allsp) == 1 and len(allsp[0]["embeddings"]) == 2, allsp; n += 1
 
-    # messages.speaker yazılıyor
-    await db.add_message("conv-x", "user", "merhaba", speaker="anne")
-    cur = await db._db.execute("SELECT speaker FROM messages WHERE conversation_id='conv-x'")
+    # messages.speaker session içinde yazılıyor
+    sess = await db.resolve_session("user-1", user_id=1)
+    await db.add_message(sess, "user", "merhaba", speaker="anne")
+    cur = await db._db.execute("SELECT speaker FROM messages WHERE session_id=?", (sess,))
     assert (await cur.fetchone())["speaker"] == "anne"; n += 1
+    # aynı scope tekrar çözülünce aynı oturum (yeni oturum açılmaz)
+    assert await db.resolve_session("user-1") == sess; n += 1
 
     # örnek sil → sayaç düşer
     await db.delete_speaker_sample(sid, s1)
