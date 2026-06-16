@@ -7,6 +7,12 @@ import "./App.css";
 const LS_URL = "mate-dash.brainUrl";
 const LS_TOKEN = "mate-dash.token";
 
+// Build-zamanı env (mate-dash/.env: VITE_BRAIN_URL / VITE_BRAIN_TOKEN).
+// Set'liyse localStorage/forma göre ÖNCELİKLİ → bağlantı dosyadan yönetilir.
+const env = import.meta.env as Record<string, string | undefined>;
+const ENV_URL = env.VITE_BRAIN_URL || "";
+const ENV_TOKEN = env.VITE_BRAIN_TOKEN || "";
+
 function fmtTime(ts: number): string {
   const d = new Date(ts * 1000);
   return (
@@ -18,13 +24,15 @@ function fmtTime(ts: number): string {
 
 export default function App() {
   const [brainUrl, setBrainUrl] = useState(
-    () => localStorage.getItem(LS_URL) || "http://127.0.0.1:8800"
+    () => ENV_URL || localStorage.getItem(LS_URL) || "http://127.0.0.1:8800"
   );
-  const [token, setToken] = useState(() => localStorage.getItem(LS_TOKEN) || "");
+  const [token, setToken] = useState(
+    () => ENV_TOKEN || localStorage.getItem(LS_TOKEN) || ""
+  );
   const [enabled, setEnabled] = useState(false);
   const [paused, setPaused] = useState(false);
   const [filter, setFilter] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const { events, state, clear } = useMonitor({ brainUrl, token, enabled, paused });
 
@@ -137,12 +145,12 @@ export default function App() {
               : "Bağlan'a basıp brain URL + admin token gir."}
           </div>
         )}
-        {shown.map((e) => (
-          <Row
-            key={e.id}
-            ev={e}
-            open={expanded === e.id}
-            onToggle={() => setExpanded(expanded === e.id ? null : e.id)}
+        {groupTurns(shown).map((t) => (
+          <TurnCard
+            key={t.key}
+            turn={t}
+            open={expanded === t.key}
+            onToggle={() => setExpanded(expanded === t.key ? null : t.key)}
           />
         ))}
       </main>
@@ -150,33 +158,97 @@ export default function App() {
   );
 }
 
-function Row({
-  ev,
+// Bir konuşma turu: aynı conversation_id'li olaylar utterance…reply arası tek kart.
+interface Turn {
+  key: string;
+  ts: number;
+  convId: string | null;
+  speaker: string | null;
+  events: BrainEvent[];
+}
+
+function groupTurns(events: BrainEvent[]): Turn[] {
+  const asc = [...events].reverse(); // gelen liste yeni→eski; kronolojik işle
+  const turns: Turn[] = [];
+  const open = new Map<string, Turn>(); // conversation_id → açık tur
+  for (const e of asc) {
+    const conv = e.conversation_id;
+    if (!conv) {
+      // konuşma-dışı olay (node, anons, görev…) → tek-olaylık kart
+      turns.push({ key: `e${e.id}`, ts: e.ts, convId: null, speaker: null, events: [e] });
+      continue;
+    }
+    let turn = open.get(conv);
+    if (!turn) {
+      turn = { key: `t${e.id}`, ts: e.ts, convId: conv, speaker: null, events: [] };
+      open.set(conv, turn);
+      turns.push(turn);
+    }
+    turn.events.push(e);
+    turn.ts = e.ts;
+    if (typeof e.payload?.speaker === "string") turn.speaker = e.payload.speaker;
+    if (e.type === "reply") open.delete(conv); // tur kapandı
+  }
+  return turns.sort((a, b) => b.ts - a.ts); // en yeni tur üstte
+}
+
+function TurnCard({
+  turn,
   open,
   onToggle,
 }: {
-  ev: BrainEvent;
+  turn: Turn;
   open: boolean;
   onToggle: () => void;
 }) {
+  const utt = turn.events.find((e) => e.type === "utterance");
+  const rep = turn.events.find((e) => e.type === "reply");
+  const single = turn.events.length === 1 ? turn.events[0] : null;
+  const sm = single ? typeMeta(single.type) : null;
+  return (
+    <div className={`turn ${open ? "open" : ""}`} onClick={onToggle}>
+      <div className="turn-head">
+        <span className="time">{fmtTime(turn.ts)}</span>
+        {sm ? (
+          <>
+            <span className="badge" style={{ background: sm.color }}>{sm.label}</span>
+            <span className="src">{single!.source}</span>
+            <span className="summary">{single!.summary}</span>
+          </>
+        ) : (
+          <>
+            <span className="badge" style={{ background: "#6366f1" }}>Tur</span>
+            <span className="summary turn-lines">
+              {utt && <span className="t-utt">{utt.summary}</span>}
+              {rep && <span className="t-rep"> → {rep.summary}</span>}
+              {!utt && !rep && turn.events[0].summary}
+            </span>
+            <span className="turn-count">{turn.events.length} olay</span>
+          </>
+        )}
+        {turn.speaker && <span className="conv">🗣 {turn.speaker}</span>}
+        {turn.convId && <span className="conv">{turn.convId}</span>}
+      </div>
+      {open && (
+        <div className="turn-body" onClick={(e) => e.stopPropagation()}>
+          {turn.events.map((ev) => (
+            <InnerRow key={ev.id} ev={ev} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InnerRow({ ev }: { ev: BrainEvent }) {
   const m = typeMeta(ev.type);
   return (
-    <div className={`row ${open ? "open" : ""}`} onClick={onToggle}>
+    <div className="inner-row">
       <span className="time">{fmtTime(ev.ts)}</span>
-      <span className="badge" style={{ background: m.color }}>
-        {m.label}
-      </span>
+      <span className="badge" style={{ background: m.color }}>{m.label}</span>
       <span className="src">{ev.source}</span>
       <span className="summary">{ev.summary}</span>
-      {typeof ev.payload?.speaker === "string" && (
-        <span className="conv">🗣 {ev.payload.speaker}</span>
-      )}
-      {ev.conversation_id && <span className="conv">{ev.conversation_id}</span>}
-      {open && (
-        <pre className="payload" onClick={(e) => e.stopPropagation()}>
-          {JSON.stringify(ev.payload, null, 2)}
-        </pre>
-      )}
+      <pre className="payload">{JSON.stringify(ev.payload, null, 2)}</pre>
     </div>
   );
 }

@@ -97,3 +97,24 @@ body {
   background: #060a12; border: 1px solid var(--border); border-radius: 6px;
   padding: 10px; color: #9ca3af; overflow-x: auto; cursor: text;
 }
+
+/* Turn (tur) kartı — bir konuşma turunun tüm olayları tek expandable kartta */
+.turn { border-bottom: 1px solid #131b29; cursor: pointer; }
+.turn:hover { background: #0d1422; }
+.turn.open { background: #0d1422; }
+.turn-head {
+  display: flex; gap: 10px; align-items: baseline; padding: 6px 14px;
+}
+.turn-head .summary { flex: 1; }
+.turn-lines .t-utt { color: #cbd5e1; }
+.turn-lines .t-rep { color: #34d399; }
+.turn-count { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.turn-body {
+  padding: 4px 14px 10px; cursor: default;
+  border-top: 1px solid #131b29; background: #060a12;
+}
+.inner-row {
+  display: grid; grid-template-columns: 96px 86px 78px 1fr; gap: 10px;
+  align-items: baseline; padding: 4px 0;
+}
+.inner-row .summary { white-space: normal; }
