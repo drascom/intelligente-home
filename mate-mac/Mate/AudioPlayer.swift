@@ -297,6 +297,32 @@ final class AudioPlayer: NSObject, ObservableObject {
         startAmplitudeMetering()
     }
 
+    /// TTS playback gain. Telefonda .voiceChat ducking'i telafi eder; mac'te 1.0.
+    /// Çok kısık/patlıyorsa bu değeri ayarla (1.0 = değişiklik yok).
+    #if os(iOS)
+    private static let ttsGain: Float = 2.2
+    #else
+    private static let ttsGain: Float = 1.0
+    #endif
+
+    /// Buffer'a yumuşak-limitli (tanh) gain uygula → yüksek ama sert clip'siz.
+    private static func applyGain(_ buffer: AVAudioPCMBuffer, _ gain: Float) -> AVAudioPCMBuffer {
+        guard gain != 1.0, let src = buffer.floatChannelData,
+              let out = AVAudioPCMBuffer(pcmFormat: buffer.format,
+                                         frameCapacity: buffer.frameLength)
+        else { return buffer }
+        out.frameLength = buffer.frameLength
+        let channels = Int(buffer.format.channelCount)
+        let frames = Int(buffer.frameLength)
+        let dst = out.floatChannelData!
+        for c in 0..<channels {
+            for i in 0..<frames {
+                dst[c][i] = tanhf(src[c][i] * gain)  // boost + nazik doygunluk
+            }
+        }
+        return out
+    }
+
     /// Gelen bir PCM parçasını çalmaya ekle. Parçalar engine'in connectedFormat'ına
     /// resample edilip aynı playerNode kuyruğuna sırayla eklenir (reconnect yok).
     func streamPCM(buffer: AVAudioPCMBuffer) {
@@ -326,6 +352,11 @@ final class AudioPlayer: NSObject, ObservableObject {
             print("[Player] PCM stream first chunk sr=\(Int(scheduled.format.sampleRate))Hz ch=\(scheduled.format.channelCount) frames=\(scheduled.frameLength)")
         }
 
+        // Telefonda .voiceChat (AEC) modu çıkışı ducked tutuyor → TTS kısık
+        // duyuluyor. Yumuşak-limitli (tanh) bir gain ile sesi yükselt; sert clip
+        // (patlama) yapmaz, sadece tepe noktaları nazikçe sıkışır. mac'te 1.0 → etkisiz.
+        let boosted = Self.applyGain(scheduled, Self.ttsGain)
+
         streamPending += 1
         let handler: AVAudioPlayerNodeCompletionHandler = { [weak self] _ in
             DispatchQueue.main.async {
@@ -336,7 +367,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         }
         // .interrupts YOK: parçalar kuyruğa eklenir, kesintisiz çalar.
         pipeline.playerNode.scheduleBuffer(
-            scheduled,
+            boosted,
             at: nil,
             options: AVAudioPlayerNodeBufferOptions(),
             completionCallbackType: .dataPlayedBack,
