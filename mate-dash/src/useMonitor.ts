@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BrainEvent, ConnState } from "./types";
 
-const MAX_EVENTS = 1000; // UI'da tutulan tavan (bellek sınırı)
+const MAX_EVENTS = 5000; // UI'da tutulan tavan (canlı + yüklenen geçmiş)
 
 interface Options {
   brainUrl: string;
@@ -25,6 +25,28 @@ export function useMonitor({ brainUrl, token, enabled, paused }: Options) {
     seenRef.current = new Set();
     setEvents([]);
   }, []);
+
+  // Kalıcı geçmişten daha eski olayları yükle (DB). En eski görünen id'den geriye.
+  const loadOlder = useCallback(async (): Promise<number> => {
+    if (!brainUrl || !token) return 0;
+    let oldest = Infinity;
+    for (const id of seenRef.current) if (id < oldest) oldest = id;
+    const beforeQ = Number.isFinite(oldest) ? `&before=${oldest}` : "";
+    const url = `${brainUrl.replace(/\/$/, "")}/api/monitor/history?token=${encodeURIComponent(
+      token
+    )}&limit=100${beforeQ}`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) return 0;
+      const { events: older } = (await resp.json()) as { events: BrainEvent[] };
+      const fresh = older.filter((e) => !seenRef.current.has(e.id));
+      fresh.forEach((e) => seenRef.current.add(e.id));
+      if (fresh.length) setEvents((prev) => [...prev, ...fresh]); // eski → sona
+      return fresh.length;
+    } catch {
+      return 0;
+    }
+  }, [brainUrl, token]);
 
   useEffect(() => {
     if (!enabled || !brainUrl || !token) {
@@ -66,5 +88,5 @@ export function useMonitor({ brainUrl, token, enabled, paused }: Options) {
     };
   }, [brainUrl, token, enabled]);
 
-  return { events, state, clear };
+  return { events, state, clear, loadOlder };
 }

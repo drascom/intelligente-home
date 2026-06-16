@@ -39,6 +39,22 @@ async def test_db() -> int:
     await db.delete_task(t1["id"])
     assert len(await db.list_tasks(user_id=1)) == 1; n += 1
 
+    # --- events persistence (dashboard geçmişi) ---
+    for i in range(1, 6):
+        await db.save_event({"id": 1000 + i, "ts": float(i), "type": "utterance",
+                             "source": "test", "summary": f"olay {i}",
+                             "payload": {"k": i}, "conversation_id": "user-1",
+                             "client_id": 1})
+    await db.save_event({"id": 1003, "ts": 99.0, "type": "x", "summary": "dup"})  # OR IGNORE
+    latest = await db.history_events(limit=3)
+    assert [e["id"] for e in latest] == [1005, 1004, 1003], latest; n += 1  # yeni→eski
+    assert latest[0]["payload"] == {"k": 5}; n += 1  # JSON çözüldü
+    older = await db.history_events(before_id=1004, limit=10)
+    assert [e["id"] for e in older] == [1003, 1002, 1001], older; n += 1  # sayfalama
+    dupcheck = await db.history_events(before_id=1004, limit=1)
+    assert dupcheck[0]["summary"] == "olay 3", dupcheck  # 1003 ezilmedi (OR IGNORE)
+    n += 1
+
     await db.close()
     return n
 

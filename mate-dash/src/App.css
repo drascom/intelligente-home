@@ -118,3 +118,12 @@ body {
   align-items: baseline; padding: 4px 0;
 }
 .inner-row .summary { white-space: normal; }
+
+.load-older {
+  display: block; margin: 14px auto; padding: 7px 16px;
+  background: #0d1422; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  cursor: pointer; font-size: 12.5px;
+}
+.load-older:hover:not(:disabled) { color: var(--text); border-color: #2a3a52; }
+.load-older:disabled { opacity: 0.5; cursor: default; }

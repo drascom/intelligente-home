@@ -16,7 +16,7 @@ from brain.config import settings
 from brain.db import Database
 from brain.ha.mirror import HAMirror
 from brain.intent.router import IntentRouter
-from brain.monitor.bus import EventBus
+from brain.monitor.bus import EventBus, persist_events
 from brain.router.agent import Agent
 from brain.router.llm import LLMClient
 from brain.voice.satellite import Satellite, parse_satellites
@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI):
         app.state.speaker.reload(await db.all_speaker_embeddings())
 
     tasks = [asyncio.create_task(mirror.run())]
+    # Olayları DB'ye kalıcılaştır (dashboard geçmişi / restart sonrası geriye gitme).
+    tasks.append(asyncio.create_task(persist_events(bus, db)))
     if intent:
         tasks.append(asyncio.create_task(intent.start()))
 

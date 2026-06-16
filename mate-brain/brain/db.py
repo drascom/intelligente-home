@@ -1,5 +1,6 @@
 """SQLite persistence: client registry + conversation memory (SYSTEM_PLAN §3, Layer 3)."""
 
+import json
 import secrets
 import time
 
@@ -52,6 +53,19 @@ CREATE TABLE IF NOT EXISTS tasks (
     done_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, status, created_at);
+-- İzleme olayları (dashboard geçmişi): bus olayları arka planda buraya yazılır
+-- (emit yolu DIŞINDA). id = bus event id (zaman-tohumlu, monoton) → sayfalama +
+-- tekilleştirme. Canlı akış değişmedi; bu sadece geriye gitme/restart sonrası geçmiş.
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY,
+    ts REAL NOT NULL,
+    type TEXT NOT NULL,
+    source TEXT,
+    summary TEXT,
+    payload TEXT,
+    conversation_id TEXT,
+    client_id INTEGER
+);
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     kind TEXT,
@@ -317,6 +331,42 @@ class Database:
         await self._db.execute("DELETE FROM speaker_samples WHERE speaker_id = ?", (speaker_id,))
         await self._db.execute("DELETE FROM speakers WHERE id = ?", (speaker_id,))
         await self._db.commit()
+
+    # ---- monitor events (dashboard geçmişi) ----
+
+    async def save_event(self, ev: dict) -> None:
+        """Bir bus olayını kalıcılaştır (arka plan abonesi çağırır). id PK → dedup."""
+        await self._db.execute(
+            "INSERT OR IGNORE INTO events"
+            " (id, ts, type, source, summary, payload, conversation_id, client_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (ev.get("id"), ev.get("ts"), ev.get("type"), ev.get("source"),
+             ev.get("summary"),
+             json.dumps(ev.get("payload") or {}, ensure_ascii=False),
+             ev.get("conversation_id"), ev.get("client_id")),
+        )
+        await self._db.commit()
+
+    async def history_events(self, before_id: int | None = None, limit: int = 100) -> list[dict]:
+        """`before_id`'den eski olaylar (yoksa en yeniler), yeni→eski sırada."""
+        if before_id:
+            cur = await self._db.execute(
+                "SELECT * FROM events WHERE id < ? ORDER BY id DESC LIMIT ?",
+                (before_id, limit),
+            )
+        else:
+            cur = await self._db.execute(
+                "SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,)
+            )
+        out = []
+        for r in await cur.fetchall():
+            d = dict(r)
+            try:
+                d["payload"] = json.loads(d["payload"]) if d["payload"] else {}
+            except (json.JSONDecodeError, TypeError):
+                d["payload"] = {}
+            out.append(d)
+        return out
 
     # ---- tasks (triage'ın görev dalı) ----
 

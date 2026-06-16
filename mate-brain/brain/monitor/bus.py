@@ -110,3 +110,21 @@ def emit_turn(
 def _clip(text: str, limit: int = 140) -> str:
     text = " ".join(text.split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+async def persist_events(bus: "EventBus", db) -> None:
+    """Arka plan: bus olaylarını DB'ye yazar — `emit()` yolu DIŞINDA (senkron emit
+    asla diske dokunmaz). Önce mevcut ring'i kaydeder, sonra canlı akar. Lifespan
+    task olarak çalışır; iptal edilince temiz çıkar."""
+    with bus.subscribe() as q:
+        for event in bus.backlog():
+            try:
+                await db.save_event(event)
+            except Exception:
+                log.warning("event persist (backlog) failed")
+        while True:
+            event = await q.get()
+            try:
+                await db.save_event(event)
+            except Exception:
+                log.warning("event persist failed")

@@ -34,7 +34,16 @@ export default function App() {
   const [filter, setFilter] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const { events, state, clear } = useMonitor({ brainUrl, token, enabled, paused });
+  const { events, state, clear, loadOlder } = useMonitor({ brainUrl, token, enabled, paused });
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [noMore, setNoMore] = useState(false);
+
+  const onLoadOlder = async () => {
+    setLoadingOlder(true);
+    const n = await loadOlder();
+    setLoadingOlder(false);
+    if (n === 0) setNoMore(true);
+  };
 
   const connect = () => {
     localStorage.setItem(LS_URL, brainUrl);
@@ -153,6 +162,15 @@ export default function App() {
             onToggle={() => setExpanded(expanded === t.key ? null : t.key)}
           />
         ))}
+        {enabled && shown.length > 0 && (
+          <button
+            className="load-older"
+            onClick={onLoadOlder}
+            disabled={loadingOlder || noMore}
+          >
+            {noMore ? "Daha eski kayıt yok" : loadingOlder ? "Yükleniyor…" : "↓ Daha eskini yükle"}
+          </button>
+        )}
       </main>
     </div>
   );

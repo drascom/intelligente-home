@@ -48,6 +48,23 @@ async def monitor_recent(request: Request):
     return {"events": bus.backlog() if bus else []}
 
 
+@router.get("/monitor/history")
+async def monitor_history(request: Request):
+    """Kalıcı geçmiş (DB): `before` id'sinden eski olaylar (yoksa en yeniler).
+    Dashboard geriye kaydırma + restart sonrası geçmiş için. Yeni→eski sırada."""
+    _admin_or_401(request.query_params.get("token") or "")
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        return {"events": []}
+    before = request.query_params.get("before")
+    try:
+        before_id = int(before) if before else None
+        limit = min(int(request.query_params.get("limit") or 100), 500)
+    except ValueError:
+        raise HTTPException(400, "before/limit sayı olmalı")
+    return {"events": await db.history_events(before_id, limit)}
+
+
 @router.get("/monitor/stream")
 async def monitor_stream(request: Request):
     """SSE: önce ring backfill, sonra canlı tail. 15 sn keepalive comment frame."""
