@@ -91,11 +91,16 @@ class SpeakerID:
         q = _l2(np.asarray(emb, dtype=np.float32))
         sims = self._centroids @ q  # centroid'ler zaten L2-normalize
         order = np.argsort(sims)[::-1]
-        best = float(sims[order[0]])
-        second = float(sims[order[1]]) if len(order) > 1 else -1.0
+        ranking = [(self._names[i], float(sims[i])) for i in order]
+        # Teşhis: her kişinin skoru (eşik/marj ayarı için) — wake-gated, düşük hacim.
+        log.info("speaker-ID skorlar: %s (eşik=%.2f marj=%.2f)",
+                 ", ".join(f"{n}={s:.3f}" for n, s in ranking),
+                 self.threshold, self.margin)
+        best = ranking[0][1]
+        second = ranking[1][1] if len(ranking) > 1 else -1.0
         if best < self.threshold or (best - second) < self.margin:
             return None, best
-        return self._names[order[0]], best
+        return ranking[0][0], best
 
     def num_speakers(self) -> int:
         return len(self._names)
