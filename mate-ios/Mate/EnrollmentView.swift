@@ -14,6 +14,7 @@ struct EnrollmentView: View {
     @State private var errorText: String?
     @State private var busy = false
     @State private var permissionDenied = false
+    @State private var wizardSpeaker: Speaker?
 
     #if os(iOS)
     private let source = "ios"
@@ -47,12 +48,12 @@ struct EnrollmentView: View {
                         }
                         Spacer()
                         Button {
-                            Task { await recordSample(for: sp) }
+                            wizardSpeaker = sp
                         } label: {
-                            Image(systemName: "mic.fill")
+                            Label("Kaydet", systemImage: "wand.and.stars")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(busy || recorder.isRecording)
+                        .disabled(permissionDenied)
                     }
                 }
                 .onDelete { idx in Task { await deleteSpeakers(at: idx) } }
@@ -68,15 +69,6 @@ struct EnrollmentView: View {
                 }
             }
 
-            if recorder.isRecording {
-                Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("Kaydediliyor…", systemImage: "waveform")
-                            .font(.caption)
-                        ProgressView(value: Double(recorder.level))
-                    }
-                }
-            }
             if let status {
                 Section { Text(status).font(.caption).foregroundStyle(.secondary) }
             }
@@ -94,6 +86,12 @@ struct EnrollmentView: View {
         .navigationTitle("Konuşmacılar")
         .inlineNavigationTitle()
         .task { await firstLoad() }
+        .sheet(item: $wizardSpeaker) { sp in
+            EnrollmentWizardView(speaker: sp, baseURL: base, apiKey: settings.bridgeApiKey,
+                                 source: source) {
+                Task { await load() }
+            }
+        }
     }
 
     // ---- actions ----
@@ -122,23 +120,6 @@ struct EnrollmentView: View {
             _ = try await api.createSpeaker(baseURL: base, apiKey: settings.bridgeApiKey, name: name)
             newName = ""
             status = "\(name) eklendi"
-            await load()
-        } catch {
-            errorText = describe(error)
-        }
-    }
-
-    private func recordSample(for sp: Speaker) async {
-        guard let base else { return }
-        busy = true; defer { busy = false }
-        status = nil
-        do {
-            let url = try await recorder.record(seconds: 3.0)
-            let data = try Data(contentsOf: url)
-            try? FileManager.default.removeItem(at: url)
-            _ = try await api.uploadSample(baseURL: base, apiKey: settings.bridgeApiKey,
-                                           speakerId: sp.id, wavData: data, source: source)
-            status = "\(sp.name): örnek eklendi"
             await load()
         } catch {
             errorText = describe(error)
