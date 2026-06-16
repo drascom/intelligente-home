@@ -48,6 +48,12 @@ struct Speaker: Identifiable, Decodable, Hashable {
     var samples: Int { sampleCount ?? 0 }
 }
 
+/// `/api/speakers/identify` yanıtı: tanınan kişi (yoksa null) + en iyi skor.
+struct IdentifyResult: Decodable {
+    let speaker: String?
+    let score: Double
+}
+
 final class APIClient {
     private let session: URLSession
 
@@ -95,8 +101,23 @@ final class APIClient {
     @discardableResult
     func uploadSample(baseURL: String, apiKey: String, speakerId: Int,
                       wavData: Data, source: String) async throws -> Int {
-        guard let url = URL(string: baseURL + "/api/speakers/\(speakerId)/samples?source=\(source)")
-        else { throw APIError.badURL }
+        let data = try await postWav(
+            baseURL + "/api/speakers/\(speakerId)/samples?source=\(source)",
+            apiKey: apiKey, wavData: wavData)
+        struct R: Decodable { let sample_id: Int }
+        return try JSONDecoder().decode(R.self, from: data).sample_id
+    }
+
+    /// DEBUG/kalibrasyon: bir ses → {speaker, score}. LLM'e dokunmaz, hızlı.
+    func identify(baseURL: String, apiKey: String, wavData: Data) async throws -> IdentifyResult {
+        let data = try await postWav(baseURL + "/api/speakers/identify",
+                                     apiKey: apiKey, wavData: wavData)
+        return try JSONDecoder().decode(IdentifyResult.self, from: data)
+    }
+
+    /// multipart/form-data `file` alanıyla wav POST eder; doğrulanmış gövde döner.
+    private func postWav(_ urlString: String, apiKey: String, wavData: Data) async throws -> Data {
+        guard let url = URL(string: urlString) else { throw APIError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         if !apiKey.isEmpty {
@@ -106,15 +127,14 @@ final class APIClient {
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"sample.wav\"\r\n"
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n"
             .data(using: .utf8)!)
         body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(wavData)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         let (data, resp) = try await session.upload(for: req, from: body)
         try validate(resp, data: data)
-        struct R: Decodable { let sample_id: Int }
-        return try JSONDecoder().decode(R.self, from: data).sample_id
+        return data
     }
 
     func deleteSpeaker(baseURL: String, apiKey: String, speakerId: Int) async throws {
