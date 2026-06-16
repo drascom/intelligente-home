@@ -168,6 +168,9 @@ function Row({
       </span>
       <span className="src">{ev.source}</span>
       <span className="summary">{ev.summary}</span>
+      {typeof ev.payload?.speaker === "string" && (
+        <span className="conv">🗣 {ev.payload.speaker}</span>
+      )}
       {ev.conversation_id && <span className="conv">{ev.conversation_id}</span>}
       {open && (
         <pre className="payload" onClick={(e) => e.stopPropagation()}>

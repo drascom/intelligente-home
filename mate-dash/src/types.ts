@@ -18,6 +18,7 @@ export const TYPE_META: Record<string, { label: string; color: string }> = {
   intent: { label: "Niyet", color: "#a78bfa" },
   tool_call: { label: "Tool →", color: "#fbbf24" },
   tool_result: { label: "Tool ✓", color: "#f59e0b" },
+  task: { label: "Görev", color: "#fb923c" },
   node_status: { label: "Node", color: "#22d3ee" },
   telemetry: { label: "Telemetri", color: "#2dd4bf" },
   announce: { label: "Anons", color: "#fb7185" },
