@@ -26,6 +26,13 @@ if changed 'mate-brain/package.json'; then
   echo "→ pi/npm bağımlılıkları değişti, kuruluyor"; (cd mate-brain && npm install --no-audit --no-fund -s)
 fi
 
+# Dashboard (mate-dash) kaynağı değiştiyse derle + servis restart
+if changed 'mate-dash/'; then
+  echo "→ mate-dash değişti, derleniyor"
+  (cd mate-dash && npm install --no-audit --no-fund -s && npm run build)
+  systemctl restart mate-dash || true
+fi
+
 # systemd unit'leri değiştiyse senkronla
 if changed 'deploy/systemd/'; then
   echo "→ systemd unit'leri güncelleniyor"; cp deploy/systemd/*.service /etc/systemd/system/; systemctl daemon-reload

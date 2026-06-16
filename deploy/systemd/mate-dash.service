@@ -1,0 +1,13 @@
+[Unit]
+Description=mate-dash live flow monitor (static dist)
+After=network.target
+
+[Service]
+# Built SPA (mate-dash/dist) statik servis — runtime'da node gerekmez.
+# Derleme deploy/server-deploy.sh içinde (mate-dash değişince npm build).
+ExecStart=/usr/bin/python3 -m http.server 5173 --bind 0.0.0.0 --directory /opt/intelligente-home/mate-dash/dist
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target

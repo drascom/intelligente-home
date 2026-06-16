@@ -15,6 +15,7 @@ DerivedData/
 .whisper-data/
 node-image/ansible/inventory.ini
 mate-mac/dist/
+mate-dash/dist/
 .build/
 .logs/
 .gradio/
