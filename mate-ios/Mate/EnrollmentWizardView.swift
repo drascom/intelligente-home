@@ -20,7 +20,6 @@ struct EnrollmentWizardView: View {
     @State private var errorText: String?
     @State private var finished = false
 
-    private let clipSeconds = 4.0
     private let prompts = EnrollmentPrompts.sentences
 
     var body: some View {
@@ -50,7 +49,7 @@ struct EnrollmentWizardView: View {
 
             Spacer()
 
-            Text("Butona basıp aşağıdaki cümleyi normal sesinizle okuyun:")
+            Text("Butona basıp cümleyi normal sesinizle okuyun — bitince kayıt otomatik durur:")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -65,7 +64,8 @@ struct EnrollmentWizardView: View {
 
             if recorder.isRecording {
                 VStack(spacing: 10) {
-                    Label("Dinliyorum… okuyun", systemImage: "waveform")
+                    Label(recorder.heard ? "Dinliyorum… bitince durur" : "Okumaya başlayın…",
+                          systemImage: "waveform")
                         .foregroundStyle(.red)
                     ProgressView(value: Double(recorder.level))
                 }
@@ -110,7 +110,7 @@ struct EnrollmentWizardView: View {
         guard let baseURL else { errorText = "Geçersiz sunucu URL'i"; return }
         errorText = nil
         do {
-            let url = try await recorder.record(seconds: clipSeconds)
+            let url = try await recorder.record()
             uploading = true
             defer { uploading = false }
             let data = try Data(contentsOf: url)
