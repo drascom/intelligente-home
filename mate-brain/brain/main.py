@@ -55,6 +55,9 @@ async def lifespan(app: FastAPI):
         app.state.speaker.reload(await db.all_speaker_embeddings())
 
     tasks = [asyncio.create_task(mirror.run())]
+    # pi/Codex subprocess'i açılışta ön-ısıt → ilk kullanıcı turu cold-start yemesin.
+    if pi_backend:
+        tasks.append(asyncio.create_task(pi_backend.warmup()))
     # Olayları DB'ye kalıcılaştır (dashboard geçmişi / restart sonrası geriye gitme).
     tasks.append(asyncio.create_task(persist_events(bus, db)))
     if intent:

@@ -15,6 +15,7 @@ ephemeral sessions. Only the OAuth in ~/.pi/agent/auth.json is shared.
 import asyncio
 import json
 import logging
+import time
 
 from brain.config import settings
 
@@ -78,6 +79,19 @@ class PiBackend:
         log.info("pi backend started (pid=%s, model=%s)", self._proc.pid, settings.pi_model)
         return self._proc
 
+    async def warmup(self) -> None:
+        """Sunucu açılışında pi subprocess'i + Codex oturumunu önceden ısıt → ilk
+        gerçek kullanıcı turu cold-start (spawn + oturum init) gecikmesi yemesin.
+        Arka planda çalışır; başarısız olursa ilk tur eskisi gibi yavaş olur (zarar yok)."""
+        try:
+            async with self._lock:
+                proc = await self._ensure_proc()
+                t0 = time.monotonic()
+                await asyncio.wait_for(self._turn(proc, "ping"), 90)
+            log.info("pi backend warmup OK (%.1fs)", time.monotonic() - t0)
+        except Exception as e:
+            log.warning("pi backend warmup failed: %s", e)
+
     async def stop(self) -> None:
         if self._proc and self._proc.returncode is None:
             self._proc.terminate()
@@ -98,7 +112,10 @@ class PiBackend:
             for attempt in (1, 2):
                 proc = await self._ensure_proc()
                 try:
-                    return await asyncio.wait_for(self._turn(proc, user_text), timeout)
+                    t0 = time.monotonic()
+                    reply = await asyncio.wait_for(self._turn(proc, user_text), timeout)
+                    log.info("pi turn done in %.1fs (pid=%s)", time.monotonic() - t0, proc.pid)
+                    return reply
                 except asyncio.CancelledError:
                     # Barge-in / superseded turn: pi is still generating — abort
                     # it (shielded; we're being cancelled) so the NEXT prompt
