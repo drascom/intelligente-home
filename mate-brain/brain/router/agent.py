@@ -105,16 +105,17 @@ class Agent:
     async def respond(
         self, history: list[dict], user_text: str,
         speaker: str | None = None, speaker_id: int | None = None,
+        conversation_id: str | None = None,
     ) -> str:
         if self.pi is not None:
             # Dev backend: pi runs the whole turn (its own context + tool loop).
             # Intent classification still runs for log/tuning purposes.
             if self.intent:
-                self.intent.classify(user_text)
+                self.intent.classify(user_text, conversation_id=conversation_id)
             return await self.pi.respond(user_text, speaker_id=speaker_id, speaker=speaker)
         # Fast path: confident chitchat skips the tool loop — one plain LLM
         # call, big latency win on the voice path.
-        pred = self.intent.classify(user_text) if self.intent else None
+        pred = self.intent.classify(user_text, conversation_id=conversation_id) if self.intent else None
         if pred and not pred.abstain and pred.label == "sohbet":
             reply = await self.llm.chat(
                 [

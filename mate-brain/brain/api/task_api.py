@@ -34,8 +34,11 @@ async def create_task(body: NewTask, request: Request, _: dict = Depends(current
     )
     bus = getattr(request.app.state, "bus", None)
     if bus:
+        # conversation_id = turun scope_key'i (user-<id>) → dashboard'da tur kartına girer
+        conv = f"user-{body.user_id}" if body.user_id is not None else None
         bus.emit("task", "task_api", text,
-                 payload={"action": "create", **task}, client_id=body.user_id)
+                 payload={"action": "create", **task},
+                 conversation_id=conv, client_id=body.user_id)
     return task
 
 

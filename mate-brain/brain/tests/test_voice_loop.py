@@ -34,7 +34,7 @@ class FakeDB:
 
 
 class FakeAgent:
-    async def respond(self, history, text, speaker=None, speaker_id=None):
+    async def respond(self, history, text, speaker=None, speaker_id=None, conversation_id=None):
         return f"You said: {text}"
 
 

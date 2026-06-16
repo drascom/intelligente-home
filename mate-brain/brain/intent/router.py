@@ -48,7 +48,7 @@ class IntentRouter:
         clf.fit(INTENTS)
         return clf
 
-    def classify(self, text: str):
+    def classify(self, text: str, conversation_id: str | None = None):
         """Prediction or None (not ready / unavailable)."""
         if self._clf is None or not text.strip():
             return None
@@ -63,5 +63,6 @@ class IntentRouter:
             self.bus.emit("intent", "intent", f"{label} ({pred.score:.2f})",
                           payload={"text": text, "label": pred.label,
                                    "score": pred.score, "margin": pred.margin,
-                                   "abstain": pred.abstain})
+                                   "abstain": pred.abstain},
+                          conversation_id=conversation_id)
         return pred

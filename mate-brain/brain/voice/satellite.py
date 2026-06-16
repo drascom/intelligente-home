@@ -187,7 +187,8 @@ class Satellite:
         session_id = await self.db.resolve_session(scope_key, user_id)
         history = await self.db.recent_messages(session_id)
         try:
-            answer = await self.agent.respond(history, text, speaker=speaker, speaker_id=speaker_id)
+            answer = await self.agent.respond(history, text, speaker=speaker, speaker_id=speaker_id,
+                                              conversation_id=scope_key)
         except Exception as e:
             log.error("satellite %s: agent failed: %s", self.name, e)
             answer = "Sorry, something went wrong."

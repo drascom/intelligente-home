@@ -57,7 +57,7 @@ def main():
     from brain.main import app
 
     class FakeAgent:
-        async def respond(self, history, text, speaker=None, speaker_id=None):
+        async def respond(self, history, text, speaker=None, speaker_id=None, conversation_id=None):
             return f"echo: {text}"
 
     with TestClient(app) as client:
