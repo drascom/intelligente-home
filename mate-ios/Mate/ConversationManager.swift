@@ -118,6 +118,9 @@ final class ConversationManager: ObservableObject {
     // 15 → 6: cevaptan sonra sessizlik varsa hızla wake moduna dön (açık
     // mikrofonun gürültü yakalama penceresi daralır).
     private let followUpInactivity: TimeInterval = 6.0
+    // Proaktif hatırlatma chime'ı sonrası yanıt penceresi: kullanıcı uzakta olabilir,
+    // bu süre içinde konuşmazsa bekleme moduna dön (hatırlatma pending kalır).
+    private let reminderResponseTimeout: TimeInterval = 30.0
     private var turnStartedAt: Date?
 
     // Adaptive noise filter
@@ -234,11 +237,23 @@ final class ConversationManager: ObservableObject {
         bridge.onReachable = { [weak self] reachable in
             self?.serverConnected = reachable
         }
-        // Proaktif hatırlatma chime'ı: bekleyen hatırlatma var → belirgin ton çal.
-        // İçerik teslimi "candan" dedikten sonraki turda gelir (sunucu ekler).
-        // Bildirim olduğu için cue ayarından bağımsız her zaman çalar.
+        // Proaktif hatırlatma chime'ı: bekleyen hatırlatma var → belirgin ton çal,
+        // SONRA otomatik dinlemeye geç (kullanıcı "candan" demeden yanıt versin).
+        // Kullanıcı "dinliyorum / ne vardı" derse sunucu mesajı söyler; "meşgulüm /
+        // sonra" derse erteler. Cue ayarından bağımsız çalar.
         bridge.onChime = { [weak self] in
-            self?.cues.playReminderChime()
+            guard let self else { return }
+            self.cues.playReminderChime()
+            guard self.isRunning, !self.muted else { return }  // duraklıysa yalnız ton
+            switch self.state {
+            case .waitingForWake:
+                self.wake.stop()                 // wake motorunu bırak, dinlemeye geç
+                self.handleChimeListen()
+            case .idle:
+                self.handleChimeListen()         // çalışıyor ama wake kapalı → doğrudan dinle
+            default:
+                break                            // tur/konuşma ortasında dokunma
+            }
         }
         bridge.onClose = { [weak self] reason in
             guard let self else { return }
@@ -517,11 +532,24 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    /// Proaktif hatırlatma chime'ı sonrası: "konuş" bip'i + dinle. Kullanıcı uzakta
+    /// olup hemen yanıt vermeyebilir → reminderResponseTimeout (30s) sessizlikte
+    /// bekleme moduna döner (hatırlatma pending kalır, sonra teslim edilir).
+    private func handleChimeListen() {
+        guard isRunning, !muted else { return }
+        print("[Chime] → otomatik dinleme (30s yanıt penceresi)")
+        Task {
+            await beginListening(withInactivityTimeout: true, playReadyCueAfterCalibration: true,
+                                 inactivityTimeout: reminderResponseTimeout)
+        }
+    }
+
     private func beginListening(
         withInactivityTimeout: Bool = false,
         preserveVAD: Bool = false,
         playReadyCueAfterCalibration: Bool = false,
-        echoSettle: Double = 0
+        echoSettle: Double = 0,
+        inactivityTimeout: TimeInterval? = nil
     ) async {
         guard isRunning, !muted else { return }
         if !preserveVAD {
@@ -561,7 +589,8 @@ final class ConversationManager: ObservableObject {
             guard !listeningLoopActive else { return }
             listeningLoopActive = true
             let startTime = Date()
-            let noSpeechLimit: TimeInterval = withInactivityTimeout ? followUpInactivity : .infinity
+            let noSpeechLimit: TimeInterval = inactivityTimeout
+                ?? (withInactivityTimeout ? followUpInactivity : .infinity)
             Task { @MainActor [weak self] in
                 while let self, self.recorder.isRecording, self.state == .listening {
                     let elapsed = Date().timeIntervalSince(startTime)

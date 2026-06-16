@@ -17,7 +17,13 @@ from array import array
 from wyoming.event import Event, async_read_event, async_write_event
 
 from brain.monitor.bus import emit_turn
-from brain.notify.reminders import delivery_text, take_due_deliveries
+from brain.notify.reminders import (
+    DEFER_ACK,
+    consume_deliveries,
+    delivery_text,
+    is_defer,
+    peek_deliveries,
+)
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_s16le
 
@@ -189,11 +195,14 @@ class Satellite:
         if user_id is not None:
             # presence: bu kişi en son bu satellite'tan konuştu → chime buraya gider.
             await self.db.set_presence(user_id, f"satellite:{self.name}")
-        # Bekleyen hatırlatma varsa: TEMİZ, tek başına teslim — LLM turunu atla.
-        reminders = await take_due_deliveries(
-            self.db, user_id, device_id=f"satellite:{self.name}")
-        if reminders:
-            answer = delivery_text(reminders)
+        # Bekleyen hatırlatma varsa: yanıta göre teslim/ertele (olumlu→söyle,
+        # meşgul/sonra→ertele). Yoksa normal LLM turu.
+        pending = await peek_deliveries(self.db, user_id, device_id=f"satellite:{self.name}")
+        if pending and is_defer(text):
+            answer = DEFER_ACK
+        elif pending:
+            await consume_deliveries(self.db, pending)
+            answer = delivery_text(pending)
         else:
             history = await self.db.recent_messages(session_id)
             try:

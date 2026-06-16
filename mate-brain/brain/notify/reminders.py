@@ -54,24 +54,53 @@ def delivery_text(tasks: list[dict]) -> str:
     return f"{len(tasks)} hatırlatman var: {items}."
 
 
+# Kullanıcı bildirim sonrası "şu an meşgulüm / sonra" derse teslimi ERTELE
+# (hatırlatma pending kalır → bir sonraki olumlu turda teslim edilir).
+_DEFER_PATTERNS = (
+    "meşgul", "müsait değil", "müsait degil", "sonra konuş", "sonra bak",
+    "şimdi olmaz", "simdi olmaz", "şimdi değil", "simdi degil", "uğraşamam",
+    "vaktim yok", "müsait olunca", "daha sonra", "sonra söyle", "sonra soyle",
+    "boş değil", "bos degil", "sonra anlat",
+)
+
+DEFER_ACK = "Tamam, müsait olduğunda hatırlatırım."
+
+
+def is_defer(text: str) -> bool:
+    """Kullanıcı 'şu an meşgulüm / sonra konuşalım' gibi bir şey dediyse True →
+    teslim ertelenir, hatırlatma pending kalır."""
+    t = text.casefold()
+    return any(p in t for p in _DEFER_PATTERNS)
+
+
+async def peek_deliveries(
+    db, user_id: int | None, device_id: str | None = None
+) -> list[dict]:
+    """Bekleyen teslimleri DÖNDÜR ama done İŞARETLEME — önce kullanıcının yanıtına
+    bakılır (olumlu → teslim et; meşgul/sonra → ertele). Tanınan kullanıcıya göre;
+    kişi tanınmadıysa chime'ın gittiği cihaza (presence) göre yedekle."""
+    if user_id is not None:
+        return await db.pending_deliveries(user_id)
+    if device_id:
+        return await db.pending_deliveries_for_device(device_id)
+    return []
+
+
+async def consume_deliveries(db, tasks: list[dict]) -> None:
+    """Teslim edilen hatırlatmaları done işaretle."""
+    for t in tasks:
+        await db.complete_task(t["id"])
+    if tasks:
+        log.info("hatırlatma teslim edildi: n=%d", len(tasks))
+
+
 async def take_due_deliveries(
     db, user_id: int | None, device_id: str | None = None
 ) -> list[dict]:
-    """Chime çalınmış (teslim bekleyen) hatırlatmaları al ve done işaretle.
-    Önce tanınan kullanıcıya göre; o turda kişi tanınmadıysa (user_id None) chime'ın
-    gittiği cihaza (device_id presence) göre yedekle — kısa/zayıf turda da teslim olsun."""
-    if user_id is not None:
-        pending = await db.pending_deliveries(user_id)
-    elif device_id:
-        pending = await db.pending_deliveries_for_device(device_id)
-    else:
-        return []
-    for t in pending:
-        await db.complete_task(t["id"])
-    if pending:
-        log.info("hatırlatma teslim: user_id=%s device=%s n=%d",
-                 user_id, device_id, len(pending))
-    return pending
+    """peek + consume (geriye dönük kısayol). Erteleme mantığı çağıranda."""
+    tasks = await peek_deliveries(db, user_id, device_id)
+    await consume_deliveries(db, tasks)
+    return tasks
 
 
 class ReminderScheduler:

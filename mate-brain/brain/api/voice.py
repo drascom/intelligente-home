@@ -36,7 +36,13 @@ from wyoming.event import Event as WyomingEvent
 
 from brain.config import settings
 from brain.monitor.bus import emit_turn
-from brain.notify.reminders import delivery_text, take_due_deliveries
+from brain.notify.reminders import (
+    DEFER_ACK,
+    consume_deliveries,
+    delivery_text,
+    is_defer,
+    peek_deliveries,
+)
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_f32le
 
@@ -108,12 +114,15 @@ async def voice_bridge(websocket: WebSocket):
             if user_id is not None:
                 # presence: bu kişi en son bu cihazdan konuştu → chime buraya gider.
                 await db.set_presence(user_id, f"client:{client['id']}")
-            # Bekleyen hatırlatma varsa: TEMİZ, tek başına teslim — LLM turunu atla
-            # (yoksa "ne vardı" cevabı + hatırlatma karışıyor, gereksiz tekrar oluyor).
-            reminders = await take_due_deliveries(
-                db, user_id, device_id=f"client:{client['id']}")
-            if reminders:
-                answer = delivery_text(reminders)
+            # Bekleyen hatırlatma varsa: kullanıcının yanıtına göre teslim/ertele.
+            # Olumlu ("dinliyorum/ne vardı") → temiz teslim, LLM turu atlanır.
+            # "Meşgulüm/sonra" → ertele (pending kalır), kısa onay. Karışma olmaz.
+            pending = await peek_deliveries(db, user_id, device_id=f"client:{client['id']}")
+            if pending and is_defer(text):
+                answer = DEFER_ACK
+            elif pending:
+                await consume_deliveries(db, pending)
+                answer = delivery_text(pending)
             else:
                 history = await db.recent_messages(session_id)
                 answer = await app.state.agent.respond(

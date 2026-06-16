@@ -124,6 +124,43 @@ async def test_delivery_helpers() -> int:
     return n
 
 
+async def test_defer_vs_deliver() -> int:
+    """Bildirim sonrası yanıt: olumlu → teslim (consume); meşgul/sonra → ertele (pending kalır)."""
+    from brain.db import Database
+    from brain.notify.reminders import (
+        consume_deliveries, is_defer, peek_deliveries,
+    )
+
+    n = 0
+    # is_defer sınıflandırma
+    assert is_defer("şu an meşgulüm, sonra konuşalım"); n += 1
+    assert is_defer("Müsait değilim"); n += 1
+    assert not is_defer("dinliyorum, ne vardı"); n += 1
+    assert not is_defer("efendim, söyle"); n += 1
+
+    path = "/tmp/brain-reminders-defer.db"
+    if os.path.exists(path):
+        os.remove(path)
+    db = Database(path)
+    await db.connect()
+
+    now = time.time()
+    t = await db.create_task("ara ver", user_id=8, due_at=now - 1)
+    await db.mark_task_notified(t["id"])
+
+    # peek done İŞARETLEMEZ → ertelemede pending kalır
+    pend = await peek_deliveries(db, 8)
+    assert [x["id"] for x in pend] == [t["id"]]; n += 1
+    # ertele: consume çağrılmaz → hâlâ bekliyor
+    assert [x["id"] for x in await peek_deliveries(db, 8)] == [t["id"]]; n += 1
+    # olumlu: consume → artık bekleyen yok
+    await consume_deliveries(db, pend)
+    assert await peek_deliveries(db, 8) == []; n += 1
+
+    await db.close()
+    return n
+
+
 async def test_scheduler_tick() -> int:
     from brain.config import Settings
     from brain.db import Database
@@ -224,6 +261,7 @@ async def test_presence_routing() -> int:
 async def run() -> None:
     total = await test_db_lifecycle()
     total += await test_delivery_helpers()
+    total += await test_defer_vs_deliver()
     total += await test_scheduler_tick()
     total += await test_presence_routing()
     print(f"test_reminders: {total} assertion OK")
