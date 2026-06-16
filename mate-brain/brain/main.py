@@ -84,6 +84,9 @@ async def lifespan(app: FastAPI):
 
     app.state.fcm = FCMSender(settings.fcm_credentials_path, bus=bus)
     app.state.ws_clients = set()
+    # Canlı voice-bridge bağlantıları, client_id → {WebSocket}. Proaktif chime'ı
+    # bağlı uygulamaya (mac/iPhone) açık WS üzerinden yollamak için (FCM yerine).
+    app.state.voice_clients = {}
 
     # Zamanlı hatırlatma scheduler'ı (vakti gelen görev → chime → uyandırınca teslim).
     if settings.reminder_enabled:

@@ -33,6 +33,16 @@ class FakeFcm:
         return len(clients)
 
 
+class FakeWS:
+    """send_text'i kaydeden sahte voice-bridge WebSocket."""
+
+    def __init__(self):
+        self.frames = []
+
+    async def send_text(self, text):
+        self.frames.append(text)
+
+
 async def test_db_lifecycle() -> int:
     from brain.db import Database
 
@@ -186,6 +196,15 @@ async def test_presence_routing() -> int:
     await ReminderScheduler(app, Settings())._tick()
     assert salon.calls == [] and mutfak.calls == [], (salon.calls, mutfak.calls); n += 1
     assert len(fcm.sent) == 1 and fcm.sent[0][0] == 1, fcm.sent; n += 1
+
+    # canlı voice WS varsa → chime WS'e gider, FCM'e DÜŞMEZ
+    ws = FakeWS()
+    app.state.voice_clients = {42: {ws}}
+    fcm.sent.clear()
+    await db.create_task("toplantı 3", user_id=5, due_at=now - 1)
+    await ReminderScheduler(app, Settings())._tick()
+    assert len(ws.frames) == 1 and '"chime"' in ws.frames[0], ws.frames; n += 1
+    assert fcm.sent == [], fcm.sent; n += 1
 
     await db.close()
     return n

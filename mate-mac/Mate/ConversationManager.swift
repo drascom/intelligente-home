@@ -234,6 +234,12 @@ final class ConversationManager: ObservableObject {
         bridge.onReachable = { [weak self] reachable in
             self?.serverConnected = reachable
         }
+        // Proaktif hatırlatma chime'ı: bekleyen hatırlatma var → belirgin ton çal.
+        // İçerik teslimi "candan" dedikten sonraki turda gelir (sunucu ekler).
+        // Bildirim olduğu için cue ayarından bağımsız her zaman çalar.
+        bridge.onChime = { [weak self] in
+            self?.cues.playReminderChime()
+        }
         bridge.onClose = { [weak self] reason in
             guard let self else { return }
             print("[Bridge] closed: \(reason)")

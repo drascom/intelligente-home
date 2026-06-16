@@ -79,6 +79,9 @@ async def voice_bridge(websocket: WebSocket):
     app = websocket.app
     conversation_id = f"client-{client['id']}"  # shared with /api/ws and /api/chat
     active: dict[str, asyncio.Task] = {}
+    # Canlı bağlantıyı client_id ile kaydet → scheduler proaktif chime'ı buraya yollar.
+    voice_clients = app.state.voice_clients
+    voice_clients.setdefault(client["id"], set()).add(websocket)
     bus = getattr(app.state, "bus", None)
     if bus:
         bus.emit("client_connect", "voice", f"{client['name']} (voice) bağlandı",
@@ -308,6 +311,11 @@ async def voice_bridge(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        conns = voice_clients.get(client["id"])
+        if conns is not None:
+            conns.discard(websocket)
+            if not conns:
+                voice_clients.pop(client["id"], None)
         if stt is not None:
             await stt["session"].abort()
         for task in active.values():

@@ -51,6 +51,12 @@ final class CueSounds {
         play(notes: [(880, 0.08, 0.0), (660, 0.12, 0.005)], gain: 0.13)
     }
 
+    /// Proaktif hatırlatma → "vakti geldi, candan de" — belirgin üç-notalı yükselen
+    /// chime (wake cue'larından daha uzun/dolgun, bildirim olarak öne çıksın).
+    func playReminderChime() {
+        play(notes: [(660, 0.12, 0.04), (880, 0.12, 0.04), (1175, 0.20, 0.0)], gain: 0.22)
+    }
+
     private func play(notes: [(freq: Double, duration: Double, gap: Double)], gain: Float = 0.18) {
         prepare()
         guard prepared else { return }

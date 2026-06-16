@@ -11,6 +11,7 @@ hatırlatmaları cevaba eklenerek teslim edilir (chime → uyandır → teslim).
 """
 
 import asyncio
+import json
 import logging
 import math
 import struct
@@ -141,14 +142,36 @@ class ReminderScheduler:
                         if s.name == ref), None)
             return await sat.play_pcm(pcm) if sat is not None else False
         if kind == "client":
-            fcm = getattr(self.app.state, "fcm", None)
-            if fcm is None or not ref.isdigit():
+            if not ref.isdigit():
                 return False
-            client = await self.app.state.db.client_with_fcm(int(ref))
+            cid = int(ref)
+            # Önce canlı voice WS (bağlı uygulama lokal ton çalar); yoksa FCM push.
+            if await self._chime_voice_ws(cid):
+                return True
+            fcm = getattr(self.app.state, "fcm", None)
+            if fcm is None:
+                return False
+            client = await self.app.state.db.client_with_fcm(cid)
             if not client:
                 return False
             return await fcm.broadcast([client], "Candan", _signal_text(count)) > 0
         return False
+
+    async def _chime_voice_ws(self, client_id: int) -> bool:
+        """Bağlı voice-bridge istemcisine WS üzerinden chime yolla (lokal ton). False
+        = bağlı değil."""
+        conns = getattr(self.app.state, "voice_clients", {}).get(client_id)
+        if not conns:
+            return False
+        payload = json.dumps({"type": "chime", "reason": "reminder"})
+        sent = False
+        for ws in list(conns):
+            try:
+                await ws.send_text(payload)
+                sent = True
+            except Exception:
+                pass
+        return sent
 
     async def _broadcast(self, pcm: bytes, count: int) -> None:
         """Yedek: presence bilinmiyorsa tüm satellite'lara ton + tüm telefonlara push."""

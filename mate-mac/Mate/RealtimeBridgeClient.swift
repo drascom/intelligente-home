@@ -38,6 +38,9 @@ final class RealtimeBridgeClient: NSObject {
     var onAudioChunk: ((_ id: String, _ buffer: AVAudioPCMBuffer) -> Void)?
     var onAudioEnd: ((_ id: String) -> Void)?
     var onError: ((_ id: String?, _ message: String) -> Void)?
+    /// Proaktif hatırlatma sinyali (brain `chime` mesajı): bekleyen hatırlatma var,
+    /// kısa ton çal. İçerik teslimi bir sonraki turda ("candan" dedikten sonra) gelir.
+    var onChime: (() -> Void)?
     var onClose: ((_ reason: String) -> Void)?
     /// Sunucuya gerçekten ulaşıldı mı (pong/mesaj geldi → true; kopma/timeout → false).
     /// UI'da "Sunucu bağlantısı yok" banner'ı için.
@@ -293,6 +296,9 @@ final class RealtimeBridgeClient: NSObject {
             let msg = (obj["message"] as? String) ?? "bilinmeyen hata"
             print("[Bridge] error id=\(id ?? "?"): \(msg)")
             onError?(id, msg)
+        case "chime":
+            print("[Bridge] chime (proaktif hatırlatma sinyali)")
+            onChime?()
         case "pong":
             break
         default:
