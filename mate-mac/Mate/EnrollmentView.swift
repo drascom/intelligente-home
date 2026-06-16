@@ -15,6 +15,11 @@ struct EnrollmentView: View {
     @State private var busy = false
     @State private var permissionDenied = false
     @State private var wizardSpeaker: Speaker?
+    @State private var pendingDelete: Speaker?
+
+    private var showDeleteConfirm: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+    }
 
     #if os(iOS)
     private let source = "ios"
@@ -54,6 +59,14 @@ struct EnrollmentView: View {
                         }
                         .buttonStyle(.borderless)
                         .disabled(permissionDenied)
+
+                        Button(role: .destructive) {
+                            pendingDelete = sp
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .tint(.red)
                     }
                 }
                 .onDelete { idx in Task { await deleteSpeakers(at: idx) } }
@@ -92,6 +105,15 @@ struct EnrollmentView: View {
                 Task { await load() }
             }
         }
+        .confirmationDialog(pendingDelete.map { "\($0.name) silinsin mi?" } ?? "",
+                            isPresented: showDeleteConfirm, titleVisibility: .visible) {
+            Button("Sil", role: .destructive) {
+                if let sp = pendingDelete { Task { await deleteOne(sp) } }
+            }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text("Bu kişinin tüm ses örnekleri silinir.")
+        }
     }
 
     // ---- actions ----
@@ -120,6 +142,17 @@ struct EnrollmentView: View {
             _ = try await api.createSpeaker(baseURL: base, apiKey: settings.bridgeApiKey, name: name)
             newName = ""
             status = "\(name) eklendi"
+            await load()
+        } catch {
+            errorText = describe(error)
+        }
+    }
+
+    private func deleteOne(_ sp: Speaker) async {
+        guard let base else { return }
+        do {
+            try await api.deleteSpeaker(baseURL: base, apiKey: settings.bridgeApiKey, speakerId: sp.id)
+            status = "\(sp.name) silindi"
             await load()
         } catch {
             errorText = describe(error)

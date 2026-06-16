@@ -132,8 +132,10 @@ struct EnrollmentWizardView: View {
 /// Enrollment cümleleri: kısa, doğal, fonem açısından çeşitli (sayılar + Türkçe
 /// karakterler dahil). Far-field robustluk için normal evde okunması yeterli.
 enum EnrollmentPrompts {
+    // ÖNEMLİ: cümleler wake word ("candan") İÇERMEMELİ — yoksa okurken odadaki
+    // dinleyen cihazlar (mac/iPhone/satellite) tetiklenir.
     static let sentences: [String] = [
-        "Merhaba, ben evdeki asistanımız Candan ile konuşuyorum.",
+        "İyi günler, ben bu evde yaşayan kişilerden biriyim.",
         "Bugün hava oldukça güzel, dışarı çıkmak için ideal bir gün.",
         "Lütfen salondaki lambayı aç ve perdeleri yavaşça kapat.",
         "Bir, iki, üç, dört, beş, altı, yedi, sekiz, dokuz, on.",
