@@ -79,10 +79,22 @@ class PiBackend:
         log.info("pi backend started (pid=%s, model=%s)", self._proc.pid, settings.pi_model)
         return self._proc
 
+    async def keep_warm(self, interval: float = 30.0) -> None:
+        """En az 1 pi instance HER AN hazır beklesin. Açılışta ön-ısıt; sonra
+        periyodik kontrol — süreç ölürse (idle-exit/crash/timeout-kill) kullanıcı
+        turu beklemeden arka planda yeniden ısıt. Tek instance turları seri işler
+        (lock); eşzamanlı çok-kullanıcı için ileride havuz gerekebilir."""
+        await self.warmup()
+        while True:
+            await asyncio.sleep(interval)
+            if self._proc is None or self._proc.returncode is not None:
+                log.info("pi backend kapandı → keep-warm yeniden ısıtıyor")
+                await self.warmup()
+
     async def warmup(self) -> None:
-        """Sunucu açılışında pi subprocess'i + Codex oturumunu önceden ısıt → ilk
-        gerçek kullanıcı turu cold-start (spawn + oturum init) gecikmesi yemesin.
-        Arka planda çalışır; başarısız olursa ilk tur eskisi gibi yavaş olur (zarar yok)."""
+        """pi subprocess'i + Codex oturumunu önceden ısıt → ilk gerçek kullanıcı turu
+        cold-start (node boot + oturum init) gecikmesi yemesin. Süreç zaten sıcaksa
+        _ensure_proc onu yeniden kullanır. Başarısızsa zarar yok (sonraki tur ısıtır)."""
         try:
             async with self._lock:
                 t0 = time.monotonic()
