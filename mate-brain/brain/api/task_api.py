@@ -52,6 +52,20 @@ async def list_tasks(
     return await request.app.state.db.list_tasks(user_id=user_id, status=status)
 
 
+@router.post("/clear")
+async def clear_tasks(
+    request: Request, user_id: int | None = None, _: dict = Depends(current_client)
+):
+    """Tüm görevleri (ya da bir kullanıcınınkileri) sil — test kolaylığı (dashboard
+    butonu). DELETE yerine POST: CORS yalnız GET/POST'a açık."""
+    n = await request.app.state.db.clear_tasks(user_id=user_id)
+    bus = getattr(request.app.state, "bus", None)
+    if bus:
+        bus.emit("task", "task_api", f"{n} görev temizlendi",
+                 payload={"action": "clear", "count": n})
+    return {"cleared": n}
+
+
 @router.post("/{task_id}/complete")
 async def complete_task(task_id: int, request: Request, _: dict = Depends(current_client)):
     if await request.app.state.db.get_task(task_id) is None:

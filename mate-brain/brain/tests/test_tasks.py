@@ -39,6 +39,11 @@ async def test_db() -> int:
     await db.delete_task(t1["id"])
     assert len(await db.list_tasks(user_id=1)) == 1; n += 1
 
+    # clear_tasks: hepsini temizle (dashboard test butonu)
+    assert len(await db.list_tasks()) >= 2  # en az "çöpü çıkar" + "toplantı notu"
+    cleared = await db.clear_tasks()
+    assert cleared >= 2 and await db.list_tasks() == [], cleared; n += 1
+
     # --- events persistence (dashboard geçmişi) ---
     for i in range(1, 6):
         await db.save_event({"id": 1000 + i, "ts": float(i), "type": "utterance",

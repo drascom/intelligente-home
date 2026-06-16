@@ -51,6 +51,26 @@ export default function App() {
     setEnabled(true);
   };
 
+  // Test kolaylığı: tüm görevleri sil (brain POST /api/tasks/clear).
+  const clearTasks = async () => {
+    if (!brainUrl || !token) {
+      alert("Önce brain URL + token gir, Bağlan.");
+      return;
+    }
+    if (!confirm("Tüm görevler silinsin mi? (geri alınamaz)")) return;
+    try {
+      const resp = await fetch(`${brainUrl.replace(/\/$/, "")}/api/tasks/clear`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const j = await resp.json();
+      alert(`${j.cleared ?? 0} görev silindi.`);
+    } catch (e) {
+      alert("Görev silme başarısız: " + e);
+    }
+  };
+
   const toggleFilter = (type: string) =>
     setFilter((prev) => {
       const next = new Set(prev);
@@ -112,6 +132,9 @@ export default function App() {
           </button>
           <button className="btn" onClick={clear}>
             Temizle
+          </button>
+          <button className="btn warn" onClick={clearTasks} title="Tüm görevleri sil">
+            Görevleri sil
           </button>
         </div>
       </header>

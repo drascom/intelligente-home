@@ -456,6 +456,16 @@ class Database:
         await self._db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await self._db.commit()
 
+    async def clear_tasks(self, user_id: int | None = None) -> int:
+        """Tüm görevleri (ya da bir kullanıcınınkileri) sil. Test kolaylığı için.
+        Silinen satır sayısını döner."""
+        if user_id is None:
+            cur = await self._db.execute("DELETE FROM tasks")
+        else:
+            cur = await self._db.execute("DELETE FROM tasks WHERE user_id = ?", (user_id,))
+        await self._db.commit()
+        return cur.rowcount
+
     # ---- zamanlı hatırlatmalar (scheduler + proaktif bildirim) ----
 
     async def due_tasks(self, now: float) -> list[dict]:
