@@ -91,13 +91,14 @@ async def voice_bridge(websocket: WebSocket):
         turn_id = msg.get("id") or ""
         text = msg["text"]
         want_audio = msg.get("want_audio", True)
+        speaker = msg.get("speaker")  # voice-ID sonucu (varsa)
         db = app.state.db
         try:
             history = await db.recent_messages(conversation_id)
             answer = await app.state.agent.respond(history, text)
-            await db.add_message(conversation_id, "user", text)
+            await db.add_message(conversation_id, "user", text, speaker=speaker)
             await db.add_message(conversation_id, "assistant", answer)
-            emit_turn(bus, conversation_id, client["id"], text, answer)
+            emit_turn(bus, conversation_id, client["id"], text, answer, speaker=speaker)
             await send_json({"type": "reply", "id": turn_id, "text": answer})
             if want_audio and answer:
                 await stream_tts(turn_id, answer, msg.get("voice"))
@@ -155,6 +156,29 @@ async def voice_bridge(websocket: WebSocket):
             await stt["session"].abort()
             stt = None
 
+    async def identify_speaker(current: dict) -> str | None:
+        """Biriken utterance PCM'inden kişiyi tanı (voice-ID). Kapalıysa / çok
+        kısaysa / hata olursa None. CPU-bound embed thread'e atılır."""
+        sp = getattr(app.state, "speaker", None)
+        if sp is None:
+            return None
+        fmt = current["fmt"]
+        buf = bytes(current["buf"])
+        frame = fmt["width"] * fmt["channels"]
+        n_samples = len(buf) // frame if frame else 0
+        if n_samples < int(settings.speaker_min_seconds * fmt["rate"]):
+            return None
+        try:
+            emb = await asyncio.to_thread(
+                sp.embed_pcm, buf, fmt["rate"], fmt["width"], fmt["channels"]
+            )
+            name, score = sp.identify(emb)
+            log.info("speaker-ID: %s (%.3f)", name or "unknown", score)
+            return name
+        except Exception as e:
+            log.warning("speaker-ID failed: %s", e)
+            return None
+
     async def finish_stt() -> None:
         """audio_stop: transcript → client, then a normal turn with that text."""
         nonlocal stt
@@ -172,14 +196,18 @@ async def voice_bridge(websocket: WebSocket):
         if text and looks_hallucinated(text):
             log.info("transcript looks hallucinated, dropping: %r", text[:80])
             text = ""
-        await send_json({"type": "transcript", "id": turn_id, "text": text})
+        speaker = await identify_speaker(current) if text else None
+        transcript_msg = {"type": "transcript", "id": turn_id, "text": text}
+        if speaker:
+            transcript_msg["speaker"] = speaker
+        await send_json(transcript_msg)
         if not text:
             return
         for task in active.values():
             task.cancel()
         active.clear()
         active[turn_id] = asyncio.create_task(
-            handle_turn({**current["msg"], "id": turn_id, "text": text})
+            handle_turn({**current["msg"], "id": turn_id, "text": text, "speaker": speaker})
         )
 
     try:
@@ -192,6 +220,7 @@ async def voice_bridge(websocket: WebSocket):
             if message.get("bytes") is not None:
                 if stt is not None:
                     fmt = stt["fmt"]
+                    stt["buf"].extend(message["bytes"])  # voice-ID için ham PCM biriktir
                     await stt["session"].feed(
                         WyomingEvent(type="audio-chunk", data=fmt, payload=message["bytes"])
                     )
@@ -237,7 +266,8 @@ async def voice_bridge(websocket: WebSocket):
                          "message": f"STT hizmeti kapalı ({e})"}
                     )
                     continue
-                stt = {"id": msg.get("id") or "", "session": session, "fmt": fmt, "msg": msg}
+                stt = {"id": msg.get("id") or "", "session": session, "fmt": fmt,
+                       "msg": msg, "buf": bytearray()}
 
             elif mtype == "audio_stop":
                 if stt is not None:

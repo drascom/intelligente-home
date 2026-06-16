@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from brain.api import client_api, monitor, openai_compat, voice
+from brain.api import client_api, monitor, openai_compat, speaker_api, voice
 from brain.config import settings
 from brain.db import Database
 from brain.ha.mirror import HAMirror
@@ -20,6 +20,7 @@ from brain.monitor.bus import EventBus
 from brain.router.agent import Agent
 from brain.router.llm import LLMClient
 from brain.voice.satellite import Satellite, parse_satellites
+from brain.voice.speaker import build_speaker_id
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("brain")
@@ -47,12 +48,18 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.mirror = mirror
     app.state.agent = Agent(llm, mirror, intent, pi_backend, bus=bus)
+
+    # Speaker-ID (voice-ID): kapalı/eksikse None → tanıma atlanır.
+    app.state.speaker = build_speaker_id(settings)
+    if app.state.speaker is not None:
+        app.state.speaker.reload(await db.all_speaker_embeddings())
+
     tasks = [asyncio.create_task(mirror.run())]
     if intent:
         tasks.append(asyncio.create_task(intent.start()))
 
     app.state.satellites = [
-        Satellite(name, host, port, app.state.agent, db, settings)
+        Satellite(name, host, port, app.state.agent, db, settings, speaker=app.state.speaker)
         for name, host, port in parse_satellites(settings.satellites)
     ]
     for sat in app.state.satellites:
@@ -99,6 +106,7 @@ app.add_middleware(
 )
 app.include_router(openai_compat.router)
 app.include_router(client_api.router)
+app.include_router(speaker_api.router)
 app.include_router(voice.router)
 app.include_router(monitor.router)
 

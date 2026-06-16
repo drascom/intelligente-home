@@ -30,13 +30,14 @@ PING_INTERVAL_S = 30
 
 
 class Satellite:
-    def __init__(self, name: str, host: str, port: int, agent, db, settings):
+    def __init__(self, name: str, host: str, port: int, agent, db, settings, speaker=None):
         self.name = name
         self.host = host
         self.port = port
         self.agent = agent
         self.db = db
         self.settings = settings
+        self.speaker = speaker  # SpeakerID | None (voice-ID)
         self.connected = False
         # Aktif oturumun writer'ı (announce için) + speak serileştirme kilidi:
         # anons ile turn cevabı aynı anda yazarsa Wyoming event akışı bozulur.
@@ -70,6 +71,7 @@ class Satellite:
 
         pinger = asyncio.create_task(self._ping_loop(writer))
         stt: WhisperSession | None = None
+        buf = bytearray()  # voice-ID için ham utterance PCM (s16le 16k mono)
         speech_seen = False
         silence_s = 0.0
         utterance_s = 0.0
@@ -91,12 +93,15 @@ class Satellite:
                         )
                         # wyoming-satellite default mic format
                         await stt.start(rate=16000, width=2, channels=1)
+                        buf = bytearray()
                         speech_seen = False
                         silence_s = 0.0
                         utterance_s = 0.0
 
                 elif event.type == "audio-chunk" and stt is not None:
                     await stt.feed(event)
+                    if event.payload:
+                        buf.extend(event.payload)
                     data = event.data or {}
                     rate = data.get("rate", 16000)
                     width = data.get("width", 2)
@@ -116,11 +121,11 @@ class Satellite:
                     )
                     if ended:
                         session, stt = stt, None
-                        await self._handle_utterance(session, writer)
+                        await self._handle_utterance(session, writer, bytes(buf))
 
                 elif event.type in ("voice-stopped", "audio-stop") and stt is not None:
                     session, stt = stt, None
-                    await self._handle_utterance(session, writer)
+                    await self._handle_utterance(session, writer, bytes(buf))
 
                 elif event.type == "error":
                     log.warning("satellite %s error event: %s", self.name, event.data)
@@ -146,12 +151,33 @@ class Satellite:
         mean_abs = sum(abs(s) for s in samples) / len(samples)
         return mean_abs < SILENCE_RMS
 
-    async def _handle_utterance(self, stt: WhisperSession, writer) -> None:
+    async def _identify(self, pcm: bytes) -> str | None:
+        """Biriken utterance PCM'inden kişiyi tanı (voice-ID). s16le 16k mono."""
+        sp = self.speaker
+        if sp is None or not pcm:
+            return None
+        n_samples = len(pcm) // 2
+        if n_samples < int(self.settings.speaker_min_seconds * 16000):
+            return None
+        try:
+            emb = await asyncio.to_thread(sp.embed_pcm, pcm, 16000, 2, 1)
+            name, score = sp.identify(emb)
+            log.info("satellite %s: speaker-ID %s (%.3f)", self.name, name or "unknown", score)
+            return name
+        except Exception as e:
+            log.warning("satellite %s: speaker-ID failed: %s", self.name, e)
+            return None
+
+    async def _handle_utterance(self, stt: WhisperSession, writer, pcm: bytes = b"") -> None:
         text = (await stt.finish()).strip()
         log.info("satellite %s: heard %r", self.name, text)
         if not text:
             return
-        await async_write_event(Event(type="transcript", data={"text": text}), writer)
+        speaker = await self._identify(pcm)
+        data = {"text": text}
+        if speaker:
+            data["speaker"] = speaker
+        await async_write_event(Event(type="transcript", data=data), writer)
 
         history = await self.db.recent_messages(self.conversation_id)
         try:
@@ -159,9 +185,10 @@ class Satellite:
         except Exception as e:
             log.error("satellite %s: agent failed: %s", self.name, e)
             answer = "Sorry, something went wrong."
-        await self.db.add_message(self.conversation_id, "user", text)
+        await self.db.add_message(self.conversation_id, "user", text, speaker=speaker)
         await self.db.add_message(self.conversation_id, "assistant", answer)
-        emit_turn(getattr(self.agent, "bus", None), self.conversation_id, None, text, answer)
+        emit_turn(getattr(self.agent, "bus", None), self.conversation_id, None, text, answer,
+                  speaker=speaker)
 
         await self.speak(answer, writer)
 

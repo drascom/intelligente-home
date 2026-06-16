@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id TEXT NOT NULL,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
+    speaker TEXT,
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
@@ -31,7 +32,33 @@ CREATE TABLE IF NOT EXISTS nodes (
     first_seen REAL NOT NULL,
     last_seen REAL NOT NULL
 );
+-- Speaker-ID (voice-ID): kayıtlı kişiler + ses örneği embedding'leri.
+-- embedding'ler ham float32 little-endian baytlar olarak (BLOB) saklanır;
+-- centroid/eşleştirme bellekte SpeakerID modülünde yapılır (bkz. voice/speaker.py).
+CREATE TABLE IF NOT EXISTS speakers (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    user_id INTEGER,             -- ileride users tablosuna bağlanır (çok-kullanıcı)
+    dim INTEGER,                 -- embedding boyutu (sanity)
+    model_id TEXT,               -- embedding modeli kimliği (tutarlılık kilidi)
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    enrolled_at REAL NOT NULL,
+    updated_at REAL
+);
+CREATE TABLE IF NOT EXISTS speaker_samples (
+    id INTEGER PRIMARY KEY,
+    speaker_id INTEGER NOT NULL,
+    embedding BLOB NOT NULL,     -- float32 vektör baytları
+    source TEXT,                 -- 'mac' | 'ios' | 'satellite:salon' ...
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_samples_speaker ON speaker_samples(speaker_id);
 """
+
+# Eski DB'ler için additive migration'lar (CREATE TABLE IF NOT EXISTS sütun eklemez).
+MIGRATIONS = [
+    "ALTER TABLE messages ADD COLUMN speaker TEXT",
+]
 
 
 class Database:
@@ -43,6 +70,11 @@ class Database:
         self._db = await aiosqlite.connect(self.path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(SCHEMA)
+        for stmt in MIGRATIONS:
+            try:
+                await self._db.execute(stmt)
+            except Exception:
+                pass  # sütun zaten var (yeni DB'lerde SCHEMA hallediyor)
         await self._db.commit()
 
     async def close(self) -> None:
@@ -119,10 +151,13 @@ class Database:
 
     # ---- conversation memory ----
 
-    async def add_message(self, conversation_id: str, role: str, content: str) -> None:
+    async def add_message(
+        self, conversation_id: str, role: str, content: str, speaker: str | None = None
+    ) -> None:
         await self._db.execute(
-            "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (conversation_id, role, content, time.time()),
+            "INSERT INTO messages (conversation_id, role, content, speaker, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (conversation_id, role, content, speaker, time.time()),
         )
         await self._db.commit()
 
@@ -134,3 +169,90 @@ class Database:
         )
         rows = await cur.fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+    # ---- speakers (voice-ID) ----
+
+    async def create_speaker(self, name: str, user_id: int | None = None) -> dict:
+        cur = await self._db.execute(
+            "INSERT INTO speakers (name, user_id, sample_count, enrolled_at)"
+            " VALUES (?, ?, 0, ?)",
+            (name, user_id, time.time()),
+        )
+        await self._db.commit()
+        return {"id": cur.lastrowid, "name": name, "user_id": user_id}
+
+    async def add_speaker_sample(
+        self, speaker_id: int, embedding: bytes, dim: int, model_id: str,
+        source: str | None = None,
+    ) -> int:
+        """Bir enrollment örneği ekle; kişinin dim/model_id (ilk örnekte) ve
+        sample_count/updated_at alanlarını güncelle. Örnek id döner."""
+        now = time.time()
+        cur = await self._db.execute(
+            "INSERT INTO speaker_samples (speaker_id, embedding, source, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (speaker_id, embedding, source, now),
+        )
+        await self._db.execute(
+            "UPDATE speakers SET"
+            "  sample_count = (SELECT COUNT(*) FROM speaker_samples WHERE speaker_id = ?),"
+            "  dim = COALESCE(dim, ?),"
+            "  model_id = COALESCE(model_id, ?),"
+            "  updated_at = ?"
+            " WHERE id = ?",
+            (speaker_id, dim, model_id, now, speaker_id),
+        )
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def get_speaker(self, speaker_id: int) -> dict | None:
+        cur = await self._db.execute(
+            "SELECT id, name, user_id, dim, model_id, sample_count, enrolled_at, updated_at"
+            " FROM speakers WHERE id = ?",
+            (speaker_id,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def list_speakers(self) -> list[dict]:
+        cur = await self._db.execute(
+            "SELECT id, name, user_id, dim, model_id, sample_count, enrolled_at, updated_at"
+            " FROM speakers ORDER BY id"
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def speaker_embeddings(self, speaker_id: int) -> list[bytes]:
+        cur = await self._db.execute(
+            "SELECT embedding FROM speaker_samples WHERE speaker_id = ? ORDER BY id",
+            (speaker_id,),
+        )
+        return [r["embedding"] for r in await cur.fetchall()]
+
+    async def all_speaker_embeddings(self) -> list[dict]:
+        """SpeakerID.reload için: her kişi + tüm örnek embedding'leri (bytes)."""
+        speakers = await self.list_speakers()
+        out = []
+        for sp in speakers:
+            sp = dict(sp)
+            sp["embeddings"] = await self.speaker_embeddings(sp["id"])
+            out.append(sp)
+        return out
+
+    async def delete_speaker(self, speaker_id: int) -> None:
+        await self._db.execute("DELETE FROM speaker_samples WHERE speaker_id = ?", (speaker_id,))
+        await self._db.execute("DELETE FROM speakers WHERE id = ?", (speaker_id,))
+        await self._db.commit()
+
+    async def delete_speaker_sample(self, speaker_id: int, sample_id: int) -> None:
+        await self._db.execute(
+            "DELETE FROM speaker_samples WHERE id = ? AND speaker_id = ?",
+            (sample_id, speaker_id),
+        )
+        await self._db.execute(
+            "UPDATE speakers SET"
+            "  sample_count = (SELECT COUNT(*) FROM speaker_samples WHERE speaker_id = ?),"
+            "  updated_at = ?"
+            " WHERE id = ?",
+            (speaker_id, time.time(), speaker_id),
+        )
+        await self._db.commit()

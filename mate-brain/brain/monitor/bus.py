@@ -83,15 +83,20 @@ def emit_turn(
     client_id: int | None,
     user_text: str,
     answer: str,
+    speaker: str | None = None,
 ) -> None:
     """Bir sohbet turn'ünün iki ucunu (utterance + reply) tek çağrıda yayınla.
+    `speaker` verilirse (voice-ID) utterance payload'una eklenir.
     `bus` None ise no-op (çıplak-app testleri ve MQTT/HA gibi düzlemsiz yollar)."""
     if bus is None:
         return
     if user_text:
+        payload = {"text": user_text}
+        if speaker is not None:
+            payload["speaker"] = speaker
         bus.emit(
             "utterance", "agent", _clip(user_text),
-            payload={"text": user_text},
+            payload=payload,
             conversation_id=conversation_id, client_id=client_id,
         )
     if answer:

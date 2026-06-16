@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     # e.g. "kitchen@192.168.1.50:10700,hall@192.168.1.51"
     satellites: str = ""
 
+    # Speaker-ID (voice-ID): sherpa-onnx CAM++ embedding. Kapalı = kişi tanıma yok.
+    # Model: models/campplus.onnx (mate-brain/models/README.md'den indir).
+    speaker_id_enabled: bool = False
+    speaker_model_path: str = "models/campplus.onnx"
+    speaker_model_id: str = "campplus_zh_en_advanced_v1"  # tutarlılık kilidi etiketi
+    speaker_threshold: float = 0.6   # kosinüs eşiği (ayar 0.5–0.65)
+    speaker_margin: float = 0.05     # en iyi eşleşme 2.'yi bu kadar geçmezse unknown
+    # En az bu kadar saniyelik konuşma yoksa speaker-ID denenmez (kısa/gürültü).
+    speaker_min_seconds: float = 1.0
+
     # Intent fast-path (vendored intent-lab classifier); needs
     # sentence-transformers installed, otherwise degrades to full agent path.
     intent_fastpath: bool = True

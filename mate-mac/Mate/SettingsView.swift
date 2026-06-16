@@ -97,6 +97,17 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Kişi Tanıma (Voice-ID)") {
+                    NavigationLink {
+                        EnrollmentView()
+                    } label: {
+                        Label("Konuşmacılar", systemImage: "person.wave.2.fill")
+                    }
+                    Text("Ev halkını sesinden tanır; her kişiyi bir kez kaydedin.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Wake Word") {
                     Toggle("Wake word kullan", isOn: $draftWakeEnabled)
                     TextField("Tetikleyici kelime (örn: candan)", text: $draftWakeWord)

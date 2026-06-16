@@ -26,7 +26,7 @@ class FakeDB:
     async def recent_messages(self, conv):
         return []
 
-    async def add_message(self, conv, role, content):
+    async def add_message(self, conv, role, content, speaker=None):
         pass
 
 

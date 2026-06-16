@@ -18,3 +18,5 @@ mate-mac/dist/
 .build/
 .logs/
 .gradio/
+# büyük ONNX model dosyaları (sherpa-onnx speaker-ID vb.) — release'ten indirilir
+mate-brain/models/*.onnx

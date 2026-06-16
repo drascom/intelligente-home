@@ -10,3 +10,9 @@ aiomqtt>=2.0
 # intent fast-path (optional on dev machines - brain degrades gracefully without it)
 sentence-transformers>=3.0
 numpy>=1.26
+# speaker-ID / voice-ID (optional - brain degrades gracefully if absent/disabled).
+# Model: mate-brain/models/campplus.onnx (release'ten indirilir, README'ye bak).
+sherpa-onnx>=1.12
+soundfile>=0.12
+# multipart upload for enrollment (FastAPI UploadFile)
+python-multipart>=0.0.9

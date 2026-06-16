@@ -33,6 +33,21 @@ struct Voice: Identifiable, Decodable, Hashable {
     }
 }
 
+/// Speaker-ID (voice-ID) kayıtlı kişi. `sample_count` create yanıtında yok →
+/// opsiyonel.
+struct Speaker: Identifiable, Decodable, Hashable {
+    let id: Int
+    let name: String
+    let sampleCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case sampleCount = "sample_count"
+    }
+
+    var samples: Int { sampleCount ?? 0 }
+}
+
 final class APIClient {
     private let session: URLSession
 
@@ -57,6 +72,89 @@ final class APIClient {
         let (data, response) = try await session.data(for: req)
         try validate(response, data: data)
         return try JSONDecoder().decode([Voice].self, from: data)
+    }
+
+    // ---- speaker-ID (voice-ID) enrollment ----
+
+    func listSpeakers(baseURL: String, apiKey: String) async throws -> [Speaker] {
+        let (data, resp) = try await send(baseURL: baseURL, path: "/api/speakers",
+                                          method: "GET", apiKey: apiKey)
+        try validate(resp, data: data)
+        return try JSONDecoder().decode([Speaker].self, from: data)
+    }
+
+    func createSpeaker(baseURL: String, apiKey: String, name: String) async throws -> Speaker {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (data, resp) = try await send(baseURL: baseURL, path: "/api/speakers",
+                                          method: "POST", apiKey: apiKey,
+                                          json: body)
+        try validate(resp, data: data)
+        return try JSONDecoder().decode(Speaker.self, from: data)
+    }
+
+    @discardableResult
+    func uploadSample(baseURL: String, apiKey: String, speakerId: Int,
+                      wavData: Data, source: String) async throws -> Int {
+        guard let url = URL(string: baseURL + "/api/speakers/\(speakerId)/samples?source=\(source)")
+        else { throw APIError.badURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        if !apiKey.isEmpty {
+            req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"sample.wav\"\r\n"
+            .data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append(wavData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        let (data, resp) = try await session.upload(for: req, from: body)
+        try validate(resp, data: data)
+        struct R: Decodable { let sample_id: Int }
+        return try JSONDecoder().decode(R.self, from: data).sample_id
+    }
+
+    func deleteSpeaker(baseURL: String, apiKey: String, speakerId: Int) async throws {
+        let (data, resp) = try await send(baseURL: baseURL,
+                                          path: "/api/speakers/\(speakerId)",
+                                          method: "DELETE", apiKey: apiKey)
+        try validate(resp, data: data)
+    }
+
+    /// JSON/boş gövdeli basit istek yardımcı.
+    private func send(baseURL: String, path: String, method: String,
+                      apiKey: String, json: Data? = nil) async throws -> (Data, URLResponse) {
+        guard let url = URL(string: baseURL + path) else { throw APIError.badURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        if !apiKey.isEmpty {
+            req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        if let json {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = json
+        }
+        return try await session.data(for: req)
+    }
+
+    /// `ws://host:port/path` → `http://host:port` (şema ws→http/wss→https, path/query atılır).
+    static func httpBase(fromWS wsURL: String) -> String? {
+        let trimmed = wsURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              var components = URLComponents(string: trimmed),
+              let host = components.host, !host.isEmpty
+        else { return nil }
+        switch components.scheme?.lowercased() {
+        case "wss", "https": components.scheme = "https"
+        default: components.scheme = "http"
+        }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.string
     }
 
     private func validate(_ response: URLResponse, data: Data) throws {

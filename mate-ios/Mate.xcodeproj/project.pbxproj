@@ -10,6 +10,7 @@
 		0B0EFCE540945149B19A6E62 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37F32610A73281D90095DAB /* SettingsView.swift */; };
 		0DEA3C5FD3760D030ECD54A6 /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85287D876F816977F6387E33 /* PlatformCompat.swift */; };
 		1018E27A9627C73C6B7C141A /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D301D189697E50F145EAEC58 /* OrbView.swift */; };
+		183E7DDFE04BEDAED438E00E /* EnrollmentRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC1DA038FFDDFE3DB96427AA /* EnrollmentRecorder.swift */; };
 		32F0053E5423AB29BBA130E8 /* BarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E771DFD9A1F043340B54C8C /* BarsView.swift */; };
 		3B2CC006209D0DB7C5CA2144 /* OnDeviceSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F3A65441FC0714A90347FE /* OnDeviceSpeech.swift */; };
 		59081163DDEF31084DC36D84 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA409AC5DFB59EA558EC758 /* ConversationManager.swift */; };
@@ -23,6 +24,7 @@
 		983FBC13759F9BB46B4F7E3F /* CueSounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC81EF3D2406AA3308ABF011 /* CueSounds.swift */; };
 		9FF255BE0AFE205B74E1F98F /* RoutePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A547EC3DDF9A426220D2E3 /* RoutePickerView.swift */; };
 		C7B65F2D3B93C983BE752B9F /* WakeWordDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F227391BE09FB8F71B49D30 /* WakeWordDetector.swift */; };
+		D944605387AF1B3372402FE7 /* EnrollmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98947AB0B59A740B742B5B81 /* EnrollmentView.swift */; };
 		DFA6CB588448D5037AF34D08 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95AAB7A1E7C77623ECDF79C /* APIClient.swift */; };
 		EDB030EC08BA697A6CC685C6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE5386C5399CB45FB36A782 /* ContentView.swift */; };
 /* End PBXBuildFile section */
@@ -38,11 +40,13 @@
 		843A49D4B47036A6528034FA /* MateApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MateApp.swift; sourceTree = "<group>"; };
 		85287D876F816977F6387E33 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		8CE5386C5399CB45FB36A782 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		98947AB0B59A740B742B5B81 /* EnrollmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrollmentView.swift; sourceTree = "<group>"; };
 		9F227391BE09FB8F71B49D30 /* WakeWordDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeWordDetector.swift; sourceTree = "<group>"; };
 		9F423DD1FDF87DC5122EA78E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1A547EC3DDF9A426220D2E3 /* RoutePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePickerView.swift; sourceTree = "<group>"; };
 		A37F32610A73281D90095DAB /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A7F3A65441FC0714A90347FE /* OnDeviceSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSpeech.swift; sourceTree = "<group>"; };
+		BC1DA038FFDDFE3DB96427AA /* EnrollmentRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrollmentRecorder.swift; sourceTree = "<group>"; };
 		CC81EF3D2406AA3308ABF011 /* CueSounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueSounds.swift; sourceTree = "<group>"; };
 		D301D189697E50F145EAEC58 /* OrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbView.swift; sourceTree = "<group>"; };
 		E1A3FDE30469B6A2A48CC833 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
@@ -79,6 +83,8 @@
 				8CE5386C5399CB45FB36A782 /* ContentView.swift */,
 				1DA409AC5DFB59EA558EC758 /* ConversationManager.swift */,
 				CC81EF3D2406AA3308ABF011 /* CueSounds.swift */,
+				BC1DA038FFDDFE3DB96427AA /* EnrollmentRecorder.swift */,
+				98947AB0B59A740B742B5B81 /* EnrollmentView.swift */,
 				843A49D4B47036A6528034FA /* MateApp.swift */,
 				A7F3A65441FC0714A90347FE /* OnDeviceSpeech.swift */,
 				85287D876F816977F6387E33 /* PlatformCompat.swift */,
@@ -201,6 +207,8 @@
 				EDB030EC08BA697A6CC685C6 /* ContentView.swift in Sources */,
 				59081163DDEF31084DC36D84 /* ConversationManager.swift in Sources */,
 				983FBC13759F9BB46B4F7E3F /* CueSounds.swift in Sources */,
+				183E7DDFE04BEDAED438E00E /* EnrollmentRecorder.swift in Sources */,
+				D944605387AF1B3372402FE7 /* EnrollmentView.swift in Sources */,
 				6A20475AA132641C34F218CF /* MateApp.swift in Sources */,
 				3B2CC006209D0DB7C5CA2144 /* OnDeviceSpeech.swift in Sources */,
 				1018E27A9627C73C6B7C141A /* OrbView.swift in Sources */,
