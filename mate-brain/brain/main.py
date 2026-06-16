@@ -85,6 +85,14 @@ async def lifespan(app: FastAPI):
     app.state.fcm = FCMSender(settings.fcm_credentials_path, bus=bus)
     app.state.ws_clients = set()
 
+    # Zamanlı hatırlatma scheduler'ı (vakti gelen görev → chime → uyandırınca teslim).
+    if settings.reminder_enabled:
+        from brain.notify.reminders import ReminderScheduler
+
+        app.state.reminder = ReminderScheduler(app, settings)
+        tasks.append(asyncio.create_task(app.state.reminder.run()))
+        log.info("reminder scheduler: %ss aralıkla yokluyor", settings.reminder_poll_seconds)
+
     if not settings.brain_admin_token:
         log.warning("BRAIN_ADMIN_TOKEN is not set — admin endpoints are disabled")
 

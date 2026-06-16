@@ -17,6 +17,7 @@ from array import array
 from wyoming.event import Event, async_read_event, async_write_event
 
 from brain.monitor.bus import emit_turn
+from brain.notify.reminders import delivery_prefix, take_due_deliveries
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_s16le
 
@@ -185,6 +186,9 @@ class Satellite:
             (f"user-{speaker_id}", speaker_id) if speaker_id else (self.conversation_id, None)
         )
         session_id = await self.db.resolve_session(scope_key, user_id)
+        if user_id is not None:
+            # presence: bu kişi en son bu satellite'tan konuştu → chime buraya gider.
+            await self.db.set_presence(user_id, f"satellite:{self.name}")
         history = await self.db.recent_messages(session_id)
         try:
             answer = await self.agent.respond(history, text, speaker=speaker, speaker_id=speaker_id,
@@ -192,6 +196,11 @@ class Satellite:
         except Exception as e:
             log.error("satellite %s: agent failed: %s", self.name, e)
             answer = "Sorry, something went wrong."
+        # Bekleyen hatırlatma teslimi (chime → uyandır → teslim): kullanıcı uyandırdı,
+        # vakti gelmiş hatırlatmalarını cevabın başına ekle.
+        reminders = await take_due_deliveries(self.db, user_id)
+        if reminders:
+            answer = (delivery_prefix(reminders) + " " + answer).strip()
         await self.db.add_message(session_id, "user", text, speaker=speaker)
         await self.db.add_message(session_id, "assistant", answer)
         emit_turn(getattr(self.agent, "bus", None), scope_key, None, text, answer,
@@ -206,6 +215,27 @@ class Satellite:
         if not self.connected or writer is None:
             return False
         await self.speak(text, writer)
+        return True
+
+    async def play_pcm(self, pcm: bytes, rate: int = 16000) -> bool:
+        """Ham s16le mono PCM'i (ör. chime tonu) hoparlöre akıt. TTS değil.
+        True = gönderildi, False = bağlı değil / hata."""
+        writer = self._writer
+        if not self.connected or writer is None:
+            return False
+        data = {"rate": rate, "width": 2, "channels": 1}
+        async with self._speak_lock:
+            try:
+                await async_write_event(Event(type="audio-start", data=data), writer)
+                for i in range(0, len(pcm), 3200):
+                    await async_write_event(
+                        Event(type="audio-chunk", data=data, payload=pcm[i:i + 3200]),
+                        writer,
+                    )
+                await async_write_event(Event(type="audio-stop"), writer)
+            except (ConnectionError, OSError) as e:
+                log.error("satellite %s: chime failed: %s", self.name, e)
+                return False
         return True
 
     async def speak(self, text: str, writer) -> None:

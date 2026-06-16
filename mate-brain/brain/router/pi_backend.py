@@ -32,6 +32,9 @@ SYSTEM_PROMPT = (
     "create_task ile kaydet ve tek kısa cümleyle onayla — soruya çevirme, uzatma. "
     "'Görevlerim ne', 'neler var' gibi isteklerde list_tasks; bir iş bittiyse "
     "complete_task kullan. Sorular ve sohbeti normal yanıtla, görev oluşturma. "
+    "Kullanıcı bir zaman belirtirse asistan vakti gelince kendisi hatırlatır: GÖRELİ "
+    "süre için ('10 dakika sonra') create_task'a in_seconds ver (10 dk = 600); MUTLAK "
+    "saat için ('yarın saat 10'da') önce get_time al, hesapla, due_at (yerel ISO 8601) ver. "
     "Her kullanıcı mesajı '(Konuşan: <ad>, user_id=<N>)' ile başlar; görev "
     "oluştururken/listelerken bu user_id'yi geçir (bilinmiyorsa boş bırak)."
 )

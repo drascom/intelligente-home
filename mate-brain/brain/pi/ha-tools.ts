@@ -32,11 +32,23 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "get_time",
     label: "Get time",
-    description: "Get the current local date and time.",
+    description:
+      "Get the current local date and time. Hatırlatma için due_at hesaplarken bu " +
+      "tool'u çağır: dönen 'ISO' alanından ofset al (ör. '2 dakika sonra' → ISO + 120 sn).",
     parameters: Type.Object({}),
     async execute() {
-      const now = new Date().toLocaleString("tr-TR", { dateStyle: "full", timeStyle: "short" });
-      return { content: [{ type: "text", text: now }], details: {} };
+      const d = new Date();
+      const human = d.toLocaleString("tr-TR", { dateStyle: "full", timeStyle: "medium" });
+      // Yerel ISO 8601 (offset'li) — LLM bundan güvenilir due_at türetir.
+      const off = -d.getTimezoneOffset();
+      const sign = off >= 0 ? "+" : "-";
+      const pad = (x: number) => String(Math.abs(x)).padStart(2, "0");
+      const iso =
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+        `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+        `${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
+      const text = `${human}\nISO: ${iso}`;
+      return { content: [{ type: "text", text }], details: {} };
     },
   });
 
@@ -96,15 +108,33 @@ export default function (pi: ExtensionAPI) {
     description:
       "Kullanıcı sonradan yapılacak/hatırlanacak bir şey söylediğinde görev olarak kaydet " +
       "(not, hatırlatma, yapılacak iş — ör. 'akşam Ali'yi aramayı unutma'). Soruları/sohbeti " +
-      "yanıtlamak için KULLANMA. user_id'yi mesajdaki '(Konuşan: ... user_id=N)' bağlamından al.",
+      "yanıtlamak için KULLANMA. user_id'yi mesajdaki '(Konuşan: ... user_id=N)' bağlamından al. " +
+      "Kullanıcı bir ZAMAN belirttiyse asistan vakti gelince kendisi hatırlatır. " +
+      "GÖRELİ süre için ('10 dakika sonra', 'yarım saat sonra') in_seconds ver (ör. 600). " +
+      "MUTLAK saat için ('yarın saat 10'da', 'akşam 8'de') önce get_time çağır, ISO alanından " +
+      "hesapla ve due_at'e yerel ISO 8601 yaz. Zaman yoksa ikisini de boş bırak.",
     parameters: Type.Object({
       text: Type.String({ description: "Görev metni, kısa ve net" }),
       user_id: Type.Optional(Type.Number({ description: "Konuşan kişinin user_id'si (bağlamdan)" })),
+      due_at: Type.Optional(Type.String({
+        description: "Mutlak hatırlatma zamanı, yerel ISO 8601 (ör. '2026-06-17T10:00:00').",
+      })),
+      in_seconds: Type.Optional(Type.Number({
+        description: "Göreli hatırlatma: şu andan kaç saniye sonra (ör. 10 dk = 600).",
+      })),
     }),
     async execute(_id, params) {
+      let dueEpoch: number | null = null;
+      if (params.in_seconds && params.in_seconds > 0) {
+        dueEpoch = Date.now() / 1000 + params.in_seconds;
+      } else if (params.due_at) {
+        const ms = new Date(params.due_at).getTime();
+        if (!Number.isNaN(ms)) dueEpoch = ms / 1000;
+      }
       const text = await api("POST", "/api/tasks", {
         text: params.text,
         user_id: params.user_id ?? null,
+        due_at: dueEpoch,
       });
       return { content: [{ type: "text", text }], details: {} };
     },

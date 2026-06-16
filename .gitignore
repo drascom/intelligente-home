@@ -21,3 +21,6 @@ mate-dash/dist/
 .gradio/
 # büyük ONNX model dosyaları (sherpa-onnx speaker-ID vb.) — release'ten indirilir
 mate-brain/models/*.onnx
+
+# stray test audio
+ElevenLabs_ses.mp3

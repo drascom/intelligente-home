@@ -36,6 +36,7 @@ from wyoming.event import Event as WyomingEvent
 
 from brain.config import settings
 from brain.monitor.bus import emit_turn
+from brain.notify.reminders import delivery_prefix, take_due_deliveries
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_f32le
 
@@ -101,11 +102,18 @@ async def voice_bridge(websocket: WebSocket):
                 (f"user-{speaker_id}", speaker_id) if speaker_id else (conversation_id, None)
             )
             session_id = await db.resolve_session(scope_key, user_id)
+            if user_id is not None:
+                # presence: bu kişi en son bu cihazdan konuştu → chime buraya gider.
+                await db.set_presence(user_id, f"client:{client['id']}")
             history = await db.recent_messages(session_id)
             answer = await app.state.agent.respond(
                 history, text, speaker=speaker, speaker_id=speaker_id,
                 conversation_id=scope_key,
             )
+            # Bekleyen hatırlatma teslimi (chime → uyandır → teslim).
+            reminders = await take_due_deliveries(db, user_id)
+            if reminders:
+                answer = (delivery_prefix(reminders) + " " + answer).strip()
             await db.add_message(session_id, "user", text, speaker=speaker)
             await db.add_message(session_id, "assistant", answer)
             emit_turn(bus, scope_key, client["id"], text, answer, speaker=speaker)

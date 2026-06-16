@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # En az bu kadar saniyelik konuşma yoksa speaker-ID denenmez (kısa/gürültü).
     speaker_min_seconds: float = 1.0
 
+    # Zamanlı hatırlatmalar: vakti gelen görevleri yoklayan scheduler. Vakti
+    # gelince araya girmeden chime çalar; teslim bir sonraki uyandırmada.
+    reminder_enabled: bool = True
+    reminder_poll_seconds: float = 20.0
+
     # Intent fast-path (vendored intent-lab classifier); needs
     # sentence-transformers installed, otherwise degrades to full agent path.
     intent_fastpath: bool = True

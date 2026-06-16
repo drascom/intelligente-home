@@ -41,14 +41,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope_key, status, updated_at);
 -- Görevler (task): triage'ın "hemen cevaplama, sonraya bırak" dalı. Kişiye göre.
--- Şimdilik kaydet/listele/tamamla; zamanlama/tetikleme/proaktif-bildirim sonraki katman.
+-- due_at dolu = zamanlı hatırlatma; scheduler vakti gelince chime çalar (notified_at),
+-- kullanıcı uyandırınca bir sonraki turda teslim edilir (status=done).
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY,
     user_id INTEGER,            -- speakers.id; NULL = bilinmeyen/cihaz
     session_id INTEGER,         -- görevin doğduğu oturum
     text TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',  -- pending | done
-    due_at REAL,                -- ileride zamanlı hatırlatma (şimdilik NULL)
+    due_at REAL,                -- zamanlı hatırlatma anı (epoch); NULL = zamansız not
+    notified_at REAL,           -- chime çalındığı an (vakti geldi, teslim bekliyor)
     created_at REAL NOT NULL,
     done_at REAL
 );
@@ -65,6 +67,13 @@ CREATE TABLE IF NOT EXISTS events (
     payload TEXT,
     conversation_id TEXT,
     client_id INTEGER
+);
+-- Kişi → en son konuştuğu cihaz (presence). Proaktif bildirimi (chime) doğru
+-- cihaza yönlendirmek için. device_id = 'satellite:<ad>' | 'client:<id>'.
+CREATE TABLE IF NOT EXISTS user_presence (
+    user_id INTEGER PRIMARY KEY,   -- speakers.id (tanınan kişi)
+    device_id TEXT NOT NULL,
+    updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
@@ -102,6 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_samples_speaker ON speaker_samples(speaker_id);
 MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN speaker TEXT",
     "ALTER TABLE messages ADD COLUMN session_id INTEGER",
+    "ALTER TABLE tasks ADD COLUMN notified_at REAL",
 ]
 
 # Migration'lardan SONRA kurulacak index'ler (yeni eklenen sütunlara bağlı olanlar;
@@ -201,6 +211,35 @@ class Database:
             "SELECT id, name, fcm_token FROM clients WHERE fcm_token IS NOT NULL AND fcm_token != ''"
         )
         return [dict(r) for r in await cur.fetchall()]
+
+    async def client_with_fcm(self, client_id: int) -> dict | None:
+        """Tek bir client'ın FCM token'ı (presence yönlendirmesi için). Token yoksa None."""
+        cur = await self._db.execute(
+            "SELECT id, name, fcm_token FROM clients"
+            " WHERE id = ? AND fcm_token IS NOT NULL AND fcm_token != ''",
+            (client_id,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    # ---- presence: kişi → en son konuştuğu cihaz ----
+
+    async def set_presence(self, user_id: int, device_id: str) -> None:
+        now = time.time()
+        await self._db.execute(
+            "INSERT INTO user_presence (user_id, device_id, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(user_id) DO UPDATE SET"
+            " device_id = excluded.device_id, updated_at = excluded.updated_at",
+            (user_id, device_id, now),
+        )
+        await self._db.commit()
+
+    async def get_presence(self, user_id: int) -> str | None:
+        cur = await self._db.execute(
+            "SELECT device_id FROM user_presence WHERE user_id = ?", (user_id,)
+        )
+        row = await cur.fetchone()
+        return row["device_id"] if row else None
 
     # ---- conversation memory ----
 
@@ -416,6 +455,35 @@ class Database:
     async def delete_task(self, task_id: int) -> None:
         await self._db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await self._db.commit()
+
+    # ---- zamanlı hatırlatmalar (scheduler + proaktif bildirim) ----
+
+    async def due_tasks(self, now: float) -> list[dict]:
+        """Vakti gelmiş ama henüz chime çalınmamış zamanlı görevler (scheduler için)."""
+        cur = await self._db.execute(
+            "SELECT id, user_id, session_id, text, due_at FROM tasks"
+            " WHERE status = 'pending' AND due_at IS NOT NULL"
+            " AND due_at <= ? AND notified_at IS NULL ORDER BY due_at",
+            (now,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def mark_task_notified(self, task_id: int) -> None:
+        await self._db.execute(
+            "UPDATE tasks SET notified_at = ? WHERE id = ?", (time.time(), task_id)
+        )
+        await self._db.commit()
+
+    async def pending_deliveries(self, user_id: int) -> list[dict]:
+        """Chime çalınmış ama henüz teslim edilmemiş hatırlatmalar (uyandırma sonrası
+        teslim için): pending + notified_at dolu, bu kullanıcıya ait."""
+        cur = await self._db.execute(
+            "SELECT id, user_id, session_id, text, due_at, notified_at FROM tasks"
+            " WHERE user_id = ? AND status = 'pending' AND notified_at IS NOT NULL"
+            " ORDER BY due_at",
+            (user_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
 
     async def delete_speaker_sample(self, speaker_id: int, sample_id: int) -> None:
         await self._db.execute(
