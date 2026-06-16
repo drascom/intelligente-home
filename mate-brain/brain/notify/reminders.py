@@ -53,14 +53,23 @@ def delivery_prefix(tasks: list[dict]) -> str:
     return f"{len(tasks)} hatırlatman var: {items}."
 
 
-async def take_due_deliveries(db, user_id: int | None) -> list[dict]:
-    """Bu kullanıcının chime çalınmış (teslim bekleyen) hatırlatmalarını al ve
-    done işaretle. Tanınmayan kullanıcı (None) için boş döner."""
-    if user_id is None:
+async def take_due_deliveries(
+    db, user_id: int | None, device_id: str | None = None
+) -> list[dict]:
+    """Chime çalınmış (teslim bekleyen) hatırlatmaları al ve done işaretle.
+    Önce tanınan kullanıcıya göre; o turda kişi tanınmadıysa (user_id None) chime'ın
+    gittiği cihaza (device_id presence) göre yedekle — kısa/zayıf turda da teslim olsun."""
+    if user_id is not None:
+        pending = await db.pending_deliveries(user_id)
+    elif device_id:
+        pending = await db.pending_deliveries_for_device(device_id)
+    else:
         return []
-    pending = await db.pending_deliveries(user_id)
     for t in pending:
         await db.complete_task(t["id"])
+    if pending:
+        log.info("hatırlatma teslim: user_id=%s device=%s n=%d",
+                 user_id, device_id, len(pending))
     return pending
 
 

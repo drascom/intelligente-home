@@ -485,6 +485,19 @@ class Database:
         )
         return [dict(r) for r in await cur.fetchall()]
 
+    async def pending_deliveries_for_device(self, device_id: str) -> list[dict]:
+        """Tanınmayan turda yedek: chime'ın gittiği cihaza (presence) ait kullanıcıların
+        bekleyen teslimleri. Bu cihazda konuşan, presence'ı buraya işaret eden kişidir →
+        speaker-ID o kısa turda tutmasa bile hatırlatma teslim edilsin."""
+        cur = await self._db.execute(
+            "SELECT t.id, t.user_id, t.session_id, t.text, t.due_at, t.notified_at"
+            " FROM tasks t JOIN user_presence p ON p.user_id = t.user_id"
+            " WHERE p.device_id = ? AND t.status = 'pending' AND t.notified_at IS NOT NULL"
+            " ORDER BY t.due_at",
+            (device_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
     async def delete_speaker_sample(self, speaker_id: int, sample_id: int) -> None:
         await self._db.execute(
             "DELETE FROM speaker_samples WHERE id = ? AND speaker_id = ?",

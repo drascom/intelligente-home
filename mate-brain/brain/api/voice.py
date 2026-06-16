@@ -113,8 +113,10 @@ async def voice_bridge(websocket: WebSocket):
                 history, text, speaker=speaker, speaker_id=speaker_id,
                 conversation_id=scope_key,
             )
-            # Bekleyen hatırlatma teslimi (chime → uyandır → teslim).
-            reminders = await take_due_deliveries(db, user_id)
+            # Bekleyen hatırlatma teslimi (chime → uyandır → teslim). Kişi tanınmadıysa
+            # bu cihazın presence'ına göre yedekle.
+            reminders = await take_due_deliveries(
+                db, user_id, device_id=f"client:{client['id']}")
             if reminders:
                 answer = (delivery_prefix(reminders) + " " + answer).strip()
             await db.add_message(session_id, "user", text, speaker=speaker)

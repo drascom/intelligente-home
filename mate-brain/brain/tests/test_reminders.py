@@ -96,13 +96,24 @@ async def test_delivery_helpers() -> int:
     t = await db.create_task("ekmek al", user_id=7, due_at=now - 1)
     await db.mark_task_notified(t["id"])
 
-    # tanınmayan kullanıcı → teslim yok
+    # tanınmayan kullanıcı + cihaz yok → teslim yok
     assert await take_due_deliveries(db, None) == []; n += 1
 
-    got = await take_due_deliveries(db, 7)
-    assert [x["id"] for x in got] == [t["id"]]; n += 1
-    # teslimden sonra done → ikinci çağrı boş (tekrar teslim edilmez)
+    # tanınmayan kullanıcı AMA cihaz presence biliniyor → cihaza göre teslim
+    await db.set_presence(7, "client:9")
+    dev = await take_due_deliveries(db, None, device_id="client:9")
+    assert [x["id"] for x in dev] == [t["id"]], dev; n += 1
+    # teslim edildi → tanınan kullanıcı çağrısı da artık boş
     assert await take_due_deliveries(db, 7) == []; n += 1
+
+    # yeni bekleyen + tanınan kullanıcı yolu
+    t2 = await db.create_task("süt al", user_id=7, due_at=now - 1)
+    await db.mark_task_notified(t2["id"])
+    got = await take_due_deliveries(db, 7)
+    assert [x["id"] for x in got] == [t2["id"]]; n += 1
+    assert await take_due_deliveries(db, 7) == []; n += 1
+    # yanlış cihaza teslim sızmaz
+    assert await db.pending_deliveries_for_device("client:999") == []; n += 1
 
     assert delivery_prefix([]) == ""; n += 1
     assert delivery_prefix([{"text": "ekmek al"}]) == "Hatırlatma: ekmek al."; n += 1

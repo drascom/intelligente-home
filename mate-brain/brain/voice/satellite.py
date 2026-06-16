@@ -197,8 +197,9 @@ class Satellite:
             log.error("satellite %s: agent failed: %s", self.name, e)
             answer = "Sorry, something went wrong."
         # Bekleyen hatırlatma teslimi (chime → uyandır → teslim): kullanıcı uyandırdı,
-        # vakti gelmiş hatırlatmalarını cevabın başına ekle.
-        reminders = await take_due_deliveries(self.db, user_id)
+        # vakti gelmiş hatırlatmalarını cevabın başına ekle. Tanınmadıysa cihaza göre yedekle.
+        reminders = await take_due_deliveries(
+            self.db, user_id, device_id=f"satellite:{self.name}")
         if reminders:
             answer = (delivery_prefix(reminders) + " " + answer).strip()
         await self.db.add_message(session_id, "user", text, speaker=speaker)
