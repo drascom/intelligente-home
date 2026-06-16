@@ -102,13 +102,16 @@ class Agent:
         self.pi = pi_backend  # PiBackend (dev) or None (prod: native tool loop)
         self.bus = bus  # EventBus or None (izleme düzlemi; None ise emit no-op)
 
-    async def respond(self, history: list[dict], user_text: str) -> str:
+    async def respond(
+        self, history: list[dict], user_text: str,
+        speaker: str | None = None, speaker_id: int | None = None,
+    ) -> str:
         if self.pi is not None:
             # Dev backend: pi runs the whole turn (its own context + tool loop).
             # Intent classification still runs for log/tuning purposes.
             if self.intent:
                 self.intent.classify(user_text)
-            return await self.pi.respond(user_text)
+            return await self.pi.respond(user_text, speaker_id=speaker_id, speaker=speaker)
         # Fast path: confident chitchat skips the tool loop — one plain LLM
         # call, big latency win on the voice path.
         pred = self.intent.classify(user_text) if self.intent else None

@@ -39,6 +39,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope_key, status, updated_at);
+-- Görevler (task): triage'ın "hemen cevaplama, sonraya bırak" dalı. Kişiye göre.
+-- Şimdilik kaydet/listele/tamamla; zamanlama/tetikleme/proaktif-bildirim sonraki katman.
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,            -- speakers.id; NULL = bilinmeyen/cihaz
+    session_id INTEGER,         -- görevin doğduğu oturum
+    text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending | done
+    due_at REAL,                -- ileride zamanlı hatırlatma (şimdilik NULL)
+    created_at REAL NOT NULL,
+    done_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, status, created_at);
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     kind TEXT,
@@ -303,6 +316,55 @@ class Database:
     async def delete_speaker(self, speaker_id: int) -> None:
         await self._db.execute("DELETE FROM speaker_samples WHERE speaker_id = ?", (speaker_id,))
         await self._db.execute("DELETE FROM speakers WHERE id = ?", (speaker_id,))
+        await self._db.commit()
+
+    # ---- tasks (triage'ın görev dalı) ----
+
+    async def create_task(
+        self, text: str, user_id: int | None = None, session_id: int | None = None,
+        due_at: float | None = None,
+    ) -> dict:
+        now = time.time()
+        cur = await self._db.execute(
+            "INSERT INTO tasks (user_id, session_id, text, status, due_at, created_at)"
+            " VALUES (?, ?, ?, 'pending', ?, ?)",
+            (user_id, session_id, text, due_at, now),
+        )
+        await self._db.commit()
+        return {"id": cur.lastrowid, "text": text, "status": "pending",
+                "user_id": user_id, "due_at": due_at, "created_at": now}
+
+    async def list_tasks(
+        self, user_id: int | None = None, status: str | None = None
+    ) -> list[dict]:
+        clauses, params = [], []
+        if user_id is not None:
+            clauses.append("user_id = ?"); params.append(user_id)
+        if status:
+            clauses.append("status = ?"); params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        cur = await self._db.execute(
+            f"SELECT id, user_id, session_id, text, status, due_at, created_at, done_at"
+            f" FROM tasks{where} ORDER BY created_at DESC",
+            params,
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def get_task(self, task_id: int) -> dict | None:
+        cur = await self._db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def complete_task(self, task_id: int) -> bool:
+        cur = await self._db.execute(
+            "UPDATE tasks SET status = 'done', done_at = ? WHERE id = ? AND status != 'done'",
+            (time.time(), task_id),
+        )
+        await self._db.commit()
+        return cur.rowcount > 0
+
+    async def delete_task(self, task_id: int) -> None:
+        await self._db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await self._db.commit()
 
     async def delete_speaker_sample(self, speaker_id: int, sample_id: int) -> None:

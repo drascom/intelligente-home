@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from brain.api import client_api, monitor, openai_compat, speaker_api, voice
+from brain.api import client_api, monitor, openai_compat, speaker_api, task_api, voice
 from brain.config import settings
 from brain.db import Database
 from brain.ha.mirror import HAMirror
@@ -107,6 +107,7 @@ app.add_middleware(
 app.include_router(openai_compat.router)
 app.include_router(client_api.router)
 app.include_router(speaker_api.router)
+app.include_router(task_api.router)
 app.include_router(voice.router)
 app.include_router(monitor.router)
 

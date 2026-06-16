@@ -102,7 +102,9 @@ async def voice_bridge(websocket: WebSocket):
             )
             session_id = await db.resolve_session(scope_key, user_id)
             history = await db.recent_messages(session_id)
-            answer = await app.state.agent.respond(history, text)
+            answer = await app.state.agent.respond(
+                history, text, speaker=speaker, speaker_id=speaker_id
+            )
             await db.add_message(session_id, "user", text, speaker=speaker)
             await db.add_message(session_id, "assistant", answer)
             emit_turn(bus, scope_key, client["id"], text, answer, speaker=speaker)

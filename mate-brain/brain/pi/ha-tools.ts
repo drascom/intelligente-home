@@ -87,4 +87,56 @@ export default function (pi: ExtensionAPI) {
       return { content: [{ type: "text", text }], details: {} };
     },
   });
+
+  // --- Görev (task) tool'ları: triage'ın "sonraya bırak" dalı ---
+
+  pi.registerTool({
+    name: "create_task",
+    label: "Create task",
+    description:
+      "Kullanıcı sonradan yapılacak/hatırlanacak bir şey söylediğinde görev olarak kaydet " +
+      "(not, hatırlatma, yapılacak iş — ör. 'akşam Ali'yi aramayı unutma'). Soruları/sohbeti " +
+      "yanıtlamak için KULLANMA. user_id'yi mesajdaki '(Konuşan: ... user_id=N)' bağlamından al.",
+    parameters: Type.Object({
+      text: Type.String({ description: "Görev metni, kısa ve net" }),
+      user_id: Type.Optional(Type.Number({ description: "Konuşan kişinin user_id'si (bağlamdan)" })),
+    }),
+    async execute(_id, params) {
+      const text = await api("POST", "/api/tasks", {
+        text: params.text,
+        user_id: params.user_id ?? null,
+      });
+      return { content: [{ type: "text", text }], details: {} };
+    },
+  });
+
+  pi.registerTool({
+    name: "list_tasks",
+    label: "List tasks",
+    description:
+      "Kullanıcının görevlerini listele ('görevlerim ne', 'neler var' gibi isteklerde). " +
+      "user_id (bağlamdan) ve status (pending/done) ile filtrele.",
+    parameters: Type.Object({
+      user_id: Type.Optional(Type.Number()),
+      status: Type.Optional(Type.String({ description: "pending | done" })),
+    }),
+    async execute(_id, params) {
+      const q = new URLSearchParams();
+      if (params.user_id !== undefined) q.set("user_id", String(params.user_id));
+      if (params.status) q.set("status", params.status);
+      const text = await api("GET", `/api/tasks?${q}`);
+      return { content: [{ type: "text", text }], details: {} };
+    },
+  });
+
+  pi.registerTool({
+    name: "complete_task",
+    label: "Complete task",
+    description: "Bir görevi tamamlandı olarak işaretle (id ile).",
+    parameters: Type.Object({ id: Type.Number() }),
+    async execute(_id, params) {
+      const text = await api("POST", `/api/tasks/${params.id}/complete`);
+      return { content: [{ type: "text", text }], details: {} };
+    },
+  });
 }

@@ -26,7 +26,14 @@ SYSTEM_PROMPT = (
     "call_service). Be brief and natural — your answers are often spoken "
     "aloud. Answer in the language the user used. Use list_entities to find "
     "the right entity before controlling it. After acting, confirm in one "
-    "short sentence. You are not a coding assistant."
+    "short sentence. You are not a coding assistant.\n"
+    "Görev (task) yönetimi: Kullanıcı sonradan yapılacak/hatırlanacak bir şey "
+    "söylerse (ör. 'akşam Ali'yi aramayı unutma', 'yarın çöpü çıkar') bunu "
+    "create_task ile kaydet ve tek kısa cümleyle onayla — soruya çevirme, uzatma. "
+    "'Görevlerim ne', 'neler var' gibi isteklerde list_tasks; bir iş bittiyse "
+    "complete_task kullan. Sorular ve sohbeti normal yanıtla, görev oluşturma. "
+    "Her kullanıcı mesajı '(Konuşan: <ad>, user_id=<N>)' ile başlar; görev "
+    "oluştururken/listelerken bu user_id'yi geçir (bilinmiyorsa boş bırak)."
 )
 
 
@@ -72,8 +79,18 @@ class PiBackend:
         if self._proc and self._proc.returncode is None:
             self._proc.terminate()
 
-    async def respond(self, user_text: str, timeout: float = 120.0) -> str:
-        """One conversation turn. Pi keeps context for the life of the process."""
+    async def respond(
+        self, user_text: str, speaker_id: int | None = None,
+        speaker: str | None = None, timeout: float = 120.0,
+    ) -> str:
+        """One conversation turn. Pi keeps context for the life of the process.
+        speaker/speaker_id (voice-ID) tura bağlam olarak eklenir → görevler doğru
+        kullanıcıya yazılsın."""
+        if speaker or speaker_id is not None:
+            user_text = (
+                f"(Konuşan: {speaker or 'bilinmeyen'}, "
+                f"user_id={speaker_id if speaker_id is not None else 'yok'})\n{user_text}"
+            )
         async with self._lock:
             for attempt in (1, 2):
                 proc = await self._ensure_proc()
