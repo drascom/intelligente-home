@@ -83,7 +83,7 @@ async def test_db_lifecycle() -> int:
 
 async def test_delivery_helpers() -> int:
     from brain.db import Database
-    from brain.notify.reminders import delivery_prefix, take_due_deliveries
+    from brain.notify.reminders import delivery_text, take_due_deliveries
 
     path = "/tmp/brain-reminders-deliver.db"
     if os.path.exists(path):
@@ -115,9 +115,9 @@ async def test_delivery_helpers() -> int:
     # yanlış cihaza teslim sızmaz
     assert await db.pending_deliveries_for_device("client:999") == []; n += 1
 
-    assert delivery_prefix([]) == ""; n += 1
-    assert delivery_prefix([{"text": "ekmek al"}]) == "Hatırlatma: ekmek al."; n += 1
-    two = delivery_prefix([{"text": "a"}, {"text": "b"}])
+    assert delivery_text([]) == ""; n += 1
+    assert delivery_text([{"text": "ekmek al"}]) == "Hatırlatma: ekmek al."; n += 1
+    two = delivery_text([{"text": "a"}, {"text": "b"}])
     assert two.startswith("2 hatırlatman var:") and "1) a" in two and "2) b" in two, two; n += 1
 
     await db.close()

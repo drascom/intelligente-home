@@ -32,6 +32,19 @@ class FakeDB:
     async def add_message(self, session_id, role, content, speaker=None):
         pass
 
+    # presence + hatırlatma teslimi (turn akışı bunları çağırır)
+    async def set_presence(self, user_id, device_id):
+        pass
+
+    async def pending_deliveries(self, user_id):
+        return []
+
+    async def pending_deliveries_for_device(self, device_id):
+        return []
+
+    async def complete_task(self, task_id):
+        return True
+
 
 class FakeAgent:
     async def respond(self, history, text, speaker=None, speaker_id=None, conversation_id=None):

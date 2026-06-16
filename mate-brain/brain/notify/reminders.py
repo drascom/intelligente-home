@@ -7,7 +7,7 @@ hatırlatmaları cevaba eklenerek teslim edilir (chime → uyandır → teslim).
 
 İki parça:
   * ReminderScheduler — arka plan döngüsü, vakti gelen görevleri yakalar → chime.
-  * take_due_deliveries / delivery_prefix — tur akışında teslim (voice.py + satellite.py).
+  * take_due_deliveries / delivery_text — tur akışında teslim (voice.py + satellite.py).
 """
 
 import asyncio
@@ -43,8 +43,9 @@ def _signal_text(count: int) -> str:
     return f"🔔 {count} bekleyen hatırlatman var — 'candan' de."
 
 
-def delivery_prefix(tasks: list[dict]) -> str:
-    """Bekleyen hatırlatmaları cevabın başına eklenecek kısa Türkçe metne çevir."""
+def delivery_text(tasks: list[dict]) -> str:
+    """Bekleyen hatırlatmaları temiz, tek başına Türkçe teslim metnine çevir
+    (LLM cevabıyla karışmaz — çağıran tarafta LLM turu atlanır)."""
     if not tasks:
         return ""
     if len(tasks) == 1:

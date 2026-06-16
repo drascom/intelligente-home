@@ -114,7 +114,10 @@ export default function (pi: ExtensionAPI) {
       "MUTLAK saat için ('yarın saat 10'da', 'akşam 8'de') önce get_time çağır, ISO alanından " +
       "hesapla ve due_at'e yerel ISO 8601 yaz. Zaman yoksa ikisini de boş bırak.",
     parameters: Type.Object({
-      text: Type.String({ description: "Görev metni, kısa ve net" }),
+      text: Type.String({
+        description: "Görev metni: KISA EMİR KİPİ aksiyon ('su iç', 'Ali'yi ara', 'ara ver') — " +
+          "'hatırlat'/'unutma' ekleme; vakti gelince kullanıcıya aynen okunacak.",
+      }),
       user_id: Type.Optional(Type.Number({ description: "Konuşan kişinin user_id'si (bağlamdan)" })),
       due_at: Type.Optional(Type.String({
         description: "Mutlak hatırlatma zamanı, yerel ISO 8601 (ör. '2026-06-17T10:00:00').",

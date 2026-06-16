@@ -17,7 +17,7 @@ from array import array
 from wyoming.event import Event, async_read_event, async_write_event
 
 from brain.monitor.bus import emit_turn
-from brain.notify.reminders import delivery_prefix, take_due_deliveries
+from brain.notify.reminders import delivery_text, take_due_deliveries
 from brain.voice.services import WhisperSession
 from brain.voice.tts import synthesize_stream, to_s16le
 
@@ -189,19 +189,19 @@ class Satellite:
         if user_id is not None:
             # presence: bu kişi en son bu satellite'tan konuştu → chime buraya gider.
             await self.db.set_presence(user_id, f"satellite:{self.name}")
-        history = await self.db.recent_messages(session_id)
-        try:
-            answer = await self.agent.respond(history, text, speaker=speaker, speaker_id=speaker_id,
-                                              conversation_id=scope_key)
-        except Exception as e:
-            log.error("satellite %s: agent failed: %s", self.name, e)
-            answer = "Sorry, something went wrong."
-        # Bekleyen hatırlatma teslimi (chime → uyandır → teslim): kullanıcı uyandırdı,
-        # vakti gelmiş hatırlatmalarını cevabın başına ekle. Tanınmadıysa cihaza göre yedekle.
+        # Bekleyen hatırlatma varsa: TEMİZ, tek başına teslim — LLM turunu atla.
         reminders = await take_due_deliveries(
             self.db, user_id, device_id=f"satellite:{self.name}")
         if reminders:
-            answer = (delivery_prefix(reminders) + " " + answer).strip()
+            answer = delivery_text(reminders)
+        else:
+            history = await self.db.recent_messages(session_id)
+            try:
+                answer = await self.agent.respond(history, text, speaker=speaker,
+                                                  speaker_id=speaker_id, conversation_id=scope_key)
+            except Exception as e:
+                log.error("satellite %s: agent failed: %s", self.name, e)
+                answer = "Sorry, something went wrong."
         await self.db.add_message(session_id, "user", text, speaker=speaker)
         await self.db.add_message(session_id, "assistant", answer)
         emit_turn(getattr(self.agent, "bus", None), scope_key, None, text, answer,
