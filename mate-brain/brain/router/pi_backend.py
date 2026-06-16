@@ -85,10 +85,13 @@ class PiBackend:
         Arka planda çalışır; başarısız olursa ilk tur eskisi gibi yavaş olur (zarar yok)."""
         try:
             async with self._lock:
-                proc = await self._ensure_proc()
                 t0 = time.monotonic()
+                proc = await self._ensure_proc()
+                t_spawn = time.monotonic() - t0
+                t1 = time.monotonic()
                 await asyncio.wait_for(self._turn(proc, "ping"), 90)
-            log.info("pi backend warmup OK (%.1fs)", time.monotonic() - t0)
+                t_ping = time.monotonic() - t1
+            log.info("pi backend warmup OK (spawn %.1fs + ilk-tur %.1fs)", t_spawn, t_ping)
         except Exception as e:
             log.warning("pi backend warmup failed: %s", e)
 
