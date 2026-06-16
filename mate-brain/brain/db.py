@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 -- Oturumlar (session): konuşma hafızasının kapsamı. scope_key routing anahtarı:
 --   tanınan kişi → 'user-<speakerId>' (cihazdan bağımsız süreklilik),
 --   bilinmeyen/metin → 'client-<id>' | 'satellite-<ad>' (cihaz kapsamı).
@@ -78,6 +77,12 @@ MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN session_id INTEGER",
 ]
 
+# Migration'lardan SONRA kurulacak index'ler (yeni eklenen sütunlara bağlı olanlar;
+# SCHEMA içinde olursa eski DB'de "no such column" verir).
+POST_MIGRATION_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id)",
+]
+
 
 class Database:
     def __init__(self, path: str):
@@ -93,6 +98,9 @@ class Database:
                 await self._db.execute(stmt)
             except Exception:
                 pass  # sütun zaten var (yeni DB'lerde SCHEMA hallediyor)
+        # Index'ler migration'dan SONRA: eski DB'de sütun ALTER ile eklendikten sonra.
+        for stmt in POST_MIGRATION_INDEXES:
+            await self._db.execute(stmt)
         await self._db.commit()
 
     async def close(self) -> None:
