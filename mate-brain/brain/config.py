@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     speaker_id_enabled: bool = False
     speaker_model_path: str = "models/campplus.onnx"
     speaker_model_id: str = "campplus_zh_en_advanced_v1"  # tutarlılık kilidi etiketi
-    speaker_threshold: float = 0.6   # kosinüs eşiği (ayar 0.5–0.65)
+    # Kosinüs eşiği. Gerçek ev kayıtlarıyla kalibre (2026-06-16): doğru kişi
+    # ~0.56–0.77, karşı taraf ~0.10–0.17 → 0.45 güvenli ve geniş paylı.
+    speaker_threshold: float = 0.45
     speaker_margin: float = 0.05     # en iyi eşleşme 2.'yi bu kadar geçmezse unknown
     # En az bu kadar saniyelik konuşma yoksa speaker-ID denenmez (kısa/gürültü).
     speaker_min_seconds: float = 1.0
