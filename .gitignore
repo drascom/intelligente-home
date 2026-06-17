@@ -24,3 +24,7 @@ mate-brain/models/*.onnx
 
 # stray test audio
 ElevenLabs_ses.mp3
+
+# Xcode kullanıcı-durumu (editor cruft) — mate-ios + mate-mac
+*.xcuserstate
+xcuserdata/
