@@ -257,7 +257,7 @@ final class ConversationManager: ObservableObject {
         }
         bridge.onClose = { [weak self] reason in
             guard let self else { return }
-            print("[Bridge] closed: \(reason)")
+            Log.line("[Bridge] closed: \(reason)")
             // Akış ortasında koptuysa bekleyen continuation resume olsun.
             self.player.finishPCMStream()
         }
@@ -289,7 +289,7 @@ final class ConversationManager: ObservableObject {
         // macOS'ta AVAudioSession yok: engine'ler sistem varsayılanını izler;
         // kullanıcının ana ekranda seçtiği mic/hoparlör varsayılana uygulanır.
         MacAudioDevices.applyStoredSelection()
-        print("[Session] macOS — giriş/çıkış: sistem varsayılanı (+kayıtlı seçim)")
+        Log.line("[Session] macOS — giriş/çıkış: sistem varsayılanı (+kayıtlı seçim)")
         #else
         let session = AVAudioSession.sharedInstance()
         // .defaultToSpeaker KASTEN YOK: bu flag aktifken `.overrideOutputAudioPort(.none)`
@@ -309,7 +309,7 @@ final class ConversationManager: ObservableObject {
         try? session.setPreferredSampleRate(48000)
         try? session.setPreferredIOBufferDuration(0.01)
         try session.setActive(true, options: [])
-        print(String(format: "[Session] sr=%.0fHz  ioBuf=%.3fs  mode=%@",
+        Log.line(String(format: "[Session] sr=%.0fHz  ioBuf=%.3fs  mode=%@",
                      session.sampleRate, session.ioBufferDuration, session.mode.rawValue))
         applyAudioRoute()
         registerRouteObserver()
@@ -331,7 +331,7 @@ final class ConversationManager: ObservableObject {
             externalInputs.contains($0.portType)
         })
         do { try session.setPreferredInput(preferredInput) }
-        catch { print("[Route] setPreferredInput failed: \(error)") }
+        catch { Log.line("[Route] setPreferredInput failed: \(error)") }
         // Output: external varsa override'ı kaldır, yoksa speaker'a zorla
         let hasExternal = hasExternalAudioRoute()
         do {
@@ -341,11 +341,11 @@ final class ConversationManager: ObservableObject {
                 try session.overrideOutputAudioPort(.speaker)
             }
         } catch {
-            print("[Route] override failed: \(error)")
+            Log.line("[Route] override failed: \(error)")
         }
         let outs = session.currentRoute.outputs.map { $0.portName }.joined(separator: ", ")
         let ins = session.currentRoute.inputs.map { $0.portName }.joined(separator: ", ")
-        print("[Route] out=\(hasExternal ? "external" : "speaker") (\(outs))  in=(\(ins))  preferredIn=\(preferredInput?.portName ?? "system")")
+        Log.line("[Route] out=\(hasExternal ? "external" : "speaker") (\(outs))  in=(\(ins))  preferredIn=\(preferredInput?.portName ?? "system")")
         #endif
     }
 
@@ -411,7 +411,7 @@ final class ConversationManager: ObservableObject {
             elapsed = ""
         }
         diagnosticStatus = message + elapsed
-        print("[Flow]\(elapsed) \(message)")
+        Log.line("[Flow]\(elapsed) \(message)")
     }
 
     func toggle() {
@@ -522,7 +522,7 @@ final class ConversationManager: ObservableObject {
 
     private func handleWakeDetected() {
         guard isRunning, !muted else { return }
-        print("[Wake] detected → switching to listening")
+        Log.line("[Wake] detected → switching to listening")
         // Tek bip: ısınma bitince "konuş" bip'i (beginListening içinde) çalar.
         // Algılama anında ayrı bip YOK.
         Task {
@@ -537,7 +537,7 @@ final class ConversationManager: ObservableObject {
     /// bekleme moduna döner (hatırlatma pending kalır, sonra teslim edilir).
     private func handleChimeListen() {
         guard isRunning, !muted else { return }
-        print("[Chime] → otomatik dinleme (30s yanıt penceresi)")
+        Log.line("[Chime] → otomatik dinleme (30s yanıt penceresi)")
         Task {
             await beginListening(withInactivityTimeout: true, playReadyCueAfterCalibration: true,
                                  inactivityTimeout: reminderResponseTimeout)
@@ -599,7 +599,7 @@ final class ConversationManager: ObservableObject {
                         _ = self.recorder.stop()
                         self.cancelLiveSTT()
                         self.listeningLoopActive = false
-                        print("[FollowUp] \(Int(elapsed))s sessizlik → wake'e dön")
+                        Log.line("[FollowUp] \(Int(elapsed))s sessizlik → wake'e dön")
                         self.playCue { self.cues.playSleeping() }
                         await self.enterIdleOrListen()
                         return
@@ -639,7 +639,7 @@ final class ConversationManager: ObservableObject {
             _ = try recorder.beginSegment(includePreRoll: true, preRollSeconds: preRollSeconds)
             speechStartedAt = now
             lastVoiceAt = now
-            print("[VAD] speech started")
+            Log.line("[VAD] speech started")
         } catch {
             state = .error("Kayıt başlatılamadı: \(error.localizedDescription)")
             isRunning = false
@@ -681,6 +681,12 @@ final class ConversationManager: ObservableObject {
             return
         }
 
+        // Enerji-kapılı double-talk (macOS): coupling kalibre olana kadar karar
+        // verme. iOS'ta AEC.active=false (donanım VPIO) → bu kapı atlanır.
+        if EchoCanceller.shared.active && !EchoCanceller.shared.ready {
+            return
+        }
+
         // Kalibrasyon: warm-up sonrası ~400ms içinde echo baseline'ı topla
         if bargeInThreshold > 1.0 {
             // Kullanıcı TTS başlar başlamaz araya girebilir. AEC artık warm —
@@ -688,7 +694,7 @@ final class ConversationManager: ObservableObject {
             // hassas threshold'a geç.
             if level >= 0.50 {
                 bargeInThreshold = 0.36
-                print(String(format: "[BargeIn] immediate speech level=%.3f → threshold=%.3f", level, bargeInThreshold))
+                Log.line(String(format: "[BargeIn] immediate speech level=%.3f → threshold=%.3f", level, bargeInThreshold))
             } else {
                 bargeInEchoSamples.append(level)
                 let calibrationDone = bargeInEchoSamples.count >= bargeInCalibFrames
@@ -698,7 +704,7 @@ final class ConversationManager: ObservableObject {
                         ? 0.20
                         : bargeInEchoSamples.reduce(0, +) / Float(bargeInEchoSamples.count)
                     bargeInThreshold = max(baseline + 0.12, 0.30)
-                    print(String(format: "[BargeIn] echo=%.3f → threshold=%.3f", baseline, bargeInThreshold))
+                    Log.line(String(format: "[BargeIn] echo=%.3f → threshold=%.3f", baseline, bargeInThreshold))
                 } else {
                     return
                 }
@@ -709,7 +715,7 @@ final class ConversationManager: ObservableObject {
             bargeInSustained += 1
             if bargeInSustained >= bargeInSustainedRequired && !bargeInTriggered {
                 bargeInTriggered = true
-                print("[BargeIn] kullanıcı sözünü kesti → TTS durduruluyor")
+                Log.line("[BargeIn] kullanıcı sözünü kesti → TTS durduruluyor")
                 // Realtime bridge aktifse sunucuya cancel gönder (kalan parçalar
                 // üretilmesin), playerNode kuyruğunu boşalt.
                 if let id = realtimeActiveId {
@@ -753,7 +759,7 @@ final class ConversationManager: ObservableObject {
             if noiseSamples.count == calibrationFrameCount {
                 let avg = noiseSamples.reduce(0, +) / Float(noiseSamples.count)
                 calibratedThreshold = max(avg + calibrationMargin, voiceThreshold)
-                print(String(format: "[VAD] noise floor=%.3f → threshold=%.3f", avg, calibratedThreshold))
+                Log.line(String(format: "[VAD] noise floor=%.3f → threshold=%.3f", avg, calibratedThreshold))
                 if readyCuePending {
                     readyCuePending = false
                     ignoreInputUntil = Date().addingTimeInterval(0.14)
@@ -837,11 +843,11 @@ final class ConversationManager: ObservableObject {
         }
 
         try? FileManager.default.removeItem(at: audio)
-        print("[STT] '\(trimmed)' (\(trimmed.count) chars)")
+        Log.line("[STT] '\(trimmed)' (\(trimmed.count) chars)")
         lastTranscript = trimmed
         mark("STT tamamlandı: \(trimmed.count) karakter")
         if Self.isLikelyNoise(transcript: trimmed) {
-            print("[STT] discarded (noise/hallucination)")
+            Log.line("[STT] discarded (noise/hallucination)")
             mark("STT çıktısı gürültü sayıldı, bridge'e gönderilmedi")
             await postResponseListen()
             return
@@ -954,6 +960,25 @@ final class ConversationManager: ObservableObject {
             await postResponseListen()
             return true
         }
+        // Whisper'ın sessiz/echo segmentte uydurduğu hayalet ifadeler (YouTube
+        // altyazı artefaktları: "abone ol", "izlediğiniz için teşekkür ederim" vb.)
+        // sunucu STT yolunda da filtrelensin. Aksi halde TTS/hatırlatma sonrası açılan
+        // mikrofon penceresi sessizlik/eko yakalıyor, sunucu Whisper'ı hayalet bir cümle
+        // üretiyor, LLM ona cevap verip kullanıcının GERÇEK ilk turunu yiyordu
+        // (kullanıcı ikinci kez konuşunca düzeliyordu). Cihaz (SFSpeech) yolundaki
+        // isLikelyNoise filtresiyle birebir aynı — sadece burada da uygulanıyor.
+        if Self.isLikelyNoise(transcript: transcript) {
+            Log.line("[STT] sunucu transkripti gürültü/halüsinasyon sayıldı: '\(transcript)'")
+            // Sunucu bu id için cevap+TTS üretmesin (henüz reply gelmediyse engeller).
+            if let id = realtimeActiveId {
+                try? await bridge.cancel(id: id)
+            }
+            player.stopPCMStream()
+            realtimeActiveId = nil
+            mark("Sunucu STT halüsinasyon sayıldı — atlandı, tekrar dinleniyor")
+            await postResponseListen(echoSettle: 0.6)
+            return true
+        }
         lastTranscript = transcript
         appendMessage(.user, transcript)
         mark("Sunucu STT tamamlandı: \(transcript.count) karakter")
@@ -965,7 +990,7 @@ final class ConversationManager: ObservableObject {
         if bargeInActive {
             resetBargeIn()
             do { try recorder.startMonitoring() }
-            catch { print("[BargeIn] mic başlatılamadı: \(error)") }
+            catch { Log.line("[BargeIn] mic başlatılamadı: \(error)") }
         }
 
         // reply + audio_start → parçalar → audio_end bitene kadar bekle.
@@ -1131,7 +1156,7 @@ final class ConversationManager: ObservableObject {
         if bargeInActive {
             resetBargeIn()
             do { try recorder.startMonitoring() }
-            catch { print("[BargeIn] mic başlatılamadı: \(error)") }
+            catch { Log.line("[BargeIn] mic başlatılamadı: \(error)") }
         }
 
         // audio_start → parçalar → audio_end (veya error/close) bitene kadar bekle.
@@ -1178,7 +1203,7 @@ final class ConversationManager: ObservableObject {
             if bargeInActive {
                 resetBargeIn()
                 do { try recorder.startMonitoring() }
-                catch { print("[BargeIn] mic başlatılamadı: \(error)") }
+                catch { Log.line("[BargeIn] mic başlatılamadı: \(error)") }
             }
 
             do {

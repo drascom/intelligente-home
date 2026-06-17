@@ -32,9 +32,9 @@ enum OnDeviceSTT {
         if let f = try? AVAudioFile(forReading: audioURL) {
             let sr = f.fileFormat.sampleRate
             let dur = sr > 0 ? Double(f.length) / sr : 0
-            print(String(format: "[STT] file dur=%.2fs frames=%lld", dur, f.length))
+            Log.line(String(format: "[STT] file dur=%.2fs frames=%lld", dur, f.length))
         } else {
-            print("[STT] file AÇILAMADI: \(audioURL.lastPathComponent)")
+            Log.line("[STT] file AÇILAMADI: \(audioURL.lastPathComponent)")
         }
         return try await transcribeSFSpeech(audioURL: audioURL, language: language)
     }
@@ -60,7 +60,7 @@ enum OnDeviceSTT {
         // Önceki tanıma görevini iptal et — on-device kaynağı meşgul kalmasın.
         activeTask?.cancel()
         activeTask = nil
-        print("[STT] engine=sfspeech onDevice=\(recognizer.supportsOnDeviceRecognition ? "yes" : "no")")
+        Log.line("[STT] engine=sfspeech onDevice=\(recognizer.supportsOnDeviceRecognition ? "yes" : "no")")
 
         let request = SFSpeechURLRecognitionRequest(url: audioURL)
         request.shouldReportPartialResults = false
@@ -74,7 +74,7 @@ enum OnDeviceSTT {
             let task = recognizer.recognitionTask(with: request) { result, error in
                 if resumed { return }
                 if let error {
-                    print("[STT] recognition ERROR: \(error.localizedDescription)")
+                    Log.line("[STT] recognition ERROR: \(error.localizedDescription)")
                     resumed = true
                     Self.activeTask = nil
                     cont.resume(throwing: error)
@@ -85,7 +85,7 @@ enum OnDeviceSTT {
                 Self.activeTask = nil
                 let text = result.bestTranscription.formattedString
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                print("[STT] engine=sfspeech final empty=\(text.isEmpty)")
+                Log.line("[STT] engine=sfspeech final empty=\(text.isEmpty)")
                 cont.resume(returning: text)
             }
             Self.activeTask = task
@@ -120,7 +120,7 @@ final class LiveSTT: @unchecked Sendable {
             : (language.lowercased() == "tr" ? "tr-TR" : language)
         let locale = Locale(identifier: localeId)
         guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
-            print("[LiveSTT] recognizer unavailable for \(localeId)")
+            Log.line("[LiveSTT] recognizer unavailable for \(localeId)")
             return
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -155,7 +155,7 @@ final class LiveSTT: @unchecked Sendable {
         lock.lock()
         self.task = task
         lock.unlock()
-        print("[LiveSTT] started locale=\(localeId) onDevice=\(recognizer.supportsOnDeviceRecognition)")
+        Log.line("[LiveSTT] started locale=\(localeId) onDevice=\(recognizer.supportsOnDeviceRecognition)")
     }
 
     /// Mic buffer'ı tanımaya besle. Tap callback'inden (audio thread) çağrılabilir;

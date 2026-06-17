@@ -38,3 +38,13 @@ targets:
         # Dev aracı: App Sandbox kapalı — mikrofon/speech izinleri TCC
         # prompt'larıyla (usage description) çalışır.
         ENABLE_APP_SANDBOX: "NO"
+        # Vendor edilmiş speexdsp (yazılım AEC) için C-interop:
+        SWIFT_OBJC_BRIDGING_HEADER: Mate/Mate-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/Mate/speexdsp
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - HAVE_CONFIG_H=1
+        # speexdsp C kaynakları VLA ve eski-stil uyarıları üretir — hatayı engelle.
+        GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
+        GCC_WARN_INHIBIT_ALL_WARNINGS: "YES"

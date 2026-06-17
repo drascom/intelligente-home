@@ -26,7 +26,7 @@ final class CueSounds {
                 player.play()
             }
         } catch {
-            print("[Cue] engine start failed: \(error)")
+            Log.line("[Cue] engine start failed: \(error)")
         }
     }
 
@@ -58,6 +58,17 @@ final class CueSounds {
     }
 
     private func play(notes: [(freq: Double, duration: Double, gap: Double)], gain: Float = 0.18) {
+        #if os(macOS)
+        // VPIO modu: ayrı engine'in çıkışı VPIO'nun AEC referansına girmez (chime
+        // mic'e sızıp false barge-in yapabilir) ve tek-cihaz kurulumunda güvenilir
+        // değil. VPIO çalışıyorsa cue'yu onun çıkış kuyruğundan geçir. Çalışmıyorsa
+        // (ör. uyku/bekleme) private engine'e düş — o da default cihaza çalabilir.
+        let pipeline = AudioPipeline.shared
+        if pipeline.useVPIO, pipeline.vpio.running {
+            playVPIO(notes: notes, gain: gain, pipeline: pipeline)
+            return
+        }
+        #endif
         prepare()
         guard prepared else { return }
         var cursorFrames: AVAudioFramePosition = 0
@@ -74,6 +85,43 @@ final class CueSounds {
             cursorFrames += AVAudioFramePosition(n.gap * format.sampleRate)
         }
     }
+
+    #if os(macOS)
+    /// Cue'yu tek bir 48k mono float buffer'a sentezleyip VPIO çıkış kuyruğuna it.
+    /// Resample yok — doğrudan VPIOEngine.sampleRate'te üretilir.
+    private func playVPIO(notes: [(freq: Double, duration: Double, gap: Double)],
+                          gain: Float, pipeline: AudioPipeline) {
+        let sr = VPIOEngine.sampleRate
+        var samples: [Float] = []
+        for n in notes {
+            let frames = Int(n.duration * sr)
+            let attackFrames = Float(min(0.012, n.duration * 0.3) * sr)
+            let releaseFrames = Float(min(0.05, n.duration * 0.5) * sr)
+            let total = Float(frames)
+            for i in 0..<frames {
+                let t = Double(i) / sr
+                let f = Float(i)
+                let env: Float
+                if f < attackFrames {
+                    env = f / attackFrames
+                } else if f > total - releaseFrames {
+                    env = (total - f) / releaseFrames
+                } else {
+                    env = 1.0
+                }
+                samples.append(Float(sin(2 * .pi * n.freq * t)) * env * gain)
+            }
+            let gapFrames = Int(n.gap * sr)
+            if gapFrames > 0 { samples.append(contentsOf: repeatElement(0, count: gapFrames)) }
+        }
+        guard !samples.isEmpty else { return }
+        samples.withUnsafeBufferPointer { bp in
+            if let base = bp.baseAddress {
+                pipeline.vpio.enqueuePlayback(base, count: bp.count)
+            }
+        }
+    }
+    #endif
 
     private func makeTone(freq: Double, duration: Double, gain: Float) -> AVAudioPCMBuffer {
         let sampleRate = format.sampleRate

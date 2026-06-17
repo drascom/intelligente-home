@@ -104,13 +104,25 @@ final class AudioRecorder: NSObject, ObservableObject {
         return try beginSegment(includePreRoll: false)
     }
 
+    /// Kayıt dosyası ayarlarını türetmek için kullanılacak format. macOS VPIO
+    /// modunda `captureEngine` HİÇ başlatılmaz → `inputNode.outputFormat` geçersiz
+    /// (0 Hz / 0 ch) döner → bozuk AAC → SFSpeech "Cannot Open". O modda gerçek
+    /// mic akışının formatını kullan. iOS'ta (ve macOS VP modunda) eskisi gibi
+    /// capture engine formatı döner.
+    private var captureFormat: AVAudioFormat {
+        #if os(macOS)
+        if pipeline.useVPIO, let fmt = vpioFormat { return fmt }
+        #endif
+        return pipeline.captureEngine.inputNode.outputFormat(forBus: 0)
+    }
+
     @discardableResult
     func beginSegment(includePreRoll: Bool = true, preRollSeconds: Double = 0.75) throws -> URL {
         try startMonitoring()
         file = nil
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("rec-\(UUID().uuidString).m4a")
-        let inputFormat = pipeline.captureEngine.inputNode.outputFormat(forBus: 0)
+        let inputFormat = captureFormat
         let fileSettings = Self.fileSettings(for: inputFormat)
         let outFile = try AVAudioFile(forWriting: url, settings: fileSettings)
         file = outFile
@@ -147,7 +159,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         let oldURL = fileURL
         let newURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("rec-\(UUID().uuidString).m4a")
-        let inputFormat = pipeline.captureEngine.inputNode.outputFormat(forBus: 0)
+        let inputFormat = captureFormat
         let fileSettings = Self.fileSettings(for: inputFormat)
         let newFile = try AVAudioFile(forWriting: newURL, settings: fileSettings)
         file = newFile

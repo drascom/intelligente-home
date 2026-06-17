@@ -49,7 +49,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
         // Apple session ~1 dk sonra kesilir; periyodik rotate
         scheduleRotation()
         isListening = true
-        print("[Wake] listening for '\(wakePattern)' (\(localeId))")
+        Log.line("[Wake] listening for '\(wakePattern)' (\(localeId))")
     }
 
     func stop() {
@@ -92,7 +92,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
             }
             if let error {
                 // Otomatik rotate yine de yapacak; sessizce loglayıp geç
-                print("[Wake] task error: \(error.localizedDescription)")
+                Log.line("[Wake] task error: \(error.localizedDescription)")
                 // macOS: SFSpeech, sistemde Siri veya Dikte açık olmadan hiç
                 // çalışmıyor — rotate etmek çözmez, kullanıcıyı bilgilendir.
                 let msg = error.localizedDescription
@@ -127,7 +127,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
                 guard let self, self.isListening else { return }
                 self.endSession()
                 do { try self.startSession() }
-                catch { print("[Wake] rotate failed: \(error)") }
+                catch { Log.line("[Wake] rotate failed: \(error)") }
             }
         }
         timer.resume()

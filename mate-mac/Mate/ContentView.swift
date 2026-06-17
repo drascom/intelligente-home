@@ -10,8 +10,7 @@ struct ContentView: View {
     // önce çalışıyorduysa YENİ ayarlarla sıfırdan kurulur.
     @State private var resumeAfterSettings = false
     #if os(macOS)
-    @State private var inputDevices: [MacAudioDevice] = []
-    @State private var outputDevices: [MacAudioDevice] = []
+    @State private var audioPairs: [MacAudioPair] = []
     // iOS'taki route picker ikonunun macOS karşılığı: ikon + popover.
     @State private var showDevicePicker = false
     #endif
@@ -332,49 +331,75 @@ struct ContentView: View {
     }
 
     #if os(macOS)
-    /// Mikrofon + hoparlör seçimi (route picker popover'ı). Seçim sistem
-    /// varsayılanına uygulanır (engine'ler varsayılanı izler) ve oturum yeni
-    /// cihazla yeniden kurulur. "" = sistem varsayılanına dokunma.
+    /// Tek ses cihazı seçimi (route picker popover'ı). Mic ve hoparlör AYNI
+    /// cihazdan gelir — macOS VPIO (AEC) eşleşmiş giriş/çıkış ister; tek cihaz
+    /// bunu garanti eder. Seçim sistem varsayılanına uygulanır (engine'ler
+    /// varsayılanı izler) ve oturum yeni cihazla yeniden kurulur.
     private var devicePopover: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Ses Cihazları")
+        let selectedID = MacAudioDevices.currentOrDefaultPair()?.id ?? ""
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("Ses Cihazı")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-            Picker(selection: $settings.macInputDeviceUID) {
-                Text("Sistem varsayılanı").tag("")
-                ForEach(inputDevices) { d in
-                    Text(d.name).tag(d.id)
-                }
-            } label: {
-                Label("Mikrofon", systemImage: "mic.fill")
-            }
-            Picker(selection: $settings.macOutputDeviceUID) {
-                Text("Sistem varsayılanı").tag("")
-                ForEach(outputDevices) { d in
-                    Text(d.name).tag(d.id)
-                }
-            } label: {
-                Label("Hoparlör", systemImage: "speaker.wave.2.fill")
+                .padding(.bottom, 4)
+            ForEach(audioPairs) { p in
+                deviceRow(p, selected: p.id == selectedID)
             }
         }
-        .pickerStyle(.menu)
-        .padding(16)
-        .frame(width: 340)
+        .padding(12)
+        .frame(width: 280)
         .onAppear {
             // Her açılışta taze liste — sonradan takılan cihazlar görünsün.
-            inputDevices = MacAudioDevices.inputDevices()
-            outputDevices = MacAudioDevices.outputDevices()
+            audioPairs = MacAudioDevices.audioPairs()
         }
-        .onChange(of: settings.macInputDeviceUID) { _ in applyDeviceSelection() }
-        .onChange(of: settings.macOutputDeviceUID) { _ in applyDeviceSelection() }
+    }
+
+    private func deviceRow(_ p: MacAudioPair, selected: Bool) -> some View {
+        Button {
+            selectPair(p)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: p.name.contains("MacBook") ? "laptopcomputer" : "headphones")
+                    .frame(width: 18)
+                Text(p.name)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(Rectangle())
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(
+                selected ? Color.accentColor.opacity(0.15) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Seçilen pair'in hem giriş hem çıkış UID'ini yazıp seçimi uygular
+    /// (tek cihaz → eşleşmiş AEC).
+    private func selectPair(_ pair: MacAudioPair) {
+        settings.macInputDeviceUID = pair.inputUID
+        settings.macOutputDeviceUID = pair.outputUID
+        applyDeviceSelection()
     }
 
     private func applyDeviceSelection() {
         MacAudioDevices.applyStoredSelection()
         // Engine'ler cihazı start anında bağlar → oturumu yeni cihazla kur.
-        if conversation.isRunning {
-            conversation.stop()
-            conversation.start()
+        // ÖNEMLİ: bunu buton aksiyonu İÇİNDE senkron yapma — pipeline'ı (popover
+        // hâlâ açıkken) yıkıp kurmak SwiftUI buton gesture'ında çökmeye yol
+        // açıyordu (MainActor.assumeIsolated / EXC_BAD_ACCESS). Bir sonraki
+        // runloop'a ertele ki aksiyon önce tamamlansın.
+        DispatchQueue.main.async {
+            if conversation.isRunning {
+                conversation.stop()
+                conversation.start()
+            }
         }
     }
     #endif

@@ -106,7 +106,7 @@ final class RealtimeBridgeClient: NSObject {
         startKeepAlive()
         // Erken ping → pong gelince erişilebilirlik hızlı onaylanır (banner kalkar).
         Task { [weak self] in try? await self?.ping() }
-        print("[Bridge] connecting: \(url.absoluteString)")
+        Log.line("[Bridge] connecting: \(url.absoluteString)")
     }
 
     func disconnect(reason: String = "client") {
@@ -141,7 +141,7 @@ final class RealtimeBridgeClient: NSObject {
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard let self, self.shouldStayConnected, !self.isConnected else { return }
-            print("[Bridge] beklenmedik kopma → yeniden bağlanılıyor")
+            Log.line("[Bridge] beklenmedik kopma → yeniden bağlanılıyor")
             self.openConnection(url)
         }
     }
@@ -227,7 +227,7 @@ final class RealtimeBridgeClient: NSObject {
                     self.isConnected = false
                     self.confirmedReachable = false
                     self.onReachable?(false)
-                    print("[Bridge] receive error: \(error.localizedDescription)")
+                    Log.line("[Bridge] receive error: \(error.localizedDescription)")
                     self.onClose?(error.localizedDescription)
                     if self.shouldStayConnected, let url = self.currentURL {
                         self.scheduleReconnect(url)
@@ -260,18 +260,18 @@ final class RealtimeBridgeClient: NSObject {
         guard let data = text.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = obj["type"] as? String else {
-            print("[Bridge] unparseable text frame")
+            Log.line("[Bridge] unparseable text frame")
             return
         }
         let id = obj["id"] as? String
         switch type {
         case "transcript":
             let text = (obj["text"] as? String) ?? ""
-            print("[Bridge] transcript id=\(id ?? "?") \(text.prefix(60))")
+            Log.line("[Bridge] transcript id=\(id ?? "?") \(text.prefix(60))")
             onTranscript?(id ?? "", text)
         case "reply":
             let text = (obj["text"] as? String) ?? ""
-            print("[Bridge] reply id=\(id ?? "?") \(text.prefix(60))")
+            Log.line("[Bridge] reply id=\(id ?? "?") \(text.prefix(60))")
             onReply?(id ?? "", text)
         case "audio_start":
             let sr = (obj["sample_rate"] as? Double) ?? (obj["sample_rate"] as? Int).map(Double.init) ?? 48000
@@ -283,10 +283,10 @@ final class RealtimeBridgeClient: NSObject {
                 channels: AVAudioChannelCount(max(1, channels)),
                 interleaved: false
             )
-            print("[Bridge] audio_start id=\(id ?? "?") sr=\(Int(sr)) ch=\(channels)")
+            Log.line("[Bridge] audio_start id=\(id ?? "?") sr=\(Int(sr)) ch=\(channels)")
             onAudioStart?(id ?? "", sr, channels)
         case "audio_end":
-            print("[Bridge] audio_end id=\(id ?? "?")")
+            Log.line("[Bridge] audio_end id=\(id ?? "?")")
             onAudioEnd?(id ?? "")
             if id == activeId {
                 activeId = nil
@@ -294,25 +294,25 @@ final class RealtimeBridgeClient: NSObject {
             }
         case "error":
             let msg = (obj["message"] as? String) ?? "bilinmeyen hata"
-            print("[Bridge] error id=\(id ?? "?"): \(msg)")
+            Log.line("[Bridge] error id=\(id ?? "?"): \(msg)")
             onError?(id, msg)
         case "chime":
-            print("[Bridge] chime (proaktif hatırlatma sinyali)")
+            Log.line("[Bridge] chime (proaktif hatırlatma sinyali)")
             onChime?()
         case "pong":
             break
         default:
-            print("[Bridge] unknown text type: \(type)")
+            Log.line("[Bridge] unknown text type: \(type)")
         }
     }
 
     private func handleBinary(_ data: Data) {
         guard let format = activeFormat else {
-            print("[Bridge] binary frame ama aktif format yok (audio_start gelmedi) — atlanıyor")
+            Log.line("[Bridge] binary frame ama aktif format yok (audio_start gelmedi) — atlanıyor")
             return
         }
         guard let buffer = Self.pcmBuffer(from: data, format: format) else {
-            print("[Bridge] pcm_f32le → buffer dönüşümü başarısız")
+            Log.line("[Bridge] pcm_f32le → buffer dönüşümü başarısız")
             return
         }
         onAudioChunk?(activeId ?? "", buffer)

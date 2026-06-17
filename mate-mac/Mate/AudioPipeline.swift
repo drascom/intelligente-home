@@ -32,6 +32,22 @@ final class AudioPipeline {
     private var configured = false
     private(set) var connectedFormat: AVAudioFormat?
 
+    /// Donanım voice-processing (VPIO/AEC) aktif mi. iOS'ta genelde true (donanım
+    /// AEC) → yazılım AEC'e gerek yok; macOS 26'da false (VPIO bozuk) → yazılım AEC.
+    var voiceProcessingActive: Bool {
+        #if os(macOS)
+        if useVPIO { return true }   // raw VPIO donanım AEC
+        #endif
+        return engine.inputNode.isVoiceProcessingEnabled
+    }
+
+    #if os(macOS)
+    /// macOS konuşma ses yolu: AVAudioEngine yerine raw AUVoiceProcessingIO
+    /// (donanım AEC). AVAudioEngine'in VPIO sarmalayıcısı macOS 26'da bozuk.
+    let vpio = VPIOEngine()
+    var useVPIO = true
+    #endif
+
     private init() {}
 
     /// İlk çağrıda voice processing'i açıp playerNode'u attach eder.
@@ -39,12 +55,18 @@ final class AudioPipeline {
     /// macOS: VP (AEC) bazı cihaz/çoklu-mikrofon kurulumlarında -10875 ile
     /// başlatılamıyor → VP kapatılıp tekrar denenir (eko iptali olmadan devam).
     func prepareIfNeeded() throws {
+        #if os(macOS)
+        if useVPIO {
+            if !vpio.running { try vpio.start() }
+            return
+        }
+        #endif
         if !configured {
             do {
                 try buildGraph(voiceProcessing: true)
             } catch {
                 #if os(macOS)
-                print("[Pipeline] VP kurulamadı (\(error)) → voice processing OLMADAN kuruluyor")
+                Log.line("[Pipeline] VP kurulamadı (\(error)) → voice processing OLMADAN kuruluyor")
                 try buildGraph(voiceProcessing: false)
                 #else
                 throw error
@@ -57,15 +79,25 @@ final class AudioPipeline {
             } catch {
                 #if os(macOS)
                 guard engine.inputNode.isVoiceProcessingEnabled else { throw error }
-                print("[Pipeline] engine start VP ile başarısız (\(error)) → VP kapatılıp yeniden deneniyor")
-                try buildGraph(voiceProcessing: false)
-                try engine.start()
+                // VPIO eşleşmemiş giriş/çıkış cihazında -10875 ile patlar. AEC'den
+                // vazgeçmeden önce dahili mic+hoparlöre (bilinen-çalışan VPIO çifti)
+                // zorlayıp VP'yi bir kez daha dene; o da olmazsa AEC'siz devam.
+                Log.line("[Pipeline] VP start başarısız (\(error)) → dahili cihaza zorlayıp VP yeniden deneniyor")
+                MacAudioDevices.forceBuiltInDefaults()
+                do {
+                    try buildGraph(voiceProcessing: true)
+                    try engine.start()
+                } catch {
+                    Log.line("[Pipeline] dahili cihazla da VP başarısız (\(error)) → VP kapatılıyor (AEC yok)")
+                    try buildGraph(voiceProcessing: false)
+                    try engine.start()
+                }
                 #else
                 throw error
                 #endif
             }
             let inputFormat = engine.inputNode.outputFormat(forBus: 0)
-            print("[Pipeline] engine started — VP=\(engine.inputNode.isVoiceProcessingEnabled) inputSR=\(Int(inputFormat.sampleRate))Hz ch=\(inputFormat.channelCount)")
+            Log.line("[Pipeline] engine started — VP=\(engine.inputNode.isVoiceProcessingEnabled) inputSR=\(Int(inputFormat.sampleRate))Hz ch=\(inputFormat.channelCount)")
         }
     }
 
@@ -112,18 +144,21 @@ final class AudioPipeline {
         connectedFormat = connectFormat
         engine.prepare()
         configured = true
-        print("[Pipeline] configured (VP=\(voiceProcessing), connect sr=\(Int(connectFormat.sampleRate))Hz ch=\(connectFormat.channelCount))")
+        Log.line("[Pipeline] configured (VP=\(voiceProcessing), connect sr=\(Int(connectFormat.sampleRate))Hz ch=\(connectFormat.channelCount))")
     }
 
     /// Mikrofon tap'i kurulduktan sonra çağrılır: macOS'ta ayrı input engine
     /// kullanılıyorsa onu başlatır (tap'siz başlatmak graph hatası verir).
     func startCaptureIfNeeded() throws {
         #if os(macOS)
+        if useVPIO { return }   // VPIO zaten capture ediyor
+        #endif
+        #if os(macOS)
         if let inputEngine, !inputEngine.isRunning {
             inputEngine.prepare()
             try inputEngine.start()
             let fmt = inputEngine.inputNode.outputFormat(forBus: 0)
-            print("[Pipeline] capture engine started (ayrı input) sr=\(Int(fmt.sampleRate))Hz ch=\(fmt.channelCount)")
+            Log.line("[Pipeline] capture engine started (ayrı input) sr=\(Int(fmt.sampleRate))Hz ch=\(fmt.channelCount)")
         }
         #endif
     }
@@ -131,9 +166,15 @@ final class AudioPipeline {
     /// Wake mode'a geçerken engine'i durdur — wake kendi AVAudioEngine'ini kullanır,
     /// iki engine aynı anda mic'i tutmasın.
     func pause() {
+        #if os(macOS)
+        if useVPIO {
+            if vpio.running { vpio.stop() }
+            return
+        }
+        #endif
         if engine.isRunning {
             engine.stop()
-            print("[Pipeline] engine paused (wake mode)")
+            Log.line("[Pipeline] engine paused (wake mode)")
         }
         #if os(macOS)
         if let inputEngine, inputEngine.isRunning {
@@ -161,9 +202,9 @@ final class AudioPipeline {
         connectedFormat = format
         if wasRunning {
             do { try engine.start() }
-            catch { print("[Pipeline] engine restart failed: \(error)") }
+            catch { Log.line("[Pipeline] engine restart failed: \(error)") }
         }
-        print("[Pipeline] player reconnected sr=\(Int(format.sampleRate))Hz ch=\(format.channelCount)")
+        Log.line("[Pipeline] player reconnected sr=\(Int(format.sampleRate))Hz ch=\(format.channelCount)")
     }
 
     static func computeLevel(buffer: AVAudioPCMBuffer) -> Float {

@@ -954,6 +954,25 @@ final class ConversationManager: ObservableObject {
             await postResponseListen()
             return true
         }
+        // Whisper'ın sessiz/echo segmentte uydurduğu hayalet ifadeler (YouTube
+        // altyazı artefaktları: "abone ol", "izlediğiniz için teşekkür ederim" vb.)
+        // sunucu STT yolunda da filtrelensin. Aksi halde TTS/hatırlatma sonrası açılan
+        // mikrofon penceresi sessizlik/eko yakalıyor, sunucu Whisper'ı hayalet bir cümle
+        // üretiyor, LLM ona cevap verip kullanıcının GERÇEK ilk turunu yiyordu
+        // (kullanıcı ikinci kez konuşunca düzeliyordu). Cihaz (SFSpeech) yolundaki
+        // isLikelyNoise filtresiyle birebir aynı — sadece burada da uygulanıyor.
+        if Self.isLikelyNoise(transcript: transcript) {
+            print("[STT] sunucu transkripti gürültü/halüsinasyon sayıldı: '\(transcript)'")
+            // Sunucu bu id için cevap+TTS üretmesin (henüz reply gelmediyse engeller).
+            if let id = realtimeActiveId {
+                try? await bridge.cancel(id: id)
+            }
+            player.stopPCMStream()
+            realtimeActiveId = nil
+            mark("Sunucu STT halüsinasyon sayıldı — atlandı, tekrar dinleniyor")
+            await postResponseListen(echoSettle: 0.6)
+            return true
+        }
         lastTranscript = transcript
         appendMessage(.user, transcript)
         mark("Sunucu STT tamamlandı: \(transcript.count) karakter")

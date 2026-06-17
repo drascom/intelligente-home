@@ -17,6 +17,10 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var ringBuffers: [AVAudioPCMBuffer] = []
     private var ringFrameCount: AVAudioFramePosition = 0
     private var maxRingFrames: AVAudioFramePosition = 48_000
+    #if os(macOS)
+    private var vpioFormat: AVAudioFormat?
+    private var vpioFirstLogged = false
+    #endif
 
     var onLevel: ((Float) -> Void)?
     /// Her kopyalanmış mic buffer'ı için çağrılır (canlı STT beslemesi).
@@ -47,6 +51,26 @@ final class AudioRecorder: NSObject, ObservableObject {
     func startMonitoring() throws {
         try pipeline.prepareIfNeeded()
 
+        #if os(macOS)
+        if pipeline.useVPIO {
+            if !tapInstalled {
+                let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                        sampleRate: VPIOEngine.sampleRate,
+                                        channels: 1, interleaved: false)!
+                vpioFormat = fmt
+                maxRingFrames = AVAudioFramePosition(VPIOEngine.sampleRate * 2.5)
+                vpioFirstLogged = false
+                pipeline.vpio.onMic = { [weak self] samples, n in
+                    self?.handleVPIOMic(samples, count: n)
+                }
+                tapInstalled = true
+                Log.line("[Recorder] VPIO mic akışı bağlandı (donanım AEC, 48k mono)")
+            }
+            isRecording = true
+            return
+        }
+        #endif
+
         guard !tapInstalled else {
             try pipeline.prepareIfNeeded()
             try pipeline.startCaptureIfNeeded()
@@ -58,10 +82,15 @@ final class AudioRecorder: NSObject, ObservableObject {
         let inputNode = pipeline.captureEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         maxRingFrames = AVAudioFramePosition(inputFormat.sampleRate * 2.5)
+        // Yazılım AEC'i gerçek mic sample-rate'iyle hazırla (macOS 26 VPIO yedeği).
+        // Donanım VPIO açıksa (iOS) gerek yok.
+        if !pipeline.voiceProcessingActive {
+            EchoCanceller.shared.configure(sampleRate: Int(inputFormat.sampleRate))
+        }
 
         var firstBufferLogged = false
         var bufferCount = 0
-        print("[Recorder] tap install, format=\(inputFormat.sampleRate)Hz \(inputFormat.channelCount)ch")
+        Log.line("[Recorder] tap install, format=\(inputFormat.sampleRate)Hz \(inputFormat.channelCount)ch")
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
             if let copy = Self.copyBuffer(buffer) {
@@ -75,18 +104,25 @@ final class AudioRecorder: NSObject, ObservableObject {
             try? self.file?.write(from: buffer)
             // Canlı STT beslemesi — konuşurken tanıma yürüsün.
             self.onBuffer?(buffer)
-            let lvl = AudioPipeline.computeLevel(buffer: buffer)
+            // Barge-in seviyesi: TTS çalarken AEC-temizlenmiş sinyalden hesapla
+            // (eko silinir → kendi sesini "konuşma" sanıp yanlış barge-in yapmaz).
+            // AEC pasifken (TTS yok) ham sinyalden — processForLevel nil döner.
+            var lvl = AudioPipeline.computeLevel(buffer: buffer)
+            if let ch = buffer.floatChannelData,
+               let cleaned = EchoCanceller.shared.processForLevel(ch[0], count: Int(buffer.frameLength)) {
+                lvl = cleaned
+            }
             bufferCount += 1
             if !firstBufferLogged {
                 firstBufferLogged = true
-                print("[Recorder] first buffer: frames=\(buffer.frameLength) level=\(String(format: "%.3f", lvl))")
+                Log.line("[Recorder] first buffer: frames=\(buffer.frameLength) level=\(String(format: "%.3f", lvl))")
             }
             #if os(macOS)
             // Teşhis: mac mikrofon kazancı çok değişken — 2 sn'de bir ham dB
             // logla (dijital sessizlik ~-180dB, kısık oda ~-60dB, konuşma >-45dB).
             if bufferCount % 20 == 0 {
                 let db = AudioPipeline.computeDB(buffer: buffer)
-                print(String(format: "[Recorder] dB=%.1f level=%.3f", db, lvl))
+                Log.debug(String(format: "[Recorder] dB=%.1f level=%.3f", db, lvl))
             }
             #endif
             DispatchQueue.main.async {
@@ -104,13 +140,25 @@ final class AudioRecorder: NSObject, ObservableObject {
         return try beginSegment(includePreRoll: false)
     }
 
+    /// Kayıt dosyası ayarlarını türetmek için kullanılacak format. VPIO modunda
+    /// `captureEngine` (paylaşılan AVAudioEngine) HİÇ başlatılmaz → `inputNode.
+    /// outputFormat` geçersiz (0 Hz / 0 ch) döner → bozuk AAC dosyası → SFSpeech
+    /// "Cannot Open". O modda gerçek mic akışının formatını (`vpioFormat`, 48k
+    /// mono float) kullan. Diğer modlarda eskisi gibi capture engine formatı.
+    private var captureFormat: AVAudioFormat {
+        #if os(macOS)
+        if pipeline.useVPIO, let fmt = vpioFormat { return fmt }
+        #endif
+        return pipeline.captureEngine.inputNode.outputFormat(forBus: 0)
+    }
+
     @discardableResult
     func beginSegment(includePreRoll: Bool = true, preRollSeconds: Double = 0.75) throws -> URL {
         try startMonitoring()
         file = nil
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("rec-\(UUID().uuidString).m4a")
-        let inputFormat = pipeline.captureEngine.inputNode.outputFormat(forBus: 0)
+        let inputFormat = captureFormat
         let fileSettings = Self.fileSettings(for: inputFormat)
         let outFile = try AVAudioFile(forWriting: url, settings: fileSettings)
         file = outFile
@@ -131,9 +179,9 @@ final class AudioRecorder: NSObject, ObservableObject {
                 // Pre-roll'ü canlı STT'ye de gönder (ilk hece tanımaya girsin).
                 onBuffer?(buffer)
             }
-            print("[Recorder] segment begin, preRollFrames=\(collected)")
+            Log.line("[Recorder] segment begin, preRollFrames=\(collected)")
         } else {
-            print("[Recorder] segment begin")
+            Log.line("[Recorder] segment begin")
         }
         return url
     }
@@ -147,13 +195,13 @@ final class AudioRecorder: NSObject, ObservableObject {
         let oldURL = fileURL
         let newURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("rec-\(UUID().uuidString).m4a")
-        let inputFormat = pipeline.captureEngine.inputNode.outputFormat(forBus: 0)
+        let inputFormat = captureFormat
         let fileSettings = Self.fileSettings(for: inputFormat)
         let newFile = try AVAudioFile(forWriting: newURL, settings: fileSettings)
         file = newFile
         fileURL = newURL
         isCapturingSegment = true
-        print("[Recorder] file rotated")
+        Log.line("[Recorder] file rotated")
         return oldURL
     }
 
@@ -174,10 +222,20 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     @discardableResult
     func stop() -> URL? {
+        #if os(macOS)
+        if pipeline.useVPIO {
+            pipeline.vpio.onMic = nil
+            tapInstalled = false
+        } else if tapInstalled {
+            pipeline.captureEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        #else
         if tapInstalled {
             pipeline.captureEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
+        #endif
         file = nil  // dosya flush
         let url = fileURL
         fileURL = nil
@@ -205,6 +263,36 @@ final class AudioRecorder: NSObject, ObservableObject {
             AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
         ]
     }
+
+    #if os(macOS)
+    /// VPIO'dan gelen (donanım echo-cancel edilmiş) mic örneklerini işle —
+    /// tap closure'ı ile aynı akış: ring + dosya + canlı STT + seviye/barge-in.
+    private func handleVPIOMic(_ samples: UnsafePointer<Float>, count: Int) {
+        guard count > 0, let fmt = vpioFormat,
+              let buffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(count))
+        else { return }
+        buffer.frameLength = AVAudioFrameCount(count)
+        buffer.floatChannelData?[0].update(from: samples, count: count)
+
+        ringBuffers.append(buffer)
+        ringFrameCount += AVAudioFramePosition(count)
+        while ringFrameCount > maxRingFrames, !ringBuffers.isEmpty {
+            let removed = ringBuffers.removeFirst()
+            ringFrameCount -= AVAudioFramePosition(removed.frameLength)
+        }
+        try? file?.write(from: buffer)
+        onBuffer?(buffer)
+        let lvl = AudioPipeline.computeLevel(buffer: buffer)
+        if !vpioFirstLogged {
+            vpioFirstLogged = true
+            Log.line("[Recorder] VPIO ilk buffer: frames=\(count) level=\(String(format: "%.3f", lvl))")
+        }
+        DispatchQueue.main.async {
+            self.level = lvl
+            self.onLevel?(lvl)
+        }
+    }
+    #endif
 
     private static func copyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         guard let copy = AVAudioPCMBuffer(

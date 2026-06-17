@@ -18,7 +18,18 @@ final class AudioPlayer: NSObject, ObservableObject {
 
         let hint = Self.detectFileType(data)
         let decoded = try Self.decode(data: data, hint: hint)
-        print("[Player] hint=\(hint ?? "nil") frames=\(decoded.frameLength) sr=\(Int(decoded.format.sampleRate))Hz")
+        Log.line("[Player] hint=\(hint ?? "nil") frames=\(decoded.frameLength) sr=\(Int(decoded.format.sampleRate))Hz")
+
+        #if os(macOS)
+        // VPIO modunda paylaşılan AVAudioEngine HİÇ başlamaz → playerNode sessiz
+        // kalır VE completion tetiklenmediği için continuation asılır. TTS'i raw
+        // VPIO çıkış kuyruğuna ver (donanım AEC referansı da bu olur) ve drain bekle.
+        if pipeline.useVPIO {
+            pipeline.vpio.flushPlayback()
+            await playViaVPIO(decoded)
+            return
+        }
+        #endif
 
         // Buffer format'ı player output bus format'ı ile eşleşmeli — aksi halde
         // AVAudioPlayerNode resample yapmıyor ve buffer örnek-bazında çalınıyor
@@ -30,7 +41,7 @@ final class AudioPlayer: NSObject, ObservableObject {
            target.sampleRate != decoded.format.sampleRate
             || target.channelCount != decoded.format.channelCount {
             buffer = try Self.resample(decoded, to: target)
-            print("[Player] resampled \(Int(decoded.format.sampleRate))Hz → \(Int(target.sampleRate))Hz, frames=\(buffer.frameLength)")
+            Log.line("[Player] resampled \(Int(decoded.format.sampleRate))Hz → \(Int(target.sampleRate))Hz, frames=\(buffer.frameLength)")
         } else {
             buffer = decoded
         }
@@ -71,12 +82,22 @@ final class AudioPlayer: NSObject, ObservableObject {
     func play(buffer: AVAudioPCMBuffer) async throws {
         try pipeline.prepareIfNeeded()
 
+        #if os(macOS)
+        // VPIO modu: playerNode ölü engine'de → enqueueVPIO + drain (yukarıdaki
+        // play(data:) ile aynı gerekçe; aksi halde cihaz-içi TTS turu asılır).
+        if pipeline.useVPIO {
+            pipeline.vpio.flushPlayback()
+            await playViaVPIO(buffer)
+            return
+        }
+        #endif
+
         let scheduled: AVAudioPCMBuffer
         if let target = pipeline.connectedFormat,
            target.sampleRate != buffer.format.sampleRate
             || target.channelCount != buffer.format.channelCount {
             scheduled = try Self.resample(buffer, to: target)
-            print("[Player] on-device TTS resampled \(Int(buffer.format.sampleRate))Hz → \(Int(target.sampleRate))Hz, frames=\(scheduled.frameLength)")
+            Log.line("[Player] on-device TTS resampled \(Int(buffer.format.sampleRate))Hz → \(Int(target.sampleRate))Hz, frames=\(scheduled.frameLength)")
         } else {
             scheduled = buffer
         }
@@ -114,6 +135,15 @@ final class AudioPlayer: NSObject, ObservableObject {
     /// schedule eder. İlk yeterli byte (≈8KB) gelince çalmaya başlar.
     func playStreaming(stream: AsyncThrowingStream<Data, Error>, contentType: String?) async throws {
         try pipeline.prepareIfNeeded()
+
+        #if os(macOS)
+        // NOT: Bu yol şu an ÇAĞRILMIYOR (realtime bridge streamPCM'i kullanıyor).
+        // VPIO moduna uyarlanmadı — scheduleNew dosya-tabanlı playerNode schedule
+        // eder, VPIO'da sessiz kalır. Yeniden devreye alınırsa VPIO branch'i gerekir.
+        if pipeline.useVPIO {
+            Log.line("[Player] UYARI: playStreaming VPIO modunda desteklenmiyor (streamPCM kullan)")
+        }
+        #endif
 
         let isMP3 = (contentType ?? "").contains("mp")  // audio/mpeg, audio/mp3
         let ext = isMP3 ? "mp3" : "wav"
@@ -176,7 +206,7 @@ final class AudioPlayer: NSObject, ObservableObject {
                         }
                         if !startedPlaying || pendingBuffers == 0 { /* race guard */ }
                     } catch {
-                        print("[Player] stream chunk decode skipped: \(error.localizedDescription)")
+                        Log.line("[Player] stream chunk decode skipped: \(error.localizedDescription)")
                     }
                 }
             }
@@ -200,10 +230,10 @@ final class AudioPlayer: NSObject, ObservableObject {
                 consumedFrames = final.framesScheduled
             }
             streamFinished = true
-            print("[Player] stream finished, totalBytes=\(totalBytes), pendingBuffers=\(pendingBuffers)")
+            Log.line("[Player] stream finished, totalBytes=\(totalBytes), pendingBuffers=\(pendingBuffers)")
             checkStreamCompletion(finished: true, pending: pendingBuffers)
         } catch {
-            print("[Player] stream error: \(error)")
+            Log.line("[Player] stream error: \(error)")
             throw error
         }
 
@@ -251,7 +281,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         if !startedPlaying {
             pipeline.reconnectPlayer(format: buffer.format)
             startedPlaying = true
-            print("[Player] stream first play, sr=\(Int(buffer.format.sampleRate))Hz frames=\(buffer.frameLength)")
+            Log.line("[Player] stream first play, sr=\(Int(buffer.format.sampleRate))Hz frames=\(buffer.frameLength)")
         }
 
         var registration: (@escaping () -> Void) -> Void = { _ in }
@@ -294,6 +324,12 @@ final class AudioPlayer: NSObject, ObservableObject {
         streamStarted = false
         streamDrainYield = nil
         isPlaying = true
+        #if os(macOS)
+        if pipeline.useVPIO { pipeline.vpio.flushPlayback() }
+        #endif
+        // Yazılım AEC yalnız donanım VPIO/AEC yokken. VPIO modunda (macOS) ve
+        // iOS'ta donanım AEC var → yazılım AEC kapalı (voiceProcessingActive=true).
+        if !pipeline.voiceProcessingActive { EchoCanceller.shared.begin() }
         startAmplitudeMetering()
     }
 
@@ -330,9 +366,19 @@ final class AudioPlayer: NSObject, ObservableObject {
         do {
             try pipeline.prepareIfNeeded()
         } catch {
-            print("[Player] stream prepare failed: \(error)")
+            Log.line("[Player] stream prepare failed: \(error)")
             return
         }
+
+        #if os(macOS)
+        if pipeline.useVPIO {
+            // TTS'i raw VPIO çıkış kuyruğuna ver (donanım AEC referansı da bu olur).
+            streamStarted = true
+            enqueueVPIO(buffer)
+            if !pipeline.vpio.running { try? pipeline.prepareIfNeeded() }
+            return
+        }
+        #endif
 
         // Klasik play(data:) yolundaki gibi davran: reconnectPlayer YAPMA. Reconnect,
         // AEC echo-path'ini bozuyor VE voice-processing engine'inde oynatma hızı/oran
@@ -349,13 +395,18 @@ final class AudioPlayer: NSObject, ObservableObject {
 
         if !streamStarted {
             streamStarted = true
-            print("[Player] PCM stream first chunk sr=\(Int(scheduled.format.sampleRate))Hz ch=\(scheduled.format.channelCount) frames=\(scheduled.frameLength)")
+            Log.line("[Player] PCM stream first chunk sr=\(Int(scheduled.format.sampleRate))Hz ch=\(scheduled.format.channelCount) frames=\(scheduled.frameLength)")
         }
 
         // Telefonda .voiceChat (AEC) modu çıkışı ducked tutuyor → TTS kısık
         // duyuluyor. Yumuşak-limitli (tanh) bir gain ile sesi yükselt; sert clip
         // (patlama) yapmaz, sadece tepe noktaları nazikçe sıkışır. mac'te 1.0 → etkisiz.
         let boosted = Self.applyGain(scheduled, Self.ttsGain)
+
+        // Yazılım AEC far-end referansı: hoparlöre giden sinyali ring'e it (mono).
+        if EchoCanceller.shared.active, let ch = boosted.floatChannelData {
+            EchoCanceller.shared.pushFarEnd(ch[0], count: Int(boosted.frameLength))
+        }
 
         streamPending += 1
         let handler: AVAudioPlayerNodeCompletionHandler = { [weak self] _ in
@@ -385,6 +436,49 @@ final class AudioPlayer: NSObject, ObservableObject {
         checkPCMStreamDrained()
     }
 
+    /// VPIO modunda oynatma kuyruğu boşaldı mı (drain). Diğer durumlarda true.
+    private var vpioDrained: Bool {
+        #if os(macOS)
+        if pipeline.useVPIO { return pipeline.vpio.pendingPlayback == 0 }
+        #endif
+        return true
+    }
+
+    #if os(macOS)
+    private static let vpioFmt = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: VPIOEngine.sampleRate,
+        channels: 1, interleaved: false)!
+
+    /// Tek-buffer (play(data:)/play(buffer:)) VPIO oynatması: kuyruğa ekle,
+    /// kuyruk boşalana kadar bekle. `isPlaying=false` (barge-in/stop) erken çıkar.
+    private func playViaVPIO(_ buffer: AVAudioPCMBuffer) async {
+        isPlaying = true
+        startAmplitudeMetering()
+        enqueueVPIO(buffer)
+        // İlk render callback'i kuyruğu tüketmeye başlayana kadar pendingPlayback>0;
+        // tamamen duyulana (kuyruk 0) kadar bekle.
+        while isPlaying, pipeline.vpio.pendingPlayback > 0 {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        isPlaying = false
+        stopAmplitudeMetering()
+    }
+
+    /// Gelen TTS parçasını 48k mono float'a çevirip VPIO çıkış kuyruğuna ekle.
+    private func enqueueVPIO(_ buffer: AVAudioPCMBuffer) {
+        let target = Self.vpioFmt
+        let conv: AVAudioPCMBuffer
+        if buffer.format.sampleRate != target.sampleRate
+            || buffer.format.channelCount != target.channelCount {
+            conv = (try? Self.resample(buffer, to: target)) ?? buffer
+        } else {
+            conv = buffer
+        }
+        guard conv.format.channelCount == 1, let ch = conv.floatChannelData else { return }
+        pipeline.vpio.enqueuePlayback(ch[0], count: Int(conv.frameLength))
+    }
+    #endif
+
     /// Stream tamamen çalınana (audio_end + tüm parçalar duyuldu) kadar bekle.
     /// Güvenlik: yanıt gelmezse (WS koptu / audio_end gelmedi) sonsuza dek
     /// "Konuşuyorum"da asılma — zaman aşımıyla çık.
@@ -394,19 +488,19 @@ final class AudioPlayer: NSObject, ObservableObject {
     func waitForPCMStreamDrained() async -> Bool {
         let start = Date()
         var timedOut = false
-        while !(streamFinishedFlag && streamPending <= 0) {
+        while !(streamFinishedFlag && streamPending <= 0 && vpioDrained) {
             if !isPlaying { break }                  // stopPCMStream çağrıldı
             let elapsed = Date().timeIntervalSince(start)
             // STT + LLM + TTS ilk parçası aynı pencerede: dev sunucuda (Mac,
             // Codex + MPS) 6 sn yetmiyordu — tur erken bitip geciken ses açık
             // mikrofona karışıyordu.
             if !streamStarted && elapsed > 30 {
-                print("[Player] yanıt gelmedi (30s) — tur bitiriliyor")
+                Log.line("[Player] yanıt gelmedi (30s) — tur bitiriliyor")
                 timedOut = true
                 break
             }
             if elapsed > 180 {                        // mutlak güvenlik üst sınırı
-                print("[Player] drain timeout (180s) — tur bitiriliyor")
+                Log.line("[Player] drain timeout (180s) — tur bitiriliyor")
                 timedOut = true
                 break
             }
@@ -414,6 +508,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         }
         streamDrainYield = nil
         isPlaying = false
+        EchoCanceller.shared.end()
         stopAmplitudeMetering()
         return timedOut
     }
@@ -429,17 +524,24 @@ final class AudioPlayer: NSObject, ObservableObject {
     /// Realtime stream'i zorla durdur (barge-in / cancel). Bekleyen continuation'ı
     /// resume eder, kuyruğu temizler.
     func stopPCMStream() {
+        #if os(macOS)
+        if pipeline.useVPIO { pipeline.vpio.flushPlayback() }
+        #endif
         pipeline.playerNode.stop()
         streamPending = 0
         streamFinishedFlag = true
         let yield = streamDrainYield
         streamDrainYield = nil
         isPlaying = false
+        EchoCanceller.shared.end()
         stopAmplitudeMetering()
         yield?()
     }
 
     func stop() {
+        #if os(macOS)
+        if pipeline.useVPIO { pipeline.vpio.flushPlayback() }
+        #endif
         pipeline.playerNode.stop()
         // Realtime stream aktifse onu da çöz.
         if streamDrainYield != nil || streamPending > 0 || streamStarted {
@@ -450,6 +552,7 @@ final class AudioPlayer: NSObject, ObservableObject {
             streamStarted = false
             yield?()
         }
+        EchoCanceller.shared.end()
         handleFinish(success: true)
     }
 
@@ -473,7 +576,12 @@ final class AudioPlayer: NSObject, ObservableObject {
         timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            if self.pipeline.playerNode.isPlaying {
+            var playing = self.pipeline.playerNode.isPlaying
+            #if os(macOS)
+            // VPIO modunda playerNode hiç çalmaz → çalma durumunu VPIO kuyruğundan oku.
+            if self.pipeline.useVPIO { playing = self.pipeline.vpio.pendingPlayback > 0 }
+            #endif
+            if playing {
                 self.amplitude = 0.30 + 0.25 * Float.random(in: 0...1)
             } else {
                 self.amplitude = 0
