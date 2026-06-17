@@ -7,4 +7,7 @@ exec .venv/bin/python -m wyoming_faster_whisper \
   --model "${WHISPER_MODEL:-large-v3-turbo}" \
   --language "${WHISPER_LANGUAGE:-tr}" \
   --uri tcp://0.0.0.0:10300 \
-  --data-dir .whisper-data
+  --data-dir .whisper-data \
+  --vad-filter --vad-min-silence-ms 700
+# --vad-filter: Silero VAD konuşma-dışı (sessizlik/eko) segmentleri eler →
+# Whisper'ın o anlarda uydurduğu hayalet altyazıları kaynakta keser.

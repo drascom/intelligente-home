@@ -8,7 +8,10 @@ Type=simple
 ExecStart=/opt/whisper-venv/bin/python -m wyoming_faster_whisper \
   --model large-v3-turbo --language tr --device cuda \
   --uri tcp://0.0.0.0:10300 \
-  --data-dir /opt/intelligente-home/.whisper-data
+  --data-dir /opt/intelligente-home/.whisper-data \
+  --vad-filter --vad-min-silence-ms 700
+# --vad-filter: Silero VAD konuşma-dışı (sessizlik/eko) segmentleri eler →
+# Whisper'ın o anlarda uydurduğu hayalet altyazıları kaynakta keser.
 # ctranslate2'nin pip ile gelen cuDNN/cuBLAS kütüphanelerini bulması için:
 Environment=LD_LIBRARY_PATH=/opt/whisper-venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/whisper-venv/lib/python3.12/site-packages/nvidia/cublas/lib
 Restart=on-failure

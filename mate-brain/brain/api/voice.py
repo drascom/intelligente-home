@@ -51,9 +51,33 @@ log = logging.getLogger("brain.voice.bridge")
 router = APIRouter()
 
 
+# Whisper'ın sessizlik/eko anlarında ürettiği bilinen "hayalet" altyazılar
+# (YouTube altyazı artefaktları). Türkçe modelde sık nükseder. mac istemcisindeki
+# liste ile aynı; tam cümle yerine ayırt edici parça (substring) tutuyoruz.
+WHISPER_PHANTOM_PHRASES = (
+    "abone ol",
+    "izlediğiniz için teşekkür",
+    "iyi seyirler",
+    "altyazı m.k",
+    "dipnot",
+)
+
+
+def _normalize_tr(text: str) -> str:
+    # Türkçe küçük-harf tuzağı: "İ".lower() → "i̇" (birleşik nokta U+0307 kalır),
+    # bu da düz "i" içeren kalıpla substring eşleşmesini bozar. Noktayı temizliyoruz.
+    return text.lower().replace("̇", "")
+
+
 def looks_hallucinated(text: str) -> bool:
-    """Whisper'ın gürültüden uydurduğu metinleri yakala: aynı kelimenin takılı
-    plak gibi tekrarı ('iplik iplik iplik...') veya çok düşük kelime çeşitliliği."""
+    """Whisper'ın gürültüden uydurduğu metinleri yakala: bilinen hayalet altyazı
+    kalıpları, aynı kelimenin takılı plak gibi tekrarı ('iplik iplik iplik...')
+    veya çok düşük kelime çeşitliliği."""
+    # Bilinen hayalet kalıplar — kısa olabilirler, bu yüzden kelime-sayısı eşiğinden
+    # ÖNCE kontrol ediyoruz.
+    norm = _normalize_tr(text)
+    if any(p in norm for p in WHISPER_PHANTOM_PHRASES):
+        return True
     words = [w.strip(".,!?…").lower() for w in text.split()]
     words = [w for w in words if w]
     if len(words) < 6:
