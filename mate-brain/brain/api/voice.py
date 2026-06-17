@@ -159,11 +159,15 @@ async def voice_bridge(websocket: WebSocket):
     async def _stream_tts_events(turn_id: str, text: str, voice: str | None) -> None:
         started = False
         fmt = None
+        n_chunks = 0
+        total_bytes = 0
         try:
             async for kind, value in synthesize_stream(text, voice=voice):
                 if kind == "start":
                     fmt = value
                     started = True
+                    log.info("TTS başladı id=%s %r (sr=%s ch=%s)",
+                             turn_id, text[:40], fmt.rate, fmt.channels)
                     await send_json(
                         {
                             "type": "audio_start",
@@ -174,10 +178,16 @@ async def voice_bridge(websocket: WebSocket):
                         }
                     )
                 elif kind == "chunk" and fmt is not None:
-                    await websocket.send_bytes(to_f32le(value, fmt))
+                    payload = to_f32le(value, fmt)
+                    n_chunks += 1
+                    total_bytes += len(payload)
+                    await websocket.send_bytes(payload)
         finally:
             if started:
                 await send_json({"type": "audio_end", "id": turn_id})
+                log.info("TTS bitti id=%s chunks=%d bytes=%d", turn_id, n_chunks, total_bytes)
+            else:
+                log.warning("TTS hiç ses üretmedi id=%s %r", turn_id, text[:40])
 
     # Upstream STT state: one in-flight utterance per connection.
     # {"id", "session": WhisperSession, "msg": original audio_start payload}
