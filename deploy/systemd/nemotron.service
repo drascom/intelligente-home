@@ -1,0 +1,18 @@
+[Unit]
+Description=Wyoming Nemotron 3.5 ASR Streaming STT (GPU, yan port 10301)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/nemo-venv/bin/python /opt/intelligente-home/deploy/nemotron/server.py \
+  --uri tcp://0.0.0.0:10301 --device cuda --language tr
+# Model /opt/hf-cache önbelleğindeki .nemo'dan yüklenir (nvidia/nemotron-3.5-asr-streaming-0.6b).
+Environment=HF_HOME=/opt/hf-cache
+# Whisper (10300) CANLI; bu servis YAN portta, varsayılan STT DEĞİL.
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -43,6 +43,10 @@ systemctl restart brain
 changed 'vox/' && { echo "→ vox restart"; systemctl restart vox; } || true
 changed 'deploy/systemd/whisper.service' && systemctl restart whisper || true
 changed 'deploy/systemd/vllm.service' && { echo "→ vllm restart (model/arg değişti)"; systemctl restart vllm; } || true
+# Nemotron yan-STT (10301): unit veya server.py değişince enable+restart. Whisper'a (10300) DOKUNMAZ.
+if changed 'deploy/systemd/nemotron.service' || changed 'deploy/nemotron/'; then
+  echo "→ nemotron enable+restart"; systemctl enable nemotron >/dev/null 2>&1 || true; systemctl restart nemotron || true
+fi
 
 # Sağlık kontrolü
 echo "→ health bekleniyor..."
