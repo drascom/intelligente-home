@@ -227,6 +227,7 @@ class LiveKitAgent:
         speech_seen = False
         silence_s = 0.0
         utterance_s = 0.0
+        utterance_awake = True      # bu utterance BAŞINDA istemci uyanık mıydı (wake gate)
         try:
             async for event in stream:
                 frame = event.frame  # rtc.AudioFrame
@@ -237,6 +238,10 @@ class LiveKitAgent:
                 if stt is None:
                     # Per-client ayarlar: STT motoru + dil katılımcı attribute'larından.
                     attrs = self._attrs(participant)
+                    # Wake gate: utterance BAŞINDA uyanık mıydı? Bitişte değil başta
+                    # okunur → istemci hemen sonra uyusa bile yarış olmaz. Attribute
+                    # yoksa uyanık say (geri-uyum).
+                    utterance_awake = attrs.get("candan.awake", "1") != "0"
                     engine_name, stt_host, stt_port = self.settings.resolve_stt_engine(
                         attrs.get("stt_engine")
                     )
@@ -285,7 +290,9 @@ class LiveKitAgent:
                 )
                 if ended:
                     session, stt = stt, None
-                    await self._handle_utterance(session, bytes(buf), participant, track)
+                    await self._handle_utterance(
+                        session, bytes(buf), participant, track, utterance_awake
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -327,12 +334,26 @@ class LiveKitAgent:
             return None
 
     async def _handle_utterance(
-        self, stt: WhisperSession, pcm: bytes = b"", participant=None, track=None
+        self, stt: WhisperSession, pcm: bytes = b"", participant=None, track=None,
+        awake: bool = True,
     ) -> None:
         """DUPLICATE turn-logic (satellite.py / api/voice.py ile aynı sıra):
         transcript → resolve-session → presence → deliveries → agent.respond →
         save → emit → TTS. Paylaşımlı helper'a çıkarılmadı (çalışan yolları
-        bozmamak için bilinçli kopya)."""
+        bozmamak için bilinçli kopya).
+
+        `awake`: utterance BAŞINDA istemci uyanık mıydı (sunucu wake gate). Uykuda
+        başladıysa utterance tamamen yok sayılır (cevap yok, transcript yok)."""
+        if not awake:
+            # İstemci mute güvenilir değil → ses sızabiliyor. Uykuda başlayan
+            # utterance'ı sunucuda düşür: STT'yi iptal et, dinlemeye dön.
+            log.info("livekit agent: uyku modunda başlayan utterance düşürüldü (wake gate)")
+            try:
+                await stt.abort()
+            except Exception:
+                pass
+            self._set_agent_state("listening")
+            return
         try:
             text = (await stt.finish()).strip()
         except (ConnectionError, OSError, asyncio.TimeoutError) as e:
