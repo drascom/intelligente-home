@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     stt_host: str = "localhost"
     stt_port: int = 10300
     stt_language: str = ""
+    # Modüler STT: aynı Wyoming protokolünü konuşan birden çok motor, porta göre
+    # drop-in. İstemci oturum başına motor seçebilir; seçmezse varsayılan kullanılır.
+    # Varsayılan motor (whisper) stt_host/stt_port'u onurlandırır (geri-uyum).
+    stt_default_engine: str = "whisper"
+    stt_engines: dict[str, tuple[str, int]] = {
+        "whisper": ("localhost", 10300),
+        "nemotron": ("localhost", 10301),
+    }
     # TTS engine: "vox" (VoxCPM2 bridge server, f32le 48k, vox/) or
     # "piper" (Wyoming, s16le 22k — also what HA's Voice PE path uses)
     tts_engine: str = "vox"
@@ -72,6 +80,17 @@ class Settings(BaseSettings):
 
     # Dashboard SPA için CORS origin'leri (virgülle ayrık). Dev Vite varsayılanı.
     monitor_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    def resolve_stt_engine(self, engine: str | None) -> tuple[str, str, int]:
+        """(name, host, port) çöz. Bilinmeyen/eksik motor → varsayılan (whisper).
+        Varsayılan motor için stt_host/stt_port'u kullanır (env override geri-uyumu)."""
+        name = engine or self.stt_default_engine
+        if name not in self.stt_engines:
+            name = self.stt_default_engine
+        if name == self.stt_default_engine:
+            return name, self.stt_host, self.stt_port
+        host, port = self.stt_engines[name]
+        return name, host, port
 
     class Config:
         env_file = ".env"

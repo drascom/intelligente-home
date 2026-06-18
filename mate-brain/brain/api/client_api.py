@@ -80,6 +80,29 @@ async def voices(request: Request, client: dict = Depends(current_client)):
         raise HTTPException(503, f"vox unreachable: {e}")
 
 
+# İstemcinin Ayarlar'da gösterdiği STT motoru listesi. Statik (config'ten);
+# whisper varsayılan ve geri-uyum gereği hep ilk/işaretli.
+STT_ENGINE_NAMES = {
+    "whisper": "Whisper (faster-whisper)",
+    "nemotron": "Nemotron 3.5 ASR",
+}
+
+
+@router.get("/stt-engines")
+async def stt_engines(request: Request, client: dict = Depends(current_client)):
+    """Seçilebilir STT motorları. Varsayılan (whisper) `default: true` ile işaretli."""
+    default = settings.stt_default_engine
+    out = []
+    for eid in settings.stt_engines:
+        entry = {"id": eid, "name": STT_ENGINE_NAMES.get(eid, eid)}
+        if eid == default:
+            entry["default"] = True
+        out.append(entry)
+    # Varsayılanı listenin başına al (istemci fallback'i ile tutarlı sıralama).
+    out.sort(key=lambda e: e.get("default", False), reverse=True)
+    return out
+
+
 class ServiceCall(BaseModel):
     domain: str
     service: str

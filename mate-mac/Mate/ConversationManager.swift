@@ -1021,8 +1021,10 @@ final class ConversationManager: ObservableObject {
         mark("Sunucu STT: \(pcm.count / 32) ms ses yollanıyor")
         player.beginPCMStream()
         let voice = settings.voice.isEmpty ? nil : settings.voice
+        let sttEngine = settings.sttEngine.isEmpty ? nil : settings.sttEngine
         do {
-            realtimeActiveId = try await bridge.sendUtterance(pcm: pcm, voice: voice)
+            realtimeActiveId = try await bridge.sendUtterance(pcm: pcm, voice: voice,
+                                                              sttEngine: sttEngine)
         } catch {
             player.stopPCMStream()
             mark("Sunucuya ses gönderilemedi: \(error.localizedDescription)")

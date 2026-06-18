@@ -167,7 +167,8 @@ final class RealtimeBridgeClient: NSObject {
     /// Ses-yukarı utterance: kayıt PCM'ini (s16le mono) brain'e yolla; sunucu
     /// Whisper'ı çözer, `transcript` + `reply` + TTS sesi döner. id döner.
     @discardableResult
-    func sendUtterance(pcm: Data, rate: Int = 16000, voice: String?) async throws -> String {
+    func sendUtterance(pcm: Data, rate: Int = 16000, voice: String?,
+                       sttEngine: String? = nil) async throws -> String {
         guard let task, isConnected else { throw BridgeError.notConnected }
         let id = UUID().uuidString
         var start: [String: Any] = [
@@ -176,6 +177,10 @@ final class RealtimeBridgeClient: NSObject {
         ]
         if let voice, !voice.isEmpty {
             start["voice"] = Self.normalizeVoice(voice)
+        }
+        // Sunucu STT motoru seçimi (whisper/nemotron); boş/whisper → varsayılan.
+        if let sttEngine, !sttEngine.isEmpty, sttEngine != "whisper" {
+            start["stt_engine"] = sttEngine
         }
         try await sendJSON(start)
         let chunkSize = 32 * 1024

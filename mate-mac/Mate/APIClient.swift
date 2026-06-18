@@ -33,6 +33,37 @@ struct Voice: Identifiable, Decodable, Hashable {
     }
 }
 
+/// Sunucu STT motoru seçeneği (`/api/stt-engines`). `default` opsiyonel; yoksa false.
+struct STTEngine: Identifiable, Decodable, Hashable {
+    let id: String
+    let name: String
+    var isDefault: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case isDefault = "default"
+    }
+
+    init(id: String, name: String, isDefault: Bool = false) {
+        self.id = id
+        self.name = name
+        self.isDefault = isDefault
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        isDefault = (try? c.decode(Bool.self, forKey: .isDefault)) ?? false
+    }
+
+    /// Sunucu erişilemezse kullanılacak sabit liste (whisper varsayılan).
+    static let fallback = [
+        STTEngine(id: "whisper", name: "Whisper (faster-whisper)", isDefault: true),
+        STTEngine(id: "nemotron", name: "Nemotron 3.5 ASR"),
+    ]
+}
+
 /// Speaker-ID (voice-ID) kayıtlı kişi. `sample_count` create yanıtında yok →
 /// opsiyonel.
 struct Speaker: Identifiable, Decodable, Hashable {
@@ -78,6 +109,20 @@ final class APIClient {
         let (data, response) = try await session.data(for: req)
         try validate(response, data: data)
         return try JSONDecoder().decode([Voice].self, from: data)
+    }
+
+    /// Sunucudan seçilebilir STT motorlarını al (`/api/stt-engines`).
+    func fetchSTTEngines(baseURL: String, apiKey: String) async throws -> [STTEngine] {
+        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/api/stt-engines") else {
+            throw APIError.badURL
+        }
+        var req = URLRequest(url: url)
+        if !apiKey.isEmpty {
+            req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        try validate(response, data: data)
+        return try JSONDecoder().decode([STTEngine].self, from: data)
     }
 
     // ---- speaker-ID (voice-ID) enrollment ----

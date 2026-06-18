@@ -7,6 +7,9 @@ final class SettingsStore: ObservableObject {
 
     @Published var bridgeApiKey: String { didSet { defaults.set(bridgeApiKey, forKey: "bridgeApiKey") } }
     @Published var voice: String { didSet { defaults.set(voice, forKey: "voice") } }
+    // Sunucu STT motoru seçimi (whisper/nemotron); boş/whisper = varsayılan.
+    // audio_start ile gönderilir; bilinmeyen/eksik motor brain'de whisper'a düşer.
+    @Published var sttEngine: String { didSet { defaults.set(sttEngine, forKey: "sttEngine") } }
     @Published var language: String { didSet { defaults.set(language, forKey: "language") } }
     @Published var wakeWordEnabled: Bool { didSet { defaults.set(wakeWordEnabled, forKey: "wakeWordEnabled") } }
     @Published var wakeWord: String { didSet { defaults.set(wakeWord, forKey: "wakeWord") } }
@@ -35,6 +38,7 @@ final class SettingsStore: ObservableObject {
         // Eski sunucudan kalan ses adlarını brain'in varsayılanına taşı.
         let storedVoice = defaults.string(forKey: "voice") ?? "nese"
         self.voice = ["ayhan.mp3", "deneme"].contains(storedVoice) ? "nese" : storedVoice
+        self.sttEngine = defaults.string(forKey: "sttEngine") ?? "whisper"
         self.language = defaults.string(forKey: "language") ?? "tr"
         self.wakeWordEnabled = defaults.object(forKey: "wakeWordEnabled") as? Bool ?? true
         self.wakeWord = defaults.string(forKey: "wakeWord") ?? "candan"

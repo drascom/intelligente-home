@@ -324,9 +324,13 @@ async def voice_bridge(websocket: WebSocket):
                     "width": int(msg.get("width", 2)),
                     "channels": int(msg.get("channels", 1)),
                 }
-                session = WhisperSession(
-                    settings.stt_host, settings.stt_port, settings.stt_language
+                # İstemci oturum başına STT motoru seçebilir (whisper/nemotron);
+                # eksik/bilinmeyen → varsayılan (whisper). Geri-uyum korunur.
+                engine_name, stt_host, stt_port = settings.resolve_stt_engine(
+                    msg.get("stt_engine")
                 )
+                log.info("STT motoru: %s (%s:%d)", engine_name, stt_host, stt_port)
+                session = WhisperSession(stt_host, stt_port, settings.stt_language)
                 try:
                     await session.start(**fmt)
                 except (ConnectionError, OSError) as e:

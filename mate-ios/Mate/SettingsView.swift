@@ -17,10 +17,14 @@ struct SettingsView: View {
     @State private var draftBridgeWSURL = ""
     @State private var draftShowToken = false
 
+    @State private var draftSTTEngine = "whisper"
+
     @State private var onDeviceVoices: [OnDeviceTTS.VoiceOption] = []
     @State private var bridgeVoices: [Voice] = []
     @State private var bridgeVoicesLoading = false
     @State private var bridgeVoicesError: String?
+    // STT motor listesi (sunucudan; erişilemezse STTEngine.fallback).
+    @State private var sttEngines: [STTEngine] = STTEngine.fallback
     // Tek uçuşta tek istek: yenisi başlarken öncekini iptal eder (URL yazarken
     // her tuş vuruşu ayrı istek başlatıp picker'ı titretiyordu).
     @State private var voicesTask: Task<Void, Never>?
@@ -65,6 +69,17 @@ struct SettingsView: View {
                         }
 
                     bridgeVoicePickerRow
+
+                    Picker("STT motoru", selection: $draftSTTEngine) {
+                        if !draftSTTEngine.isEmpty &&
+                            !sttEngines.contains(where: { $0.id == draftSTTEngine }) {
+                            Text("\(draftSTTEngine) (kayıtlı)").tag(draftSTTEngine)
+                        }
+                        ForEach(sttEngines) { e in
+                            Text(e.name).tag(e.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
 
                     if let err = bridgeVoicesError {
                         Text(err)
@@ -153,6 +168,7 @@ struct SettingsView: View {
             }
             .onAppear {
                 draftVoice = settings.voice
+                draftSTTEngine = settings.sttEngine.isEmpty ? "whisper" : settings.sttEngine
                 draftLanguage = settings.language
                 draftBridgeKey = settings.bridgeApiKey
                 draftWakeEnabled = settings.wakeWordEnabled
@@ -277,6 +293,12 @@ struct SettingsView: View {
             if fetched != bridgeVoices {
                 bridgeVoices = fetched
             }
+            // STT motorları: sunucudan dene, hata olursa sabit listede kal
+            // (ses listesinin hatasını ezmesin, picker hep dolu olsun).
+            if let engines = try? await api.fetchSTTEngines(baseURL: base, apiKey: draftBridgeKey),
+               !engines.isEmpty, !Task.isCancelled, engines != sttEngines {
+                sttEngines = engines
+            }
         } catch is CancellationError {
             return
         } catch let e as URLError where e.code == .cancelled {
@@ -291,6 +313,7 @@ struct SettingsView: View {
 
     private func save() {
         settings.voice = draftVoice.trimmingCharacters(in: .whitespacesAndNewlines)
+        settings.sttEngine = draftSTTEngine.trimmingCharacters(in: .whitespacesAndNewlines)
         settings.language = draftLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         settings.bridgeApiKey = draftBridgeKey.trimmingCharacters(in: .whitespacesAndNewlines)
         settings.wakeWordEnabled = draftWakeEnabled
