@@ -71,7 +71,14 @@ final class CueSounds {
         #endif
         prepare()
         guard prepared else { return }
+        // Özel engine SOĞUK başlıyorsa (uyku/wake modunda VPIO durdurulmuş → cue
+        // buraya düşer) engine/cihaz spin-up'ı tonun başında "çat/cızırtı" üretebiliyor
+        // (kullanıcı: "bip'ten ÖNCE gürültü"). Tonlardan önce kısa bir sessizlik
+        // tamponu çal → transient sese değil, sessizliğe denk gelsin.
         var cursorFrames: AVAudioFramePosition = 0
+        let leadSilence = makeTone(freq: 0, duration: 0.045, gain: 0)
+        player.scheduleBuffer(leadSilence, at: nil, options: [])
+        cursorFrames += AVAudioFramePosition(leadSilence.frameLength)
         for n in notes {
             let buffer = makeTone(freq: n.freq, duration: n.duration, gain: gain)
             let when: AVAudioTime?

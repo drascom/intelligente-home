@@ -112,9 +112,20 @@ final class ConversationManager: ObservableObject {
     // 30 → 15: kaçak VAD segmentleri (arka plan TV/müzik) yarıda kesilsin;
     // normal komutlar zaten 15 sn'den kısa.
     private let maxRecordingDuration: TimeInterval = 15.0
-    private let minSpeechDuration: TimeInterval = 0.9  // gerçek konuşma min süresi (kuş/klik/noise burst'lerine karşı)
+    // 0.9 → 0.35: kısa ama GERÇEK yanıtlar ("Ne vardı?" ölçülen sesli süre=0.46s,
+    // "Efendim?" ~0.4s) silence-close koşulundaki speechDur>=min eşiğini geçemiyordu
+    // → segment kapanmayıp maxRecordingDuration'a (15s) kadar açık kalıyor, yanıt
+    // ~9s gecikiyordu (proaktif bildirim regresyonu, log: "close BLOKE speechDur=0.46<0.90").
+    // 0.35 < 0.46 → kısa yanıtlar kapanır. Kuş/klik koruması zaten VAD tetiğindeki
+    // ardışık-frame şartı (voiceFramesRequired) + isLikelyNoise/boş-transkript filtresiyle.
+    private let minSpeechDuration: TimeInterval = 0.35  // gerçek konuşma min süresi (kuş/klik/noise burst'lerine karşı)
     private let postPlaybackDelay: UInt64 = 200_000_000  // AEC aktif, TTS tail az → kısa delay
     private let engineWarmupSeconds: Double = 0.9  // wake sonrası motor/VPIO soğuk başlangıç ısınması
+    // "Konuş" bip'i (playWakeDetected ≈0.185s) VPIO çıkış kuyruğundan çalınca, kuyruk
+    // boşalana + AEC artığı yatışana kadar girişi yok say. Aksi halde ilk VAD kararı
+    // bip'in kuyruğuna/echo'suna kilitlenip segmenti erken açıyor → ilk kelime ("Efendim?")
+    // bip artığıyla birleşip Whisper tarafından düşüyor (proaktif bildirim regresyonu).
+    private let readyCueSettleSeconds: Double = 0.45
     // 15 → 6: cevaptan sonra sessizlik varsa hızla wake moduna dön (açık
     // mikrofonun gürültü yakalama penceresi daralır).
     private let followUpInactivity: TimeInterval = 6.0
@@ -252,7 +263,10 @@ final class ConversationManager: ObservableObject {
             case .idle:
                 self.handleChimeListen()         // çalışıyor ama wake kapalı → doğrudan dinle
             default:
-                break                            // tur/konuşma ortasında dokunma
+                // tur/konuşma ortasında dokunma — AMA chime tonu (playReminderChime)
+                // bu açık VPIO segmentine sızıp lastVoiceAt'i tazeleyerek segmenti
+                // uzatabilir/böremez (yanıt gecikmesi). Teşhis için durumu logla.
+                Log.line("[Chime] state=\(self.state) — yeni pencere açılmadı (segment açıksa chime içine sızabilir)")
             }
         }
         bridge.onClose = { [weak self] reason in
@@ -511,12 +525,54 @@ final class ConversationManager: ObservableObject {
         // engine yüzünden VAD segmenti kapanmayabiliyor.
         _ = recorder.stop()
         cancelLiveSTT()
+        // VPIO (raw AUVoiceProcessingIO) default cihazı bırakıyor. CoreAudio HAL
+        // teardown'u ASENKRON: dispose döndükten sonra cihaz birkaç yüz ms daha
+        // "bad device" (kAudioHardwareBadDeviceError / '!dev' = 560227702)
+        // kalabiliyor ve wake'in taze AVAudioEngine.start()'ı bununla patlıyor →
+        // wake hiç kurulamıyor, re-arm ölüyordu. VPIO aktifken (ör. wake'i
+        // Ayarlar'dan kapat→kullan→aç) teardown penceresi büyüdüğü için her
+        // seferinde tekrar üretiliyordu. Çözüm: VPIO'yu durdur, kısa settle ver,
+        // sonra başlat; ilk deneme yine patlarsa backoff'lu retry (re-arm
+        // gecikmesi kullanıcıya görünmez).
+        var vpioWasRunning = false
+        #if os(macOS)
+        vpioWasRunning = AudioPipeline.shared.vpio.running
+        #endif
         AudioPipeline.shared.pause()
+        if vpioWasRunning {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms HAL serbest kalsın
+                self.startWakeWithRetry(attempt: 0)
+            }
+        } else {
+            startWakeWithRetry(attempt: 0)
+        }
+    }
+
+    private func startWakeWithRetry(attempt: Int) {
+        guard isRunning, !muted, let settings else { return }
+        // Yarış güvenliği: bir şekilde VPIO yeniden başladıysa (ör. araya giren
+        // oynatma) önce onu bırak — iki birim aynı cihazı çekiştirmesin.
+        #if os(macOS)
+        if AudioPipeline.shared.vpio.running { AudioPipeline.shared.pause() }
+        #endif
         do {
             try wake.start(wakeWord: settings.wakeWord, language: settings.language)
             state = .waitingForWake
         } catch {
-            state = .error("Wake başlatılamadı: \(error.localizedDescription)")
+            let maxAttempts = 6
+            if attempt + 1 < maxAttempts {
+                Log.line("[Wake] start başarısız (\(error.localizedDescription)) → \(attempt + 2). deneme (cihaz serbest kalmıyor)")
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 200_000_000)  // 200ms HAL serbest kalsın
+                    guard self.isRunning, !self.muted,
+                          self.state != .waitingForWake else { return }
+                    self.startWakeWithRetry(attempt: attempt + 1)
+                }
+            } else {
+                Log.line("[Wake] start kalıcı başarısız (\(maxAttempts) deneme): \(error.localizedDescription)")
+                state = .error("Wake başlatılamadı: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -582,6 +638,14 @@ final class ConversationManager: ObservableObject {
                     guard let self, self.isRunning, self.state == .listening,
                           self.speechStartedAt == nil else { return }
                     self.playCue { self.cues.playWakeDetected() }
+                    // Bip ısınma sonunda çalınca ignoreInputUntil (line ~576) tam o anda
+                    // doluyor; bip VPIO kuyruğundan çalınırken mic CANLI kalıyordu. Bip
+                    // çaldıysa girişi bip süresi + drain/echo yatışması kadar daha sustur ki
+                    // ilk segment bip artığı yerine kullanıcının ilk kelimesiyle açılsın
+                    // (preRoll bip'ten sonraki konuşmanın başını yine de geri alır).
+                    if self.settings?.cuesEnabled == true {
+                        self.ignoreInputUntil = Date().addingTimeInterval(self.readyCueSettleSeconds)
+                    }
                 }
             }
             state = .listening
@@ -629,7 +693,7 @@ final class ConversationManager: ObservableObject {
         ignoreInputUntil = nil
     }
 
-    private func startSpeechSegment(now: Date, preRollSeconds: Double = 1.15) {
+    private func startSpeechSegment(now: Date, preRollSeconds: Double = 1.15, triggerLevel: Float = -1) {
         guard speechStartedAt == nil else {
             lastVoiceAt = now
             return
@@ -637,6 +701,7 @@ final class ConversationManager: ObservableObject {
         do {
             // Canlı STT DEVRE DIŞI — batch STT kullanılıyor (VPIO disruption nedeniyle).
             _ = try recorder.beginSegment(includePreRoll: true, preRollSeconds: preRollSeconds)
+            Log.line(String(format: "[VAD] trigger level=%.3f thr=%.3f", triggerLevel, calibratedThreshold))
             speechStartedAt = now
             lastVoiceAt = now
             Log.line("[VAD] speech started")
@@ -775,14 +840,21 @@ final class ConversationManager: ObservableObject {
                 voiceFramesAccum += 1
                 if voiceFramesAccum < voiceFramesRequired { return }
             }
-            startSpeechSegment(now: now)
+            startSpeechSegment(now: now, triggerLevel: level)
         } else {
             voiceFramesAccum = 0
             if let last = lastVoiceAt, let spoke = speechStartedAt {
                 let silence = now.timeIntervalSince(last)
                 let speechDur = last.timeIntervalSince(spoke)
                 if silence >= silenceTimeout && speechDur >= minSpeechDuration {
+                    Log.line(String(format: "[VAD] close: silence=%.2f speechDur=%.2f", silence, speechDur))
                     Task { await endRecording() }
+                } else if silence >= silenceTimeout && silence < silenceTimeout + 0.22
+                            && speechDur < minSpeechDuration {
+                    // Sessizlik doldu ama konuşma minSpeechDuration'ı geçmediği için segment
+                    // KAPANMIYOR — kısa "Ne vardı?" burada takılıp uzun segmente birleşiyor olabilir.
+                    // (sadece eşik geçişinde 1-2 kez logla, ~100Hz spam olmasın)
+                    Log.line(String(format: "[VAD] close BLOKE: silence=%.2f speechDur=%.2f < min=%.2f", silence, speechDur, minSpeechDuration))
                 }
             }
         }
@@ -790,6 +862,11 @@ final class ConversationManager: ObservableObject {
 
     private func endRecording() async {
         guard recorder.isRecording else { return }
+        if let spoke = speechStartedAt {
+            let span = Date().timeIntervalSince(spoke)
+            let voiced = lastVoiceAt.map { $0.timeIntervalSince(spoke) } ?? 0
+            Log.line(String(format: "[VAD] segment kapanıyor: açık=%.2fs sesli=%.2fs", span, voiced))
+        }
         listeningLoopActive = false
         guard let url = recorder.finishSegment() else {
             cancelLiveSTT()
