@@ -238,6 +238,10 @@ class LiveKitAgent:
                 if stt is None:
                     # Per-client ayarlar: STT motoru + dil katılımcı attribute'larından.
                     attrs = self._attrs(participant)
+                    # TEŞHİS: brain'in gerçekte gördüğü attribute'lar (wake gate +
+                    # settings buradan okunuyor). Boşsa istemci yayını gelmiyor demek.
+                    log.info("livekit agent: attrs=%r (participant=%s)",
+                             attrs, getattr(participant, "identity", "?"))
                     # Wake gate: utterance BAŞINDA uyanık mıydı? Bitişte değil başta
                     # okunur → istemci hemen sonra uyusa bile yarış olmaz. Attribute
                     # yoksa uyanık say (geri-uyum).
