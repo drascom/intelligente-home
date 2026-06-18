@@ -195,9 +195,6 @@ class LiveKitAgent:
                     continue
 
                 if stt is None:
-                    # Yeni utterance başlıyor → uçuştaki TTS'i kes (barge-in).
-                    if self._tts_task and not self._tts_task.done():
-                        self._tts_task.cancel()
                     stt = WhisperSession(
                         self.settings.stt_host, self.settings.stt_port,
                         self.settings.stt_language,
@@ -228,6 +225,11 @@ class LiveKitAgent:
                 if self._is_silence(payload, STT_WIDTH):
                     silence_s += chunk_s
                 else:
+                    # İlk gerçek konuşma karesi → uçuştaki TTS'i kes (barge-in).
+                    # Sessiz karelerde DEĞİL: yoksa cevap sesi daha başlamadan
+                    # her boş karede iptal olur ve hiç duyulmaz.
+                    if not speech_seen and self._tts_task and not self._tts_task.done():
+                        self._tts_task.cancel()
                     speech_seen = True
                     silence_s = 0.0
 
@@ -357,9 +359,10 @@ class LiveKitAgent:
             log.info("livekit agent: TTS bitti — %d giriş baytı, %d kare yayınlandı",
                      bytes_in, frames_pub)
         except asyncio.CancelledError:
+            log.info("livekit agent: TTS iptal edildi (barge-in)")
             raise
-        except (ConnectionError, OSError) as e:
-            log.warning("livekit agent: TTS başarısız: %s", e)
+        except Exception as e:
+            log.warning("livekit agent: TTS başarısız: %r", e)
 
     async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
         """s16le PCM'i kaynağın yayın biçimine (48 kHz mono) indir ve kare kare
