@@ -25,8 +25,12 @@ final class WakeWordDetector: NSObject, ObservableObject {
     var onUnavailable: ((String) -> Void)?
     private var reportedUnavailable = false
 
-    func requestPermission() async -> Bool {
-        await withCheckedContinuation { cont in
+    // nonisolated: SFSpeech, yetki completion'ını ARBITRARY bir arka plan
+    // kuyruğunda çağırır. Bu metot @MainActor olsaydı completion closure'ı da
+    // main-actor-isolated sayılır ve arka planda çağrılınca Swift executor
+    // assertion'ı (SIGTRAP) ile çökerdi. nonisolated → assertion eklenmez.
+    nonisolated func requestPermission() async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { status in
                 cont.resume(returning: status == .authorized)
             }
@@ -73,20 +77,22 @@ final class WakeWordDetector: NSObject, ObservableObject {
         request = req
 
         let eng = AVAudioEngine()
-        let inputNode = eng.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            req.append(buffer)
-        }
+        // Tap'i nonisolated yardımcıdan kur: tap closure'ı ses render thread'inde
+        // çağrılır; @MainActor bağlamında oluşturulursa isolation assertion'ı ile
+        // çökerdi. nonisolated helper içindeki closure main-actor-isolated olmaz.
+        Self.installTap(on: eng, feeding: req)
         eng.prepare()
         try eng.start()
         engine = eng
 
-        task = recognizer?.recognitionTask(with: req) { [weak self] result, error in
-            guard let self else { return }
+        // @Sendable: SFSpeech result handler'ı da arka plan kuyruğunda çağrılır.
+        // Closure'ı @Sendable yapınca main-actor izolasyon assertion'ı eklenmez;
+        // tüm @MainActor state erişimi içeride Task { @MainActor in } ile yapılır.
+        let handler: @Sendable (SFSpeechRecognitionResult?, Error?) -> Void = { [weak self] result, error in
             if let result {
                 let text = result.bestTranscription.formattedString.lowercased()
                 Task { @MainActor in
+                    guard let self else { return }
                     self.lastHeard = text
                     if self.matches(text: text) {
                         let cb = self.onWakeDetected
@@ -104,7 +110,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
                 if msg.localizedCaseInsensitiveContains("dictation"),
                    msg.localizedCaseInsensitiveContains("disabled") {
                     Task { @MainActor in
-                        guard !self.reportedUnavailable else { return }
+                        guard let self, !self.reportedUnavailable else { return }
                         self.reportedUnavailable = true
                         self.stop()
                         self.onUnavailable?(msg)
@@ -112,6 +118,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
                 }
             }
         }
+        task = recognizer?.recognitionTask(with: req, resultHandler: handler)
     }
 
     private func endSession() {
@@ -137,6 +144,18 @@ final class WakeWordDetector: NSObject, ObservableObject {
         }
         timer.resume()
         rotationTimer = timer
+    }
+
+    /// Tap kurulumu — nonisolated: kurulan closure ses render thread'inde çalışır,
+    /// main-actor bağlamında oluşturulmamalı (yoksa isolation assertion → çöker).
+    nonisolated private static func installTap(
+        on engine: AVAudioEngine, feeding req: SFSpeechAudioBufferRecognitionRequest
+    ) {
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            req.append(buffer)
+        }
     }
 
     private func matches(text: String) -> Bool {
