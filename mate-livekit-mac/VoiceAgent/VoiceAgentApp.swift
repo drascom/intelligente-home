@@ -19,21 +19,35 @@ struct VoiceAgentApp: App {
 
     private static let selfHostedToken = Secrets.livekitToken
 
-    // Voice-only assistant: no screen share / broadcast capture configured.
-    private let session = Session(
-        tokenSource: LiteralTokenSource(
-            serverURL: Self.selfHostedServerURL,
-            participantToken: Self.selfHostedToken,
-            participantName: "mac-client",
-            roomName: "mate-demo"
+    private let session: Session
+    private let settings = SettingsStore()
+
+    init() {
+        // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel
+        // alıcıyla (CandanTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
+        // hem asistan satırını "assistant" kimliğinden yollar; SDK'nın varsayılan
+        // receiver'ı gönderene göre atfettiği için kullanıcı sözünü yanlış işaretler.
+        // Bu yüzden varsayılan transcription receiver'ı bizimkiyle DEĞİŞTİRİYORUZ
+        // (aynı topic'e iki kayıt çakışır). Metin gönderme (senders) varsayılan kalır.
+        let room = Room()
+        session = Session(
+            tokenSource: LiteralTokenSource(
+                serverURL: Self.selfHostedServerURL,
+                participantToken: Self.selfHostedToken,
+                participantName: "mac-client",
+                roomName: "mate-demo"
+            ),
+            options: SessionOptions(room: room),
+            receivers: [CandanTranscriptionReceiver(room: room)]
         )
-    )
+    }
 
     var body: some Scene {
         WindowGroup {
             AppView()
                 .environmentObject(session)
                 .environmentObject(LocalMedia(session: session))
+                .environmentObject(settings)
                 .environment(\.voiceEnabled, true)
                 .environment(\.textEnabled, true)
         }
