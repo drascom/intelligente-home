@@ -1,0 +1,344 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B4CE39304952643DB24C29C6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0CC69623BE631A3FAAF127 /* ContentView.swift */; };
+		D7DB351E3818F8DC56B96CCA /* MateLiveKitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D7CACEB67940E0F3F3C3F5E /* MateLiveKitApp.swift */; };
+		D906455CDDBB2E64B669A13E /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 01B99191C99F778852566592 /* LiveKit */; };
+		EA2C48C4E6046C5D1B47B660 /* RoomManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D96FD38A9211D8D6487D8F3 /* RoomManager.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4D7CACEB67940E0F3F3C3F5E /* MateLiveKitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MateLiveKitApp.swift; sourceTree = "<group>"; };
+		8A0CC69623BE631A3FAAF127 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		9D96FD38A9211D8D6487D8F3 /* RoomManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomManager.swift; sourceTree = "<group>"; };
+		AEB8C3667405B8C133221D05 /* MateLiveKit.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MateLiveKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D425859A8CDDDC854D9C3707 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		EBCA79DAD68581BF54C1CA68 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D906455CDDBB2E64B669A13E /* LiveKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3261FCE4A8C6D0B9BE4CE643 = {
+			isa = PBXGroup;
+			children = (
+				646B02ACED3D93ACC400A80A /* Sources */,
+				341D803731CB10C364022600 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		341D803731CB10C364022600 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AEB8C3667405B8C133221D05 /* MateLiveKit.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		646B02ACED3D93ACC400A80A /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				8A0CC69623BE631A3FAAF127 /* ContentView.swift */,
+				D425859A8CDDDC854D9C3707 /* Info.plist */,
+				4D7CACEB67940E0F3F3C3F5E /* MateLiveKitApp.swift */,
+				9D96FD38A9211D8D6487D8F3 /* RoomManager.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		949A31BD624A79EFBCA32530 /* MateLiveKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 60F9EAB1F913A5866DFDF1DC /* Build configuration list for PBXNativeTarget "MateLiveKit" */;
+			buildPhases = (
+				5C20D52D5DE1F33D50B6CAD7 /* Sources */,
+				EBCA79DAD68581BF54C1CA68 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MateLiveKit;
+			packageProductDependencies = (
+				01B99191C99F778852566592 /* LiveKit */,
+			);
+			productName = MateLiveKit;
+			productReference = AEB8C3667405B8C133221D05 /* MateLiveKit.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7ED10A596B37787CE1F478BF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					949A31BD624A79EFBCA32530 = {
+						DevelopmentTeam = 59P494J56R;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = F7F5C6571222C9C21DCD544C /* Build configuration list for PBXProject "MateLiveKit" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3261FCE4A8C6D0B9BE4CE643;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FC80C38ED1E28D59AC1FBFDB /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 341D803731CB10C364022600 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				949A31BD624A79EFBCA32530 /* MateLiveKit */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5C20D52D5DE1F33D50B6CAD7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B4CE39304952643DB24C29C6 /* ContentView.swift in Sources */,
+				D7DB351E3818F8DC56B96CCA /* MateLiveKitApp.swift in Sources */,
+				EA2C48C4E6046C5D1B47B660 /* RoomManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		92C61252CA470CED9EA9B803 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		9726C8E7BC4BF5BE55776CB8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 59P494J56R;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = uk.drascom.mate.livekit;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D58E394504863E411D7EDFC2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		EF3269952FCD38E659A4973F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 59P494J56R;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = uk.drascom.mate.livekit;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		60F9EAB1F913A5866DFDF1DC /* Build configuration list for PBXNativeTarget "MateLiveKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EF3269952FCD38E659A4973F /* Debug */,
+				9726C8E7BC4BF5BE55776CB8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F7F5C6571222C9C21DCD544C /* Build configuration list for PBXProject "MateLiveKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D58E394504863E411D7EDFC2 /* Debug */,
+				92C61252CA470CED9EA9B803 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FC80C38ED1E28D59AC1FBFDB /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		01B99191C99F778852566592 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC80C38ED1E28D59AC1FBFDB /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7ED10A596B37787CE1F478BF /* Project object */;
+}

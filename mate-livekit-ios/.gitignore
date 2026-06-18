@@ -1,0 +1,14 @@
+# Build artifacts (SPM / Xcode) — never commit
+.build/
+DerivedData/
+build/
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Local secrets / config
+.env.xcconfig
