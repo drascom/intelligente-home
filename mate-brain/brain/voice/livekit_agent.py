@@ -70,6 +70,8 @@ class LiveKitAgent:
         self.connected = False
         # rtc nesneleri run() içinde kurulur (modül import edilince livekit şart olmasın).
         self._source = None          # rtc.AudioSource (yayınladığımız ses)
+        self._room = None            # rtc.Room (transcript yayını için)
+        self._pub_track_sid = None   # yayınladığımız ses track'inin sid'i (attribution)
         self._tts_task: asyncio.Task | None = None  # uçuşta TTS (barge-in için iptal)
 
     @property
@@ -111,6 +113,7 @@ class LiveKitAgent:
                             e, RECONNECT_DELAY)
             self.connected = False
             self._source = None
+            self._room = None
             if self._tts_task:
                 self._tts_task.cancel()
                 self._tts_task = None
@@ -128,7 +131,7 @@ class LiveKitAgent:
             # Sadece insan (assistant olmayan) katılımcının ses track'i.
             if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "assistant":
                 log.info("livekit agent: ses track'i abone olundu (%s)", participant.identity)
-                track_queue.put_nowait(track)
+                track_queue.put_nowait((track, participant))
 
         @room.on("disconnected")
         def _on_disconnected(reason):
@@ -147,6 +150,9 @@ class LiveKitAgent:
         options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
         await room.local_participant.publish_track(track, options)
         self._source = source
+        self._room = room
+        # Yayınladığımız track'in sid'i: asistan transcript'ini bu track'e bağlamak için.
+        self._pub_track_sid = getattr(track, "sid", None)
 
         try:
             # Halihazırda odadaki uzak katılımcıların ses track'lerini de yakala
@@ -156,17 +162,19 @@ class LiveKitAgent:
                     continue
                 for pub in participant.track_publications.values():
                     if pub.track is not None and pub.kind == rtc.TrackKind.KIND_AUDIO:
-                        track_queue.put_nowait(pub.track)
+                        track_queue.put_nowait((pub.track, participant))
 
             while True:
-                track = await track_queue.get()
-                if track is None:
+                item = await track_queue.get()
+                if item is None:
                     raise ConnectionError("livekit room disconnected")
+                track, participant = item
                 # İlk insan track'ini tükenene dek işle (utterance döngüsü içeride).
-                await self._consume_track(rtc, track)
+                await self._consume_track(rtc, track, participant)
         finally:
             self.connected = False
             self._source = None
+            self._room = None
             if self._tts_task:
                 self._tts_task.cancel()
                 self._tts_task = None
@@ -175,10 +183,14 @@ class LiveKitAgent:
             except Exception:
                 pass
 
-    async def _consume_track(self, rtc, track) -> None:
+    async def _consume_track(self, rtc, track, participant=None) -> None:
         """Bir uzak ses track'inden kareleri çek; RMS endpointing ile utterance
         sınırlarını bul; her utterance'ı işle. SDK kareleri 16 kHz/mono/s16'ya
-        indirir (AudioStream sample_rate/num_channels)."""
+        indirir (AudioStream sample_rate/num_channels).
+
+        `participant`: track'in sahibi insan katılımcı. Per-client ayarları
+        (`stt_engine` / `voice` / `language`) bu katılımcının LiveKit
+        attribute'larından (`participant.attributes`) okunur."""
         stream = rtc.AudioStream.from_track(
             track=track, sample_rate=STT_RATE, num_channels=STT_CHANNELS
         )
@@ -195,9 +207,16 @@ class LiveKitAgent:
                     continue
 
                 if stt is None:
-                    stt = WhisperSession(
-                        self.settings.stt_host, self.settings.stt_port,
-                        self.settings.stt_language,
+                    # Per-client ayarlar: STT motoru + dil katılımcı attribute'larından.
+                    attrs = self._attrs(participant)
+                    engine_name, stt_host, stt_port = self.settings.resolve_stt_engine(
+                        attrs.get("stt_engine")
+                    )
+                    language = attrs.get("language") or self.settings.stt_language
+                    stt = WhisperSession(stt_host, stt_port, language)
+                    log.info(
+                        "livekit agent: STT motoru=%s (%s:%s) dil=%s",
+                        engine_name, stt_host, stt_port, language or "(auto)",
                     )
                     try:
                         await stt.start(rate=STT_RATE, width=STT_WIDTH, channels=STT_CHANNELS)
@@ -238,7 +257,7 @@ class LiveKitAgent:
                 )
                 if ended:
                     session, stt = stt, None
-                    await self._handle_utterance(session, bytes(buf))
+                    await self._handle_utterance(session, bytes(buf), participant, track)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -279,7 +298,9 @@ class LiveKitAgent:
             log.warning("livekit agent: speaker-ID failed: %s", e)
             return None
 
-    async def _handle_utterance(self, stt: WhisperSession, pcm: bytes = b"") -> None:
+    async def _handle_utterance(
+        self, stt: WhisperSession, pcm: bytes = b"", participant=None, track=None
+    ) -> None:
         """DUPLICATE turn-logic (satellite.py / api/voice.py ile aynı sıra):
         transcript → resolve-session → presence → deliveries → agent.respond →
         save → emit → TTS. Paylaşımlı helper'a çıkarılmadı (çalışan yolları
@@ -328,13 +349,72 @@ class LiveKitAgent:
         emit_turn(self.bus, scope_key, None, text, answer, speaker=speaker)
         log.info("livekit agent: yanıt %r", (answer or "")[:160])
 
-        if answer:
-            # TTS'i ayrı task'ta çal → bir sonraki utterance barge-in ile iptal edebilsin.
-            self._tts_task = asyncio.create_task(self._speak(answer))
+        # İstemci sohbet arayüzü için transcript'leri yayınla. Best-effort + ayrı
+        # task → turn'ü ve TTS'i bloklamaz, hata olursa turn bozulmaz.
+        human_track_sid = getattr(track, "sid", None)
+        asyncio.create_task(self._publish_transcripts(text, answer, human_track_sid))
 
-    async def _speak(self, text: str) -> None:
+        if answer:
+            # İstemcinin seçtiği TTS sesi (attribute), yoksa varsayılan.
+            voice = self._attrs(participant).get("voice") or None
+            # TTS'i ayrı task'ta çal → bir sonraki utterance barge-in ile iptal edebilsin.
+            self._tts_task = asyncio.create_task(self._speak(answer, voice))
+
+    @staticmethod
+    def _attrs(participant) -> dict:
+        """Katılımcının LiveKit attribute'larını dict olarak ver (yoksa boş).
+        Per-client ayarlar (stt_engine / voice / language) buradan okunur."""
+        try:
+            a = getattr(participant, "attributes", None)
+            return dict(a) if a else {}
+        except Exception:
+            return {}
+
+    async def _publish_transcripts(
+        self, user_text: str, assistant_text: str, human_track_sid: str | None
+    ) -> None:
+        """Kullanıcı ve asistan satırlarını istemcinin sohbet/transkript arayüzüne
+        yayınla. Önce kullanıcı (insan track'ine bağlı), sonra asistan (bizim
+        yayın track'imize bağlı) → istemcide doğru kişiye atfedilir."""
+        await self._publish_text(user_text, track_sid=human_track_sid, role="user")
+        await self._publish_text(
+            assistant_text, track_sid=self._pub_track_sid, role="assistant"
+        )
+
+    async def _publish_text(
+        self, text: str, *, track_sid: str | None = None, role: str = ""
+    ) -> None:
+        """Tek bir metin satırını `lk.transcription` text-stream topic'inde yayınla.
+        LiveKit Components (Swift) bu topic'i transkript olarak render eder; satırı
+        `lk.transcribed_track_id` attribute'u ile ilgili track'in sahibine atfeder.
+        Best-effort: SDK imza farkları (attributes kwarg yoksa) ve hatalar yutulur."""
+        room = self._room
+        if room is None or not text:
+            return
+        attrs = {"lk.transcription_final": "true"}
+        if track_sid:
+            attrs["lk.transcribed_track_id"] = track_sid
+        try:
+            lp = room.local_participant
+            try:
+                await lp.send_text(text, topic="lk.transcription", attributes=attrs)
+            except TypeError:
+                # Daha eski SDK: attributes kwarg'ı yok → topic'siz/attr'siz dene.
+                try:
+                    await lp.send_text(text, topic="lk.transcription")
+                except TypeError:
+                    await lp.send_text(text)
+            log.info(
+                "livekit agent: transcript yayınlandı (%s, %d karakter, track=%s)",
+                role, len(text), track_sid or "-",
+            )
+        except Exception as e:
+            log.warning("livekit agent: transcript yayınlanamadı (%s): %r", role, e)
+
+    async def _speak(self, text: str, voice: str | None = None) -> None:
         """synthesize_stream → s16le → 48 kHz mono rtc.AudioFrame'ler → kaynağa
-        capture. Barge-in olursa task iptal edilir (CancelledError yutulur)."""
+        capture. Barge-in olursa task iptal edilir (CancelledError yutulur).
+        `voice`: istemcinin seçtiği TTS sesi (None = motor varsayılanı)."""
         from livekit import rtc
 
         source = self._source
@@ -345,7 +425,7 @@ class LiveKitAgent:
         frames_pub = 0
         bytes_in = 0
         try:
-            async for kind, value in synthesize_stream(text):
+            async for kind, value in synthesize_stream(text, voice):
                 if kind == "start":
                     fmt = value
                     log.info("livekit agent: TTS başladı (fmt rate=%s ch=%s)",
