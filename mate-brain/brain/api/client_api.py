@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.websockets import WebSocketDisconnect
@@ -323,3 +324,47 @@ async def set_fcm(
         raise HTTPException(400, "admin token has no client record")
     await request.app.state.db.set_fcm_token(client["id"], body.fcm_token)
     return {"ok": True}
+
+
+# ---- LiveKit (deneysel; flag arkasında bir agent ile birlikte) ----
+
+def _mint_livekit_token(identity: str, name: str) -> str:
+    """Sunucu-taraflı LiveKit JWT üret. Secret .env'den gelir (asla istemciye
+    sızmaz). livekit-api 1.x: AccessToken(key, secret).with_*(...).to_jwt()."""
+    from livekit import api
+
+    grants = api.VideoGrants(
+        room_join=True,
+        room=settings.livekit_room,
+        can_publish=True,
+        can_subscribe=True,
+    )
+    token = (
+        api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
+        .with_identity(identity)
+        .with_name(name)
+        .with_ttl(timedelta(seconds=settings.livekit_token_ttl_seconds))
+        .with_grants(grants)
+    )
+    return token.to_jwt()
+
+
+@router.post("/livekit-token")
+async def livekit_token(request: Request, client: dict = Depends(current_client)):
+    """İstemciye LiveKit odasına katılmak için kısa-ömürlü JWT ver. Secret
+    sunucuda kalır. LIVEKIT_API_SECRET ayarlı değilse 503 döner."""
+    if not settings.livekit_api_secret:
+        raise HTTPException(503, "LiveKit yapılandırılmamış (LIVEKIT_API_SECRET boş)")
+    identity = f"client-{client['id']}"
+    name = client.get("name") or identity
+    return {
+        "serverUrl": settings.livekit_url,
+        "roomName": settings.livekit_room,
+        "participantToken": _mint_livekit_token(identity, name),
+        "participantName": name,
+    }
+
+
+@router.get("/livekit-token")
+async def livekit_token_get(request: Request, client: dict = Depends(current_client)):
+    return await livekit_token(request, client)

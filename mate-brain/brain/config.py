@@ -81,6 +81,16 @@ class Settings(BaseSettings):
     # Dashboard SPA için CORS origin'leri (virgülle ayrık). Dev Vite varsayılanı.
     monitor_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # LiveKit server-side agent (deneysel, flag arkasında). Kapalıyken (varsayılan)
+    # main.py davranışı değişmez. Ses yolu mevcut Wyoming STT + agent.respond + TTS'i
+    # yeniden kullanır; sadece taşıma katmanı LiveKit WebRTC olur.
+    livekit_url: str = "ws://192.168.0.150:7880"
+    livekit_api_key: str = "devkey"
+    livekit_api_secret: str = ""       # boş = token üretilemez (endpoint 503, agent kapalı)
+    livekit_room: str = "mate-demo"
+    livekit_agent_enabled: bool = False
+    livekit_token_ttl_seconds: int = 3600
+
     def resolve_stt_engine(self, engine: str | None) -> tuple[str, str, int]:
         """(name, host, port) çöz. Bilinmeyen/eksik motor → varsayılan (whisper).
         Varsayılan motor için stt_host/stt_port'u kullanır (env override geri-uyumu)."""

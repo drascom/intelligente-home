@@ -16,3 +16,8 @@ sherpa-onnx>=1.12
 soundfile>=0.12
 # multipart upload for enrollment (FastAPI UploadFile)
 python-multipart>=0.0.9
+# LiveKit server-side ses agent'ı (deneysel; LIVEKIT_AGENT_ENABLED flag arkasında).
+# Flag kapalıyken import edilmez; sadece /api/livekit-token endpoint'i (secret
+# ayarlıysa) livekit-api'yi tembel import eder.
+livekit>=1.1.10
+livekit-api>=1.1.0

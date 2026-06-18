@@ -100,6 +100,17 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(app.state.reminder.run()))
         log.info("reminder scheduler: %ss aralıkla yokluyor", settings.reminder_poll_seconds)
 
+    # LiveKit server-side ses agent'ı (deneysel; flag + secret şart). Kapalıyken
+    # (varsayılan) bu blok hiç çalışmaz → davranış değişmez. Mevcut STT/agent/TTS'i
+    # yeniden kullanır, sadece taşıma katmanı LiveKit WebRTC olur.
+    if settings.livekit_agent_enabled and settings.livekit_api_secret:
+        from brain.voice.livekit_agent import LiveKitAgent
+
+        app.state.livekit_agent = LiveKitAgent(app, settings)
+        tasks.append(asyncio.create_task(app.state.livekit_agent.run()))
+        log.info("livekit agent: '%s' odasına bağlanıyor (%s)",
+                 settings.livekit_room, settings.livekit_url)
+
     if not settings.brain_admin_token:
         log.warning("BRAIN_ADMIN_TOKEN is not set — admin endpoints are disabled")
 
