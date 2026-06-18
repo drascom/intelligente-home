@@ -394,6 +394,11 @@ class LiveKitAgent:
         attrs = {"lk.transcription_final": "true"}
         if track_sid:
             attrs["lk.transcribed_track_id"] = track_sid
+        # Açık konuşmacı rolü: istemci bunu okuyup satırı doğru kişiye atfeder.
+        # (SDK'nın varsayılan transcription receiver'ı yalnız gönderen kimliğine
+        # bakar → her iki satır da "assistant"tan geldiği için yanlış atfederdi.)
+        if role:
+            attrs["candan.role"] = role
         try:
             lp = room.local_participant
             try:
