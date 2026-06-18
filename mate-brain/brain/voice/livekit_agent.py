@@ -343,23 +343,20 @@ class LiveKitAgent:
         bozmamak için bilinçli kopya).
 
         `awake`: utterance BAŞINDA istemci uyanık mıydı (sunucu wake gate). Uykuda
-        başladıysa utterance tamamen yok sayılır (cevap yok, transcript yok)."""
-        if not awake:
-            # İstemci mute güvenilir değil → ses sızabiliyor. Uykuda başlayan
-            # utterance'ı sunucuda düşür: STT'yi iptal et, dinlemeye dön.
-            log.info("livekit agent: uyku modunda başlayan utterance düşürüldü (wake gate)")
-            try:
-                await stt.abort()
-            except Exception:
-                pass
-            self._set_agent_state("listening")
-            return
+        başladıysa, transcript alınır (log için) ama işlenmez (cevap/transcript yok)."""
         try:
             text = (await stt.finish()).strip()
         except (ConnectionError, OSError, asyncio.TimeoutError) as e:
             log.warning("livekit agent: STT başarısız: %s", e)
             return
         log.info("livekit agent: duyuldu %r", text)
+        # Sunucu wake gate: utterance uyku modunda BAŞLADIYSA boş/hayalet transcript
+        # gibi düşür — cevap yok, add_message yok, transcript yayını yok. İstemci
+        # mute'u sesi durdurmuyor; "candan" sızıntısı burada engellenir.
+        if not awake:
+            log.info("livekit agent: uyku modunda söz, atlandı: %r", text[:60])
+            self._set_agent_state("listening")
+            return
         if text and looks_hallucinated(text):
             log.info("livekit agent: transcript hayalet görünüyor, atlanıyor: %r", text[:80])
             text = ""
