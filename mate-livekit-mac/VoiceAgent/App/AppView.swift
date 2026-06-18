@@ -30,7 +30,15 @@ struct AppView: View {
             settingsButton()
         }
         .overlay(alignment: .top) {
-            if session.isConnected { wakeHint() }
+            if session.isConnected {
+                // Wake başlatılamadıysa (SFSpeech yok / Dikte kapalı / izin yok)
+                // nedeni öne çıkar; aksi halde küçük "bekleniyor" ipucu.
+                if let msg = wakeCoordinator.unavailableMessage {
+                    wakeUnavailableBanner(msg)
+                } else {
+                    wakeHint()
+                }
+            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -88,6 +96,7 @@ struct AppView: View {
                 .background(.bg1)
                 .animation(.default, value: chat)
                 .animation(.default, value: wakeCoordinator.mode)
+                .animation(.default, value: wakeCoordinator.unavailableMessage)
                 .animation(.default, value: session.isConnected)
                 .animation(.default, value: session.error?.localizedDescription)
                 .animation(.default, value: session.agent.error?.localizedDescription)
@@ -172,6 +181,61 @@ struct AppView: View {
                 .padding(.top, 2 * .grid)
                 .transition(.blurReplace)
         }
+    }
+
+    /// Wake word başlatılamadığında (SFSpeech kullanılamıyor / macOS Dikte kapalı
+    /// / konuşma tanıma izni yok) nedeni öne çıkaran uyarı. Bu durumda kapı
+    /// devre dışıdır ve mikrofon SÜREKLİ açıktır — kullanıcı nedenini ve nasıl
+    /// düzelteceğini görmeli.
+    private func wakeUnavailableBanner(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 2 * .grid) {
+            HStack(alignment: .firstTextBaseline, spacing: 2 * .grid) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Wake word başlatılamadı — mikrofon sürekli açık")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.fg1)
+                Spacer(minLength: 2 * .grid)
+                Button {
+                    wakeCoordinator.unavailableMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            #if os(macOS)
+                Text("“\(settings.wakeWord)” ile uyandırmak için: Sistem Ayarları › Klavye › Dikte'yi açın (dil: Türkçe — Dikte/Siri dili sistem diliyle uyuşmalı), sonra yeniden bağlanın. O zamana kadar mikrofon açık kalır.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            #else
+                Text("“\(settings.wakeWord)” ile uyandırmak için Ayarlar'dan Konuşma Tanıma/Dikte ve mikrofon iznini açın. O zamana kadar mikrofon açık kalır.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            #endif
+        }
+        .padding(3 * .grid)
+        .background(
+            RoundedRectangle(cornerRadius: .cornerRadiusLarge)
+                .fill(.bg2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: .cornerRadiusLarge)
+                .stroke(.orange.opacity(0.4), lineWidth: 1)
+        )
+        .frame(maxWidth: 120 * .grid)
+        .padding(.horizontal, 4 * .grid)
+        // Sağ üstteki dişli butonun altına in (dar ekranda çakışmasın).
+        .padding(.top, 15 * .grid)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     @ViewBuilder

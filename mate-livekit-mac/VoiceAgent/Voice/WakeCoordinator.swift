@@ -92,6 +92,9 @@ final class WakeCoordinator: ObservableObject {
             // Kapı aktif: uyku modunda başla (mikrofon kapalı, wake dinler).
             if mode != .sleeping { enterSleeping(playCue: false) }
         } else {
+            // Kullanıcı wake'i bilerek kapattı → varsa eski "kullanılamıyor"
+            // uyarısını temizle (artık mikrofonun açık olması beklenen durum).
+            unavailableMessage = nil
             disableGate()
         }
     }
@@ -163,6 +166,8 @@ final class WakeCoordinator: ObservableObject {
             }
             do {
                 try wake.start(wakeWord: settings.wakeWord, language: settings.language)
+                // Başarıyla dinlemeye başladık → eski uyarıyı temizle.
+                self.unavailableMessage = nil
             } catch {
                 self.unavailableMessage = error.localizedDescription
                 self.disableGate()

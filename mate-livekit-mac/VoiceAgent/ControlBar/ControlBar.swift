@@ -118,7 +118,9 @@ struct ControlBar: View {
                 borderColor: .separator1
             )
         )
-        .disabled(!session.agent.isConnected)
+        // Sohbet/ses görünümü geçişi yereldir (agent'a bir şey göndermez), bu
+        // yüzden ajan algılanmadan önce de (yalnızca oturum bağlıyken) izin ver.
+        .disabled(!session.isConnected)
     }
 
     private func disconnectButton() -> some View {
