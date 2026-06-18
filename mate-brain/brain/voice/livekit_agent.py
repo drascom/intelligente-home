@@ -324,6 +324,7 @@ class LiveKitAgent:
         await self.db.add_message(session_id, "user", text, speaker=speaker)
         await self.db.add_message(session_id, "assistant", answer)
         emit_turn(self.bus, scope_key, None, text, answer, speaker=speaker)
+        log.info("livekit agent: yanıt %r", (answer or "")[:160])
 
         if answer:
             # TTS'i ayrı task'ta çal → bir sonraki utterance barge-in ile iptal edebilsin.
@@ -336,25 +337,36 @@ class LiveKitAgent:
 
         source = self._source
         if source is None:
+            log.warning("livekit agent: TTS atlandı — yayın kaynağı yok")
             return
         fmt = None
+        frames_pub = 0
+        bytes_in = 0
         try:
             async for kind, value in synthesize_stream(text):
                 if kind == "start":
                     fmt = value
+                    log.info("livekit agent: TTS başladı (fmt rate=%s ch=%s)",
+                             getattr(fmt, "rate", "?"), getattr(fmt, "channels", "?"))
                 elif kind == "chunk" and fmt is not None:
                     pcm = to_s16le(value, fmt)
-                    await self._capture_s16le(rtc, source, pcm, fmt.rate, fmt.channels)
+                    bytes_in += len(pcm)
+                    frames_pub += await self._capture_s16le(
+                        rtc, source, pcm, fmt.rate, fmt.channels
+                    )
+            log.info("livekit agent: TTS bitti — %d giriş baytı, %d kare yayınlandı",
+                     bytes_in, frames_pub)
         except asyncio.CancelledError:
             raise
         except (ConnectionError, OSError) as e:
             log.warning("livekit agent: TTS başarısız: %s", e)
 
-    async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> None:
+    async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
         """s16le PCM'i kaynağın yayın biçimine (48 kHz mono) indir ve kare kare
-        yayınla. AudioResampler ile (gerekirse) yeniden örnekle, tek kanala indir."""
+        yayınla. AudioResampler ile (gerekirse) yeniden örnekle, tek kanala indir.
+        Yayınlanan kare sayısını döndürür (teşhis için)."""
         if not pcm:
-            return
+            return 0
         # Çok kanallıysa ilk kanala indir (genelde TTS mono döner).
         if channels > 1:
             pcm = self._to_mono(pcm, channels)
@@ -378,6 +390,7 @@ class LiveKitAgent:
             )
         for frame in frames:
             await source.capture_frame(frame)
+        return len(frames)
 
     @staticmethod
     def _to_mono(pcm: bytes, channels: int) -> bytes:
