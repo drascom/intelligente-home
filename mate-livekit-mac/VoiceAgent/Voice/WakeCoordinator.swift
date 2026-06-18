@@ -41,6 +41,7 @@ final class WakeCoordinator: ObservableObject {
 
     private var connected = false
     private var inactivityTask: Task<Void, Never>?
+    private var cueHandlerRegistered = false
 
     func attach(session: Session, settings: SettingsStore) {
         guard self.session == nil else { return }
@@ -51,6 +52,26 @@ final class WakeCoordinator: ObservableObject {
             self?.unavailableMessage = msg
             // Wake kullanılamıyorsa kapıyı aç: mikrofon normal kullanılabilsin.
             self?.disableGate()
+        }
+        registerCueHandler()
+    }
+
+    /// Brain proaktif teslimden önce `candan.cue` topic'ine "reminder" yollar →
+    /// belirgin hatırlatma çanı çal. Topic bağlantı boyunca room'a kayıtlı kalır
+    /// (room tek sefer kurulur), bu yüzden bir kez kaydetmek yeter.
+    private func registerCueHandler() {
+        guard !cueHandlerRegistered, let session else { return }
+        cueHandlerRegistered = true
+        Task {
+            try? await session.room.registerTextStreamHandler(for: "candan.cue") { [weak self] reader, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let value = (try? await reader.readAll()) ?? ""
+                    if value.localizedCaseInsensitiveContains("reminder") {
+                        self.cues.playReminder()
+                    }
+                }
+            }
         }
     }
 

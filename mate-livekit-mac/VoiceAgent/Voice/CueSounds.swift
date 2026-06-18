@@ -1,97 +1,123 @@
 import AVFoundation
 import Foundation
+import LiveKit
 
-/// Kısa yumuşak geçiş tonları (wake / dinleme bitti / uyku).
+/// Kısa, sıcak çok-notalı geçiş tonları (wake / dinleme bitti / uyku / hatırlatma).
 ///
-/// mate-mac'teki VPIO/AudioPipeline'a özel yol BİLİNÇLİ olarak çıkarıldı —
-/// bu uygulamada ses I/O'sunu LiveKit yönetir; cue'lar bağımsız bir
-/// AVAudioEngine ile (varsayılan çıkışa) çalınır.
+/// ÖNEMLİ — neden LiveKit mixer'ı: Bağımsız bir AVAudioEngine, LiveKit ses
+/// motoru/oturumu cihazı yönetirken çıkışa ULAŞAMIYOR (sessiz çalıyordu). Bu
+/// yüzden cue'ları LiveKit'in KENDİ motoruna `AudioManager.shared.mixer
+/// .capture(appAudio:)` ile veriyoruz — çağrı sesiyle aynı yoldan, yerel
+/// hoparlöre karışır. Mic yayını kapalı olsa bile (uyku modu) bağlantı boyunca
+/// motorun input yolu bağlı kaldığından cue duyulur.
+///
+/// Tını "sıcak": saf sinüs yerine birkaç harmonik + çan zarfı (hızlı atak,
+/// üssel sönüm) kullanılır.
 @MainActor
 final class CueSounds {
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private let format: AVAudioFormat
-    private var prepared = false
-
-    init() {
-        format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
+    /// Tek nota tanımı.
+    private struct Note {
+        let freq: Double
+        let duration: Double
+        /// Notadan sonra eklenecek sessizlik (saniye).
+        let gap: Double
     }
 
-    private func prepare() {
-        if !prepared {
-            engine.attach(player)
-            engine.connect(player, to: engine.mainMixerNode, format: format)
-            prepared = true
-        }
-        do {
-            if !engine.isRunning {
-                try engine.start()
-            }
-            if !player.isPlaying {
-                player.play()
-            }
-        } catch {
-            print("[Cue] engine start failed: \(error)")
-        }
-    }
+    private let sampleRate: Double = 48_000
+    private var volumePrimed = false
 
-    /// Wake kelimesi algılandı → "duydum, konuş" — yükselen iki ton.
+    // MARK: - Genel cue'lar (notalar: C5=523.25, E5=659.25, G5=783.99 …)
+
+    /// Wake kelimesi algılandı → "duydum, konuş" — sıcak yükselen majör arpej.
     func playWakeDetected() {
-        play(notes: [(660, 0.08, 0.0), (880, 0.10, 0.005)])
+        play([
+            Note(freq: 523.25, duration: 0.16, gap: 0.0),
+            Note(freq: 659.25, duration: 0.16, gap: 0.0),
+            Note(freq: 783.99, duration: 0.30, gap: 0.0),
+        ], gain: 0.55)
     }
 
-    /// Konuşma bitti → "anladım, işliyorum" — tek kısa ton.
+    /// Konuşma bitti → "anladım" — tek kısa yumuşak ton.
     func playListenEnded() {
-        play(notes: [(520, 0.07, 0.0)])
+        play([Note(freq: 587.33, duration: 0.18, gap: 0.0)], gain: 0.45)
     }
 
-    /// Tekrar uykuya geçildi → inen iki ton, daha sönük.
+    /// Tekrar uykuya geçildi → inen iki/üç nota, daha sönük.
     func playSleeping() {
-        play(notes: [(880, 0.08, 0.0), (660, 0.12, 0.005)], gain: 0.13)
+        play([
+            Note(freq: 783.99, duration: 0.14, gap: 0.0),
+            Note(freq: 659.25, duration: 0.14, gap: 0.0),
+            Note(freq: 523.25, duration: 0.26, gap: 0.0),
+        ], gain: 0.38)
     }
 
-    private func play(notes: [(freq: Double, duration: Double, gap: Double)], gain: Float = 0.18) {
-        prepare()
-        guard prepared else { return }
-        // Soğuk engine spin-up'ı tonun başında "çat" üretebiliyor → önce kısa
-        // bir sessizlik tamponu çal, transient sese değil sessizliğe denk gelsin.
-        var cursorFrames: AVAudioFramePosition = 0
-        let leadSilence = makeTone(freq: 0, duration: 0.045, gain: 0)
-        player.scheduleBuffer(leadSilence, at: nil, options: [])
-        cursorFrames += AVAudioFramePosition(leadSilence.frameLength)
+    /// Proaktif hatırlatma → "vakti geldi" — wake'ten belirgin biçimde FARKLI:
+    /// daha uzun, daha parlak, dört notalı yükselen + uzun kapanış (öne çıksın).
+    func playReminder() {
+        play([
+            Note(freq: 659.25, duration: 0.16, gap: 0.03),
+            Note(freq: 880.00, duration: 0.16, gap: 0.03),
+            Note(freq: 1108.73, duration: 0.16, gap: 0.03),
+            Note(freq: 1318.51, duration: 0.45, gap: 0.0),
+        ], gain: 0.72)
+    }
+
+    // MARK: - Sentez + LiveKit mixer'a verme
+
+    private func play(_ notes: [Note], gain: Float) {
+        guard let buffer = makeBuffer(notes: notes, gain: gain) else { return }
+        let mixer = AudioManager.shared.mixer
+        if !volumePrimed {
+            mixer.appVolume = 1.0 // app (cue) sesi tam duyulsun
+            volumePrimed = true
+        }
+        // capture: motor çalışmıyorsa (bağlı değilken) sessizce no-op olur.
+        mixer.capture(appAudio: buffer)
+    }
+
+    /// Notaları tek bir bitişik Float32 mono tampona sentezler (harmonikler +
+    /// çan zarfı). LiveKit mixer'ı gerekli format dönüşümünü kendi yapar.
+    private func makeBuffer(notes: [Note], gain: Float) -> AVAudioPCMBuffer? {
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else {
+            return nil
+        }
+
+        // Önce küçük bir sessizlik (soğuk başlangıç transientini maskele).
+        let leadSilence = Int(0.02 * sampleRate)
+        var totalFrames = leadSilence
         for n in notes {
-            let buffer = makeTone(freq: n.freq, duration: n.duration, gain: gain)
-            let when: AVAudioTime? = cursorFrames == 0
-                ? nil
-                : AVAudioTime(sampleTime: cursorFrames, atRate: format.sampleRate)
-            player.scheduleBuffer(buffer, at: when, options: [])
-            cursorFrames += AVAudioFramePosition(buffer.frameLength)
-            cursorFrames += AVAudioFramePosition(n.gap * format.sampleRate)
+            totalFrames += Int(n.duration * sampleRate) + Int(n.gap * sampleRate)
         }
-    }
+        guard totalFrames > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames))
+        else { return nil }
+        buffer.frameLength = AVAudioFrameCount(totalFrames)
 
-    private func makeTone(freq: Double, duration: Double, gain: Float) -> AVAudioPCMBuffer {
-        let sampleRate = format.sampleRate
-        let frameCount = AVAudioFrameCount(duration * sampleRate)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
         let channel = buffer.floatChannelData![0]
-        let attackFrames = Float(min(0.012, duration * 0.3) * sampleRate)
-        let releaseFrames = Float(min(0.05, duration * 0.5) * sampleRate)
-        let total = Float(frameCount)
-        for i in 0 ..< Int(frameCount) {
-            let t = Double(i) / sampleRate
-            let f = Float(i)
-            let env: Float
-            if f < attackFrames {
-                env = f / attackFrames
-            } else if f > total - releaseFrames {
-                env = (total - f) / releaseFrames
-            } else {
-                env = 1.0
+        var cursor = leadSilence
+        for i in 0 ..< leadSilence { channel[i] = 0 }
+
+        for n in notes {
+            let frames = Int(n.duration * sampleRate)
+            let attackFrames = max(1.0, 0.006 * sampleRate)
+            for i in 0 ..< frames {
+                let t = Double(i) / sampleRate
+                // Çan zarfı: hızlı atak + üssel sönüm (çınlama kuyruğu).
+                let attackEnv = Double(i) < attackFrames ? Double(i) / attackFrames : 1.0
+                let decayEnv = exp(-t * 4.2)
+                let env = Float(attackEnv * decayEnv)
+                // Sıcak tını: temel + 2. (0.5) + 3. (0.22) harmonik, normalize.
+                let phase = 2.0 * Double.pi * n.freq * t
+                let sample = sin(phase) + 0.5 * sin(2.0 * phase) + 0.22 * sin(3.0 * phase)
+                let norm = Float(sample / 1.72)
+                channel[cursor + i] = norm * env * gain
             }
-            channel[i] = Float(sin(2 * .pi * freq * t)) * env * gain
+            cursor += frames
+            let gapFrames = Int(n.gap * sampleRate)
+            for i in 0 ..< gapFrames { channel[cursor + i] = 0 }
+            cursor += gapFrames
         }
+
         return buffer
     }
 }
