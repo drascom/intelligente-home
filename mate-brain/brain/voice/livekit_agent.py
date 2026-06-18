@@ -81,7 +81,8 @@ class LiveKitAgent:
 
     def _mint_token(self) -> str:
         """Agent için sunucu-taraflı JWT (publish+subscribe). Endpoint ile aynı
-        livekit-api çağrısı; kimlik 'assistant'."""
+        livekit-api çağrısı; kimlik 'assistant'. kind=agent → istemci tarafında
+        `session.agent` algılanır (sohbet toggle'ı açılır)."""
         from datetime import timedelta
 
         from livekit import api
@@ -92,14 +93,25 @@ class LiveKitAgent:
             can_publish=True,
             can_subscribe=True,
         )
-        return (
+        at = (
             api.AccessToken(self.settings.livekit_api_key, self.settings.livekit_api_secret)
             .with_identity("assistant")
             .with_name("Candan")
             .with_ttl(timedelta(seconds=self.settings.livekit_token_ttl_seconds))
             .with_grants(grants)
-            .to_jwt()
         )
+        # kind=agent: istemci bu katılımcıyı "agent" olarak görür (isConnected=true).
+        # Sürüm farkına dayanıklı (with_kind yoksa standart katılımcı olarak kalır).
+        try:
+            at = at.with_kind("agent")
+        except (AttributeError, TypeError) as e:
+            log.warning("livekit agent: token kind=agent ayarlanamadı: %r", e)
+        # Katılır katılmaz görünür ilk durum (varsa token attribute'una göm).
+        try:
+            at = at.with_attributes({"lk.agent.state": "initializing"})
+        except (AttributeError, TypeError):
+            pass
+        return at.to_jwt()
 
     async def run(self) -> None:
         """Reconnect-forever loop. Arka plan task'ı olarak çalıştırılır."""
@@ -153,6 +165,8 @@ class LiveKitAgent:
         self._room = room
         # Yayınladığımız track'in sid'i: asistan transcript'ini bu track'e bağlamak için.
         self._pub_track_sid = getattr(track, "sid", None)
+        # Yayına hazırız → dinleme durumu (istemci agentState'i bununla sürer).
+        await self._set_agent_state("listening")
 
         try:
             # Halihazırda odadaki uzak katılımcıların ses track'lerini de yakala
@@ -317,6 +331,8 @@ class LiveKitAgent:
         if not text:
             return
 
+        # Geçerli konuşma var → işliyoruz: istemci "düşünüyor" durumunu görür.
+        await self._set_agent_state("thinking")
         speaker = await self._identify(pcm)
         speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
 
@@ -358,7 +374,24 @@ class LiveKitAgent:
             # İstemcinin seçtiği TTS sesi (attribute), yoksa varsayılan.
             voice = self._attrs(participant).get("voice") or None
             # TTS'i ayrı task'ta çal → bir sonraki utterance barge-in ile iptal edebilsin.
+            # _speak başında "speaking", bitince "listening" durumunu yayar.
             self._tts_task = asyncio.create_task(self._speak(answer, voice))
+        else:
+            # Yanıt yok → dinlemeye dön (aksi halde "thinking"de takılı kalır).
+            await self._set_agent_state("listening")
+
+    async def _set_agent_state(self, state: str) -> None:
+        """`lk.agent.state` attribute'unu güncelle (listening/thinking/speaking/
+        idle). İstemci agentState'i bununla sürer → wake re-arm + UI. set_attributes
+        sunucu tarafında merge'lenir (diğer attribute'ları silmez). Best-effort:
+        oda yoksa/sürüm farkı/hata turn'ü bozmaz."""
+        room = self._room
+        if room is None:
+            return
+        try:
+            await room.local_participant.set_attributes({"lk.agent.state": state})
+        except Exception as e:
+            log.warning("livekit agent: agent-state ayarlanamadı (%s): %r", state, e)
 
     @staticmethod
     def _attrs(participant) -> dict:
@@ -425,7 +458,10 @@ class LiveKitAgent:
         source = self._source
         if source is None:
             log.warning("livekit agent: TTS atlandı — yayın kaynağı yok")
+            await self._set_agent_state("listening")
             return
+        # Konuşma başlıyor → istemci "speaking" görür (TTS sesi ile senkron).
+        await self._set_agent_state("speaking")
         fmt = None
         frames_pub = 0
         bytes_in = 0
@@ -444,10 +480,14 @@ class LiveKitAgent:
             log.info("livekit agent: TTS bitti — %d giriş baytı, %d kare yayınlandı",
                      bytes_in, frames_pub)
         except asyncio.CancelledError:
+            # Barge-in: durumu burada değiştirme (await iptal sırasında riskli);
+            # bir sonraki utterance zaten "thinking"e geçirir.
             log.info("livekit agent: TTS iptal edildi (barge-in)")
             raise
         except Exception as e:
             log.warning("livekit agent: TTS başarısız: %r", e)
+        # Konuşma bitti (normal veya hata) → dinlemeye dön.
+        await self._set_agent_state("listening")
 
     async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
         """s16le PCM'i kaynağın yayın biçimine (48 kHz mono) indir ve kare kare
