@@ -46,6 +46,8 @@ final class WakeCoordinator: ObservableObject {
     private var connected = false
     private var inactivityTask: Task<Void, Never>?
     private var cueHandlerRegistered = false
+    /// Mikrofon brain'e canlı mı? `candan.awake` attribute'unun kaynağı.
+    private var isAwake = false
 
     func attach(session: Session, settings: SettingsStore) {
         guard self.session == nil else { return }
@@ -54,8 +56,9 @@ final class WakeCoordinator: ObservableObject {
         wake.onWakeDetected = { [weak self] in self?.handleWakeDetected() }
         wake.onUnavailable = { [weak self] msg in
             self?.unavailableMessage = msg
-            // Wake kullanılamıyorsa kapıyı aç: mikrofon normal kullanılabilsin.
-            self?.disableGate()
+            // Wake istendi ama kullanılamıyor (disabled-but-gated): mikrofon açık
+            // kalır ama candan.awake = "0" → brain sızıntıyı yok sayar.
+            self?.disableGate(continuous: false)
         }
     }
 
@@ -127,22 +130,29 @@ final class WakeCoordinator: ObservableObject {
             // Kullanıcı wake'i bilerek kapattı → varsa eski "kullanılamıyor"
             // uyarısını temizle (artık mikrofonun açık olması beklenen durum).
             unavailableMessage = nil
-            disableGate()
+            disableGate(continuous: true)
         }
     }
 
     /// Wake kapısını devre dışı bırak: dinleyiciyi durdur, mikrofonu aç.
-    private func disableGate() {
+    /// - Parameter continuous: Kullanıcı wake'i bilerek kapattıysa (sürekli mod)
+    ///   `true` → brain dinlesin (`candan.awake = "1"`). Wake istenip de
+    ///   kullanılamadığında (disabled-but-gated) `false` → `"0"` (brain sızıntıyı
+    ///   yok sayar; kullanıcıya banner Dikte'yi açmasını söyler).
+    private func disableGate(continuous: Bool) {
         cancelInactivityTimer()
         wake.stop()
         mode = .inactive
         setMicrophone(enabled: true)
+        setAwake(continuous)
     }
 
     private func enterSleeping(playCue: Bool = true) {
         cancelInactivityTimer()
         mode = .sleeping
         setMicrophone(enabled: false)
+        // Uyku: brain bu andan itibaren başlayan sözleri yok saysın.
+        setAwake(false)
         if playCue, settings?.cuesEnabled == true { cues.playSleeping() }
         startWakeListening()
     }
@@ -158,7 +168,10 @@ final class WakeCoordinator: ObservableObject {
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
             guard let self, self.mode == .awake else { return }
+            // Mikrofon AÇILDIĞI an awake='1' yayınla: settle'dan önce gönderirsek
+            // konuşulan "candan" hâlâ açık pencerede sayılabilirdi.
             self.setMicrophone(enabled: true)
+            self.setAwake(true)
         }
         // "Uyandı ama hiç konuşulmadı" durumunu kapat: ajan etkinliği gelmezse
         // sayaç dolunca tekrar uykuya döner.
@@ -202,7 +215,7 @@ final class WakeCoordinator: ObservableObject {
             let ok = await wake.requestPermission()
             guard ok else {
                 self.unavailableMessage = "Konuşma tanıma izni verilmedi."
-                self.disableGate()
+                self.disableGate(continuous: false)
                 return
             }
             do {
@@ -211,7 +224,7 @@ final class WakeCoordinator: ObservableObject {
                 self.unavailableMessage = nil
             } catch {
                 self.unavailableMessage = error.localizedDescription
-                self.disableGate()
+                self.disableGate(continuous: false)
             }
         }
     }
@@ -220,6 +233,24 @@ final class WakeCoordinator: ObservableObject {
         guard let session else { return }
         Task {
             try? await session.room.localParticipant.setMicrophone(enabled: enabled)
+        }
+    }
+
+    private func setAwake(_ value: Bool) {
+        isAwake = value
+        publishAttributes()
+    }
+
+    /// Tüm participant attribute'larını (brain ayarları + `candan.awake`) TEK
+    /// sözlük olarak yayınlar. `set(attributes:)` verilen sözlüğü AYNEN yazdığı
+    /// için her zaman TAM seti gönderiyoruz → stt_engine/voice/language ezilmez.
+    /// Brain `candan.awake == "0"` iken başlayan sözleri yok sayar.
+    func publishAttributes() {
+        guard let session, session.isConnected else { return }
+        var attrs = settings?.brainAttributes ?? [:]
+        attrs["candan.awake"] = isAwake ? "1" : "0"
+        Task {
+            try? await session.room.localParticipant.set(attributes: attrs)
         }
     }
 }

@@ -47,9 +47,10 @@ struct AppView: View {
             SettingsView()
         }
         // Bağlıyken ve ilgili ayarlar değiştikçe brain'e attribute olarak gönder.
-        // İstemci-yerel davranışlar (wake/cue/barge-in) gönderilmez.
+        // Yayını WakeCoordinator yapar: brain ayarları (stt_engine/voice/language)
+        // + candan.awake TEK sözlükte birlikte gider (biri diğerini ezmesin).
         .task(id: attributeSnapshot) {
-            await pushAttributesIfConnected()
+            wakeCoordinator.publishAttributes()
         }
         // Wake-word kapısı + geçiş sesleri.
         .onAppear { wakeCoordinator.attach(session: session, settings: settings) }
@@ -114,15 +115,6 @@ struct AppView: View {
     /// gönderir. Böylece "bağlı değilken değiştir → bağlanınca uygula" da çalışır.
     private var attributeSnapshot: String {
         "\(session.isConnected)|\(settings.sttEngine)|\(settings.voice)|\(settings.language)"
-    }
-
-    private func pushAttributesIfConnected() async {
-        guard session.isConnected else { return }
-        do {
-            try await session.room.localParticipant.set(attributes: settings.brainAttributes)
-        } catch {
-            // Geçici hata: bir sonraki ayar değişimi / yeniden bağlanmada tekrar denenir.
-        }
     }
 
     private func settingsButton() -> some View {
