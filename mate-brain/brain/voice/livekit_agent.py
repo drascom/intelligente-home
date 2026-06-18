@@ -449,6 +449,8 @@ class LiveKitAgent:
             log.info("livekit agent: proaktif teslim %r", answer[:160])
             # Transcript (sadece asistan satırı; kullanıcı satırı boş → atlanır) + TTS.
             asyncio.create_task(self._publish_transcripts("", answer, None))
+            # Hatırlatma geliyor → istemci kısa bir zil çalabilsin (TTS'ten ÖNCE).
+            await self._send_cue("reminder")
             # _speak'i self._tts_task'a ata → kullanıcı araya girerse barge-in iptal
             # edebilsin; speaking/listening durumunu da _speak yönetir.
             self._tts_task = asyncio.create_task(self._speak(answer))
@@ -459,6 +461,20 @@ class LiveKitAgent:
                 # kullanıcıların teslimini bu tur bırak, bir sonraki tick'te sürer.
                 log.info("livekit agent: proaktif teslim barge-in ile kesildi")
                 break
+
+    async def _send_cue(self, cue: str = "reminder") -> None:
+        """İstemciye kısa bir işaret gönder (topic=`candan.cue`, metin=cue) → istemci
+        proaktif TTS'ten önce bir hatırlatma zili çalabilir. Best-effort: oda yoksa /
+        hata olursa teslimi bozmaz (sadece log). send_text topic'i bu SDK'da çalışır
+        (_publish_text de kullanıyor)."""
+        room = self._room
+        if room is None:
+            return
+        try:
+            await room.local_participant.send_text(cue, topic="candan.cue")
+            log.info("livekit agent: cue gönderildi (%s)", cue)
+        except Exception as e:
+            log.warning("livekit agent: cue gönderilemedi (%s): %r", cue, e)
 
     def _set_agent_state(self, state: str) -> None:
         """`lk.agent.state` attribute'unu güncelle (initializing/listening/thinking/
