@@ -32,6 +32,10 @@ final class WakeCoordinator: ObservableObject {
 
     /// Ajan boştayken yeniden uykuya geçmeden önce beklenen takip süresi.
     private let inactivityWindowSeconds: UInt64 = 10
+    /// Wake duyulduktan sonra mikrofonu açmadan önce beklenen "yerleşme" süresi.
+    /// Konuşulan "candan" (+ chime) sesinin mikrofona sızıp brain'e bir söz
+    /// olarak gitmesini önler (mate-mac readyCueSettle'ın karşılığı).
+    private let readyCueSettleSeconds: Double = 0.5
 
     private let wake = WakeWordDetector()
     private let cues = CueSounds()
@@ -53,12 +57,11 @@ final class WakeCoordinator: ObservableObject {
             // Wake kullanılamıyorsa kapıyı aç: mikrofon normal kullanılabilsin.
             self?.disableGate()
         }
-        registerCueHandler()
     }
 
     /// Brain proaktif teslimden önce `candan.cue` topic'ine "reminder" yollar →
-    /// belirgin hatırlatma çanı çal. Topic bağlantı boyunca room'a kayıtlı kalır
-    /// (room tek sefer kurulur), bu yüzden bir kez kaydetmek yeter.
+    /// belirgin hatırlatma çanı çal (cuesEnabled açıksa). Bağlanınca kaydedilir,
+    /// teardown'da kaldırılır. lk.transcription özel receiver'ıyla çakışmaz.
     private func registerCueHandler() {
         guard !cueHandlerRegistered, let session else { return }
         cueHandlerRegistered = true
@@ -67,7 +70,8 @@ final class WakeCoordinator: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let value = (try? await reader.readAll()) ?? ""
-                    if value.localizedCaseInsensitiveContains("reminder") {
+                    if value.localizedCaseInsensitiveContains("reminder"),
+                       self.settings?.cuesEnabled == true {
                         self.cues.playReminder()
                     }
                 }
@@ -75,11 +79,18 @@ final class WakeCoordinator: ObservableObject {
         }
     }
 
+    private func unregisterCueHandler() {
+        guard cueHandlerRegistered, let session else { return }
+        cueHandlerRegistered = false
+        Task { await session.room.unregisterTextStreamHandler(for: "candan.cue") }
+    }
+
     // MARK: - Dış olaylar (AppView'dan sürülür)
 
     func connectionChanged(_ isConnected: Bool) {
         connected = isConnected
         if isConnected {
+            registerCueHandler()
             evaluate()
         } else {
             teardown()
@@ -140,7 +151,15 @@ final class WakeCoordinator: ObservableObject {
         mode = .awake
         wake.stop()
         if settings?.cuesEnabled == true { cues.playWakeDetected() }
-        setMicrophone(enabled: true)
+        // Chime'ı çal, KISA SÜRE BEKLE, sonra mikrofonu aç. Böylece konuşulan
+        // "candan" (+ chime kuyruğu) mikrofona sızıp brain'e bir söz olarak
+        // gitmez. Bekleme sırasında durum değiştiyse (uyku/kapanma) açma.
+        let settle = readyCueSettleSeconds
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
+            guard let self, self.mode == .awake else { return }
+            self.setMicrophone(enabled: true)
+        }
         // "Uyandı ama hiç konuşulmadı" durumunu kapat: ajan etkinliği gelmezse
         // sayaç dolunca tekrar uykuya döner.
         armInactivityTimer()
@@ -153,6 +172,7 @@ final class WakeCoordinator: ObservableObject {
 
     private func teardown() {
         cancelInactivityTimer()
+        unregisterCueHandler()
         wake.stop()
         mode = .inactive
     }
