@@ -28,10 +28,10 @@ final class SettingsStore: ObservableObject {
     @Published var macOutputDeviceUID: String { didSet { defaults.set(macOutputDeviceUID, forKey: "macOutputDeviceUID") } }
 
     init() {
-        // Brain'in client token'ı (test sunucusu /api/clients ile "mate-ios" için üretildi).
-        // Eski sunuculardan kalan anahtarlar geçersiz — yenisine taşı.
-        let defaultToken = "TV5tni082tD5t8Jdey7LC4R7iFsNUD4NQ8gFj35Vsyk"
-        let staleTokens = ["benimsecrettokenim", "Y9td20fpS9mJ3BqRmFPt5zs7TF8Y0Rr3o1xxerc_sQ0"]
+        // Brain client token'ı kaynağa GÖMÜLMEZ (public repo). Ayarlar ekranından
+        // gir; mevcut kurulumlar UserDefaults'tan okur. Yeni kurulumda boş gelir.
+        let defaultToken = ""
+        let staleTokens = ["benimsecrettokenim"]
         let storedKey = defaults.string(forKey: "bridgeApiKey") ?? ""
         self.bridgeApiKey = (storedKey.isEmpty || staleTokens.contains(storedKey))
             ? defaultToken : storedKey

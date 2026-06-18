@@ -8,24 +8,16 @@ struct VoiceAgentApp: App {
     // We bypass the LiveKit Cloud sandbox and connect directly to our
     // self-hosted LiveKit server with a manually-minted token.
     //
-    // Mint a fresh token on the server (tokens expire — default 24h):
-    //   ssh root@192.168.0.150 '/usr/local/bin/lk token create \
-    //     --api-key devkey \
-    //     --api-secret 27f2320ab1a3f90a8d783671e970bec192e5add006345d5a \
-    //     --join --room mate-demo --identity mac-client --valid-for 24h'
-    //
-    // Paste the "Access token" value into `selfHostedToken` below.
-    //
-    // LAN (home): direct to vox over plain ws. Off-LAN, switch back to the
-    // Tailscale URL `wss://vox.tailfe7e95.ts.net`.
+    // Server URL + participant token live in `Secrets.swift` (gitignored,
+    // never committed). See that file for how to mint a fresh token.
     //
     // To revert to the LiveKit Cloud sandbox, replace the `session`
     // initializer with the original SandboxTokenSource version (see git
     // history / README) and supply LIVEKIT_SANDBOX_ID via .env.xcconfig.
 
-    private static let selfHostedServerURL = URL(string: "ws://192.168.0.150:7880")!
+    private static let selfHostedServerURL = URL(string: Secrets.livekitServerURL)!
 
-    private static let selfHostedToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkZXZrZXkiLCJzdWIiOiJtYWMtY2xpZW50IiwiZXhwIjoxNzgxOTAxMDg4LCJuYmYiOjE3ODE4MTQ2ODgsImlhdCI6MTc4MTgxNDY4OCwiaWRlbnRpdHkiOiJtYWMtY2xpZW50IiwibmFtZSI6Im1hYy1jbGllbnQiLCJ2aWRlbyI6eyJyb29tSm9pbiI6dHJ1ZSwicm9vbSI6Im1hdGUtZGVtbyJ9fQ.Ae5sfmLgCzQsoSdKe0_ZzL6FZFY-tLl6NkWUkNvKl0Y"
+    private static let selfHostedToken = Secrets.livekitToken
 
     // Voice-only assistant: no screen share / broadcast capture configured.
     private let session = Session(

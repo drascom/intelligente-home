@@ -63,4 +63,7 @@ fastlane/test_output
 
 .env.xcconfig
 
+# Local-only secrets (LiveKit token/URL) — never commit
+Secrets.swift
+
 .DS_Store
