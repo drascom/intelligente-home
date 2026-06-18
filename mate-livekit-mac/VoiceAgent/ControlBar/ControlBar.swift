@@ -8,6 +8,9 @@ struct ControlBar: View {
     @EnvironmentObject private var localMedia: LocalMedia
 
     @Binding var chat: Bool
+    /// Kullanıcı "kapat" (phone.down) ile bağlantıyı bilerek sonlandırdı mı?
+    /// true ise otomatik yeniden bağlanma yapılmaz (bkz. ConnectingView).
+    @Binding var userDisconnected: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.voiceEnabled) private var voiceEnabled
     @Environment(\.textEnabled) private var textEnabled
@@ -125,6 +128,8 @@ struct ControlBar: View {
 
     private func disconnectButton() -> some View {
         AsyncButton {
+            // Bilerek kapatma → otomatik yeniden bağlanmayı engelle.
+            userDisconnected = true
             await session.end()
             session.restoreMessageHistory([])
         } label: {
