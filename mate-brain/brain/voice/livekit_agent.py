@@ -73,6 +73,11 @@ class LiveKitAgent:
         self._room = None            # rtc.Room (transcript yayını için)
         self._pub_track_sid = None   # yayınladığımız ses track'inin sid'i (attribution)
         self._tts_task: asyncio.Task | None = None  # uçuşta TTS (barge-in için iptal)
+        # Proaktif hatırlatma teslimi: vakti gelen bildirimleri kullanıcı konuşmadan
+        # söyleyen arka plan yoklayıcısı + teslim peek/consume'u utterance yoluyla
+        # serileştiren kilit (çift teslim olmasın).
+        self._poll_task: asyncio.Task | None = None
+        self._deliver_lock = asyncio.Lock()
 
     @property
     def conversation_id(self) -> str:
@@ -126,6 +131,9 @@ class LiveKitAgent:
             self.connected = False
             self._source = None
             self._room = None
+            if self._poll_task:
+                self._poll_task.cancel()
+                self._poll_task = None
             if self._tts_task:
                 self._tts_task.cancel()
                 self._tts_task = None
@@ -166,7 +174,10 @@ class LiveKitAgent:
         # Yayınladığımız track'in sid'i: asistan transcript'ini bu track'e bağlamak için.
         self._pub_track_sid = getattr(track, "sid", None)
         # Yayına hazırız → dinleme durumu (istemci agentState'i bununla sürer).
-        await self._set_agent_state("listening")
+        self._set_agent_state("listening")
+        # Proaktif teslim yoklayıcısını başlat (vakti gelen hatırlatmaları
+        # kullanıcı konuşmadan söyler).
+        self._poll_task = asyncio.create_task(self._poll_deliveries())
 
         try:
             # Halihazırda odadaki uzak katılımcıların ses track'lerini de yakala
@@ -189,6 +200,9 @@ class LiveKitAgent:
             self.connected = False
             self._source = None
             self._room = None
+            if self._poll_task:
+                self._poll_task.cancel()
+                self._poll_task = None
             if self._tts_task:
                 self._tts_task.cancel()
                 self._tts_task = None
@@ -331,8 +345,6 @@ class LiveKitAgent:
         if not text:
             return
 
-        # Geçerli konuşma var → işliyoruz: istemci "düşünüyor" durumunu görür.
-        await self._set_agent_state("thinking")
         speaker = await self._identify(pcm)
         speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
 
@@ -344,13 +356,21 @@ class LiveKitAgent:
         session_id = await self.db.resolve_session(scope_key, user_id)
         if user_id is not None:
             await self.db.set_presence(user_id, device_id)
-        pending = await peek_deliveries(self.db, user_id, device_id=device_id)
-        if pending and is_defer(text):
-            answer = DEFER_ACK
-        elif pending:
-            await consume_deliveries(self.db, pending)
-            answer = delivery_text(pending)
-        else:
+        # Teslim peek/consume'u kilit altında yap → proaktif yoklayıcı ile çift
+        # teslim olmasın. Kilit kısa tutulur (LLM/TTS kilit dışında).
+        async with self._deliver_lock:
+            pending = await peek_deliveries(self.db, user_id, device_id=device_id)
+            if pending and is_defer(text):
+                answer = DEFER_ACK
+            elif pending:
+                await consume_deliveries(self.db, pending)
+                answer = delivery_text(pending)
+            else:
+                answer = None
+        if answer is None:
+            # LLM turu başlıyor → istemci "düşünüyor" durumunu görür (teslim/defer
+            # yolları respond çağırmaz; onlar doğrudan speaking'e geçer).
+            self._set_agent_state("thinking")
             history = await self.db.recent_messages(session_id)
             try:
                 answer = await self.agent.respond(
@@ -378,20 +398,88 @@ class LiveKitAgent:
             self._tts_task = asyncio.create_task(self._speak(answer, voice))
         else:
             # Yanıt yok → dinlemeye dön (aksi halde "thinking"de takılı kalır).
-            await self._set_agent_state("listening")
+            self._set_agent_state("listening")
 
-    async def _set_agent_state(self, state: str) -> None:
-        """`lk.agent.state` attribute'unu güncelle (listening/thinking/speaking/
-        idle). İstemci agentState'i bununla sürer → wake re-arm + UI. set_attributes
-        sunucu tarafında merge'lenir (diğer attribute'ları silmez). Best-effort:
-        oda yoksa/sürüm farkı/hata turn'ü bozmaz."""
+    async def _poll_deliveries(self) -> None:
+        """Arka plan döngüsü: vakti gelip chime çalınmış (notified) ama henüz
+        teslim edilmemiş hatırlatmaları proaktif olarak söyler — kullanıcının
+        konuşmasını beklemeden. Yönlendirme presence ile: bu oda cihazına
+        (`livekit:<room>`) işaret eden kullanıcıların teslimleri. notified_at'i
+        global ReminderScheduler ayarlar; biz sadece teslim ederiz (çift işlem yok).
+        Satellite chime→teslim akışının LiveKit karşılığı (orada bir sonraki
+        utterance'a iliştirilirdi; burada proaktif)."""
+        device_id = f"livekit:{self.settings.livekit_room}"
+        while True:
+            try:
+                await self._deliver_due(device_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.warning("livekit agent: proaktif teslim tick hatası: %r", e)
+            await asyncio.sleep(self.settings.reminder_poll_seconds)
+
+    async def _deliver_due(self, device_id: str) -> None:
+        """Bir tick: bu cihaza yönlenmiş bekleyen teslim varsa söyle. Asistan zaten
+        konuşuyorsa/oda yoksa atla (üstüne konuşma). peek+consume kilit altında →
+        utterance yolu ile çift teslim olmaz."""
+        if self._room is None:
+            return
+        # Asistan konuşuyorsa bu tur atla (bir sonraki tick'te tekrar denenir).
+        if self._tts_task is not None and not self._tts_task.done():
+            return
+        async with self._deliver_lock:
+            pending = await peek_deliveries(self.db, None, device_id=device_id)
+            if not pending:
+                return
+            await consume_deliveries(self.db, pending)
+
+        # Kullanıcıya göre grupla → doğru oturuma yaz, ayrı ayrı teslim et.
+        by_user: dict[int | None, list[dict]] = {}
+        for t in pending:
+            by_user.setdefault(t.get("user_id"), []).append(t)
+
+        for user_id, tasks in by_user.items():
+            answer = delivery_text(tasks)
+            if not answer:
+                continue
+            scope_key = f"user-{user_id}" if user_id else self.conversation_id
+            session_id = await self.db.resolve_session(scope_key, user_id)
+            await self.db.add_message(session_id, "assistant", answer)
+            emit_turn(self.bus, scope_key, None, "", answer)
+            log.info("livekit agent: proaktif teslim %r", answer[:160])
+            # Transcript (sadece asistan satırı; kullanıcı satırı boş → atlanır) + TTS.
+            asyncio.create_task(self._publish_transcripts("", answer, None))
+            # _speak'i self._tts_task'a ata → kullanıcı araya girerse barge-in iptal
+            # edebilsin; speaking/listening durumunu da _speak yönetir.
+            self._tts_task = asyncio.create_task(self._speak(answer))
+            try:
+                await self._tts_task
+            except asyncio.CancelledError:
+                # Proaktif teslim sırasında kullanıcı konuştu (barge-in): kalan
+                # kullanıcıların teslimini bu tur bırak, bir sonraki tick'te sürer.
+                log.info("livekit agent: proaktif teslim barge-in ile kesildi")
+                break
+
+    def _set_agent_state(self, state: str) -> None:
+        """`lk.agent.state` attribute'unu güncelle (initializing/listening/thinking/
+        speaking/idle). İstemci agentState'i bununla sürer → wake re-arm + UI.
+        BLOKLAMAZ: set_attributes'i ayrı task'a zamanlar → cancel/finally yollarında
+        (barge-in) bile güvenle çağrılır. set_attributes sunucuda merge'lenir (diğer
+        attribute'ları silmez). Best-effort: oda yoksa/sürüm farkı/hata turn'ü bozmaz."""
         room = self._room
         if room is None:
             return
+
+        async def _apply() -> None:
+            try:
+                await room.local_participant.set_attributes({"lk.agent.state": state})
+            except Exception as e:
+                log.warning("livekit agent: agent-state ayarlanamadı (%s): %r", state, e)
+
         try:
-            await room.local_participant.set_attributes({"lk.agent.state": state})
-        except Exception as e:
-            log.warning("livekit agent: agent-state ayarlanamadı (%s): %r", state, e)
+            asyncio.create_task(_apply())
+        except RuntimeError:
+            pass  # çalışan event loop yok (beklenmez) → sessizce atla
 
     @staticmethod
     def _attrs(participant) -> dict:
@@ -458,10 +546,8 @@ class LiveKitAgent:
         source = self._source
         if source is None:
             log.warning("livekit agent: TTS atlandı — yayın kaynağı yok")
-            await self._set_agent_state("listening")
+            self._set_agent_state("listening")
             return
-        # Konuşma başlıyor → istemci "speaking" görür (TTS sesi ile senkron).
-        await self._set_agent_state("speaking")
         fmt = None
         frames_pub = 0
         bytes_in = 0
@@ -469,6 +555,8 @@ class LiveKitAgent:
             async for kind, value in synthesize_stream(text, voice):
                 if kind == "start":
                     fmt = value
+                    # Ses başladı → istemci "speaking" görür (TTS sesi ile senkron).
+                    self._set_agent_state("speaking")
                     log.info("livekit agent: TTS başladı (fmt rate=%s ch=%s)",
                              getattr(fmt, "rate", "?"), getattr(fmt, "channels", "?"))
                 elif kind == "chunk" and fmt is not None:
@@ -480,14 +568,15 @@ class LiveKitAgent:
             log.info("livekit agent: TTS bitti — %d giriş baytı, %d kare yayınlandı",
                      bytes_in, frames_pub)
         except asyncio.CancelledError:
-            # Barge-in: durumu burada değiştirme (await iptal sırasında riskli);
-            # bir sonraki utterance zaten "thinking"e geçirir.
+            # Barge-in: dinlemeye dön (asla "speaking"de takılı kalma). _set_agent_state
+            # bloklamadan zamanlar → iptal sırasında await riski yok.
             log.info("livekit agent: TTS iptal edildi (barge-in)")
+            self._set_agent_state("listening")
             raise
         except Exception as e:
             log.warning("livekit agent: TTS başarısız: %r", e)
         # Konuşma bitti (normal veya hata) → dinlemeye dön.
-        await self._set_agent_state("listening")
+        self._set_agent_state("listening")
 
     async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
         """s16le PCM'i kaynağın yayın biçimine (48 kHz mono) indir ve kare kare
