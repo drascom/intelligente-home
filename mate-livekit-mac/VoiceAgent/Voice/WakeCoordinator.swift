@@ -48,6 +48,9 @@ final class WakeCoordinator: ObservableObject {
     private var cueHandlerRegistered = false
     /// Mikrofon brain'e canlı mı? `candan.awake` attribute'unun kaynağı.
     private var isAwake = false
+    /// "Hazır" (knock-knock) cue'su bu bağlantıda çalındı mı (bir kez, başlangıçta;
+    /// re-arm/uykuda değil). Disconnect'te sıfırlanır.
+    private var playedReady = false
 
     func attach(session: Session, settings: SettingsStore) {
         guard self.session == nil else { return }
@@ -145,6 +148,8 @@ final class WakeCoordinator: ObservableObject {
         mode = .inactive
         setMicrophone(enabled: true)
         setAwake(continuous)
+        // Sürekli mod (kullanıcı wake'i kapattı) → bağlandı + dinliyor = "hazır".
+        if continuous { playReadyOnce() }
     }
 
     private func enterSleeping(playCue: Bool = true) {
@@ -188,6 +193,14 @@ final class WakeCoordinator: ObservableObject {
         unregisterCueHandler()
         wake.stop()
         mode = .inactive
+        playedReady = false   // sonraki bağlantıda tekrar "hazır" çalsın
+    }
+
+    /// "Hazır" (knock-knock) cue'sunu bu bağlantıda yalnız bir kez çal.
+    private func playReadyOnce() {
+        guard !playedReady else { return }
+        playedReady = true
+        if settings?.cuesEnabled == true { cues.playReady() }
     }
 
     // MARK: - Hareketsizlik zamanlayıcısı
@@ -222,6 +235,8 @@ final class WakeCoordinator: ObservableObject {
                 try wake.start(wakeWord: settings.wakeWord, language: settings.language)
                 // Başarıyla dinlemeye başladık → eski uyarıyı temizle.
                 self.unavailableMessage = nil
+                // Bağlandı + wake'e hazır = "her şey hazır" → bir kez knock-knock.
+                self.playReadyOnce()
             } catch {
                 self.unavailableMessage = error.localizedDescription
                 self.disableGate(continuous: false)
