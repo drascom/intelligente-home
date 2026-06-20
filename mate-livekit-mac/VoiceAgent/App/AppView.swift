@@ -57,6 +57,11 @@ struct AppView: View {
         .onChange(of: session.isConnected) { _, connected in
             wakeCoordinator.connectionChanged(connected)
         }
+        // session.start() bağlanınca mic'i otomatik publish eder; uyku modundaysak
+        // WakeCoordinator bunu geri bırakır (mic yalnız awake/sürekli modda canlı).
+        .onChange(of: localMedia.isMicrophoneEnabled) { _, enabled in
+            wakeCoordinator.microphoneStateChanged(enabled)
+        }
         .onChange(of: session.agent.agentState) { _, state in
             wakeCoordinator.agentStateChanged(state)
         }

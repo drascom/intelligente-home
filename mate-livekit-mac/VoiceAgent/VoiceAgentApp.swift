@@ -37,7 +37,11 @@ struct VoiceAgentApp: App {
                 participantName: "mac-client",
                 roomName: "mate-demo"
             ),
-            options: SessionOptions(room: room),
+            // preConnectAudio KAPALI: açıkken Session bağlanmadan ÖNCE mic'i açıp bir
+            // preconnect track yayınlar; sonradan setMicrophone AYRI track üzerinde
+            // çalışır → İKİ mic track (biri hep canlı, brain'e sızar + wake dinleyiciyle
+            // mic çakışır). Kapalı = tek deterministik track (WakeCoordinator yönetir).
+            options: SessionOptions(room: room, preConnectAudio: false),
             receivers: [CandanTranscriptionReceiver(room: room)]
         )
     }

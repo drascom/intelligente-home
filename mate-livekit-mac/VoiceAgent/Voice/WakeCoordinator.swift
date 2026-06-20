@@ -48,6 +48,10 @@ final class WakeCoordinator: ObservableObject {
     private var cueHandlerRegistered = false
     /// Mikrofon brain'e canlı mı? `candan.awake` attribute'unun kaynağı.
     private var isAwake = false
+    /// Wake durumunun mikrofonu CANLI tutmak istediği niyet (awake veya wake-kapalı
+    /// sürekli mod = true; uyku/kapı-kapalı = false). `setMicrophone` ile güncellenir;
+    /// reaktif guard (`microphoneStateChanged`) istenmeden açılan mic'i buna göre kapatır.
+    private var micShouldBeLive = false
     /// "Hazır" (knock-knock) cue'su bu bağlantıda çalındı mı (bir kez, başlangıçta;
     /// re-arm/uykuda değil). Disconnect'te sıfırlanır.
     private var playedReady = false
@@ -244,10 +248,38 @@ final class WakeCoordinator: ObservableObject {
         }
     }
 
+    /// LiveKit mic'ini canlıya al (publish) ya da TAMAMEN bırak (unpublish).
+    ///
+    /// Model B: uykudayken odadan ÇIKMIYORUZ (brain proaktif hatırlatmayı hâlâ
+    /// itebilsin) ama mic track'ini sadece "mute" etmek yetmez — `setMicrophone(false)`
+    /// SDK'da track'i mute eder, donanım capture'ı sürer ve yerel Apple wake
+    /// dinleyici (kendi AVAudioEngine'i) mikrofonu ALAMAZ. Bu yüzden uykuda track'i
+    /// UNPUBLISH ediyoruz → LiveKit capture'ı bırakır, Apple wake mic'i alır. Oynatma
+    /// (brain sesi/chime) açık kalır. Wake'te `setMicrophone(true)` yeni track yayınlar.
     private func setMicrophone(enabled: Bool) {
+        micShouldBeLive = enabled
         guard let session else { return }
+        let lp = session.room.localParticipant
         Task {
-            try? await session.room.localParticipant.setMicrophone(enabled: enabled)
+            if enabled {
+                try? await lp.setMicrophone(enabled: true)
+            } else {
+                // Mute değil unpublish: donanım mikrofonunu serbest bırak.
+                for pub in lp.localAudioTracks {
+                    try? await lp.unpublish(publication: pub)
+                }
+            }
+        }
+    }
+
+    /// LiveKit mic durumu beklenmedik şekilde "canlı" olursa (örn. `session.start()`
+    /// bağlanınca mic'i otomatik publish eder) ve biz uyku/kapı-kapalı moddaysak
+    /// (`micShouldBeLive == false`) geri bırak. SADECE istenmeden açılanı kapatır;
+    /// canlı modu ya da kullanıcının manuel mute'unu (ControlBar) EZMEZ.
+    func microphoneStateChanged(_ enabled: Bool) {
+        guard connected else { return }
+        if enabled, !micShouldBeLive {
+            setMicrophone(enabled: false)
         }
     }
 
