@@ -160,8 +160,18 @@ final class WakeCoordinator: ObservableObject {
     }
 
     private func enterSleeping(playCue: Bool = true) {
+        // Idempotent: zaten uykudaysak tekrar girme (re-arm'da çift tetik → iki rakip
+        // wake session → wake çalışmıyordu).
+        guard mode != .sleeping else {
+            Log.line("[Coord] enterSleeping atlandı (zaten uykuda)")
+            return
+        }
+        Log.line("[Coord] → UYKU (mic unpublish + LiveKit giriş kapat, wake dinle)")
         cancelInactivityTimer()
         mode = .sleeping
+        // Temiz yeniden başlatma: olası stale wake session/isListening'i temizle
+        // (yoksa startWakeListening → wake.start() `guard !isListening` ile no-op olur).
+        wake.stop()
         setMicrophone(enabled: false)
         // KRİTİK (mate-mac deseni): mic track'ini unpublish etmek YETMEZ — LiveKit'in
         // ses motoru donanım mic'ini hâlâ tutar (menü çubuğunda turuncu) ve yerel Apple
@@ -176,6 +186,7 @@ final class WakeCoordinator: ObservableObject {
     }
 
     private func enterAwake() {
+        Log.line("[Coord] → UYANIK (wake stop + LiveKit giriş aç + mic publish)")
         mode = .awake
         wake.stop()
         // Apple wake motoru mic'i bıraktı → LiveKit ses motorunun girişini geri aç
@@ -200,7 +211,10 @@ final class WakeCoordinator: ObservableObject {
     }
 
     private func handleWakeDetected() {
-        guard mode == .sleeping else { return }
+        guard mode == .sleeping else {
+            Log.line("[Coord] wake algılandı ama mode=\(mode) → atla")
+            return
+        }
         enterAwake()
     }
 
@@ -227,6 +241,7 @@ final class WakeCoordinator: ObservableObject {
         inactivityTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard let self, !Task.isCancelled, self.mode == .awake else { return }
+            Log.line("[Coord] inaktivite doldu → re-arm (uykuya)")
             self.enterSleeping()
         }
     }
@@ -240,9 +255,11 @@ final class WakeCoordinator: ObservableObject {
 
     private func startWakeListening() {
         guard settings != nil else { return }
+        Log.line("[Coord] startWakeListening (mode=\(mode))")
         Task {
             let ok = await wake.requestPermission()
             guard ok else {
+                Log.error("[Wake] konuşma tanıma izni YOK → disableGate")
                 self.unavailableMessage = "Konuşma tanıma izni verilmedi."
                 self.disableGate(continuous: false)
                 return
@@ -263,17 +280,20 @@ final class WakeCoordinator: ObservableObject {
         do {
             try wake.start(wakeWord: settings.wakeWord, language: settings.language)
             self.unavailableMessage = nil
+            Log.line("[Wake] dinleme başladı (deneme \(attempt + 1)) · engineRunning=\(AudioManager.shared.isEngineRunning)")
             // Bağlandı + wake'e hazır = "her şey hazır" → bir kez knock-knock.
             self.playReadyOnce()
         } catch {
             let maxAttempts = 6
             if attempt + 1 < maxAttempts {
+                Log.error("[Wake] start başarısız (deneme \(attempt + 1)/\(maxAttempts)): \(error.localizedDescription) → tekrar")
                 Task { [weak self] in
                     try? await Task.sleep(nanoseconds: 200_000_000)
                     guard let self, self.mode == .sleeping else { return }
                     self.startWakeWithRetry(attempt: attempt + 1)
                 }
             } else {
+                Log.error("[Wake] start KALICI başarısız (\(maxAttempts) deneme): \(error.localizedDescription)")
                 self.unavailableMessage = error.localizedDescription
                 self.disableGate(continuous: false)
             }
@@ -291,8 +311,9 @@ final class WakeCoordinator: ObservableObject {
             try AudioManager.shared.setEngineAvailability(
                 AudioEngineAvailability(isInputAvailable: enabled, isOutputAvailable: true)
             )
+            Log.line("[Mic] LiveKit ses motoru girişi=\(enabled ? "AÇIK" : "KAPALI") (çıkış hep açık) · engineRunning=\(AudioManager.shared.isEngineRunning)")
         } catch {
-            // best-effort — kritik değil; wake start retry'ı toparlar.
+            Log.error("[Mic] setEngineAvailability(\(enabled)) HATA: \(error.localizedDescription)")
         }
     }
 

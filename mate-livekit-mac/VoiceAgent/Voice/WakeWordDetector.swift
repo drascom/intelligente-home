@@ -59,6 +59,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
         scheduleRotation()
         isListening = true
         print("[Wake] listening for '\(wakePattern)' (\(localeId))")
+        Log.line("[Wake] SFSpeech dinliyor '\(wakePattern)' locale=\(localeId) onDevice=\(rec.supportsOnDeviceRecognition) available=\(rec.isAvailable)")
     }
 
     func stop() {
@@ -91,10 +92,12 @@ final class WakeWordDetector: NSObject, ObservableObject {
         let handler: @Sendable (SFSpeechRecognitionResult?, Error?) -> Void = { [weak self] result, error in
             if let result {
                 let text = result.bestTranscription.formattedString.lowercased()
+                Log.line("[Wake] duydu: '\(text)'")
                 Task { @MainActor in
                     guard let self else { return }
                     self.lastHeard = text
                     if self.matches(text: text) {
+                        Log.line("[Wake] EŞLEŞTİ → tetikle")
                         let cb = self.onWakeDetected
                         self.stop()
                         cb?()
@@ -104,6 +107,7 @@ final class WakeWordDetector: NSObject, ObservableObject {
             if let error {
                 // Otomatik rotate yine de yapacak; sessizce loglayıp geç.
                 print("[Wake] task error: \(error.localizedDescription)")
+                Log.error("[Wake] SFSpeech task hatası: \(error.localizedDescription)")
                 // macOS: SFSpeech, sistemde Siri veya Dikte açık olmadan hiç
                 // çalışmıyor — rotate çözmez, kullanıcıyı bilgilendir.
                 let msg = error.localizedDescription
