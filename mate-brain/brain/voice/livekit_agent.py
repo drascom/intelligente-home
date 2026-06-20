@@ -78,6 +78,13 @@ class LiveKitAgent:
         # serileştiren kilit (çift teslim olmasın).
         self._poll_task: asyncio.Task | None = None
         self._deliver_lock = asyncio.Lock()
+        # Uzak katılımcı attribute'ları (per-client ayarlar + candan.awake), kimlik
+        # bazlı önbellek. `participant_attributes_changed` event'i ile beslenir.
+        # NEDEN: bu SDK sürümünde `RemoteParticipant.attributes` view'ı utterance
+        # anında boş gelebiliyor (istemci set(attributes:) ile yayınlasa bile) →
+        # wake gate no-op + ayarlar etkisiz olurdu. Event her değişimde TAM/fresh
+        # geldiği için _attrs() bunu canlı view'ın üstüne bindirir.
+        self._attr_cache: dict[str, dict] = {}
 
     @property
     def conversation_id(self) -> str:
@@ -97,6 +104,9 @@ class LiveKitAgent:
             room=self.settings.livekit_room,
             can_publish=True,
             can_subscribe=True,
+            # Agent kendi `lk.agent.state` attribute'unu set_attributes ile güncelliyor;
+            # bu izin olmadan sunucu reddeder (istemci agentState'i süremez).
+            can_update_own_metadata=True,
         )
         at = (
             api.AccessToken(self.settings.livekit_api_key, self.settings.livekit_api_secret)
@@ -157,6 +167,25 @@ class LiveKitAgent:
         def _on_disconnected(reason):
             log.warning("livekit agent: odadan koptu (%s)", reason)
             track_queue.put_nowait(None)  # _session'ı uyandır → reconnect
+
+        @room.on("participant_attributes_changed")
+        def _on_attrs_changed(changed_attributes, participant):
+            # İstemcinin yayınladığı attribute'ları (candan.awake + stt_engine/
+            # voice/language) kimlik bazlı önbelleğe işle. Asistanın kendi
+            # attribute'larını (lk.agent.state) yok say.
+            ident = getattr(participant, "identity", None)
+            if not ident or ident == "assistant":
+                return
+            try:
+                self._attr_cache.setdefault(ident, {}).update(
+                    dict(changed_attributes or {})
+                )
+            except Exception:
+                pass
+            log.info("livekit agent: attrs değişti (%s): %r", ident, changed_attributes)
+
+        # Yeni oturum → eski önbelleği temizle (kimlikler/ayarlar bayatlamasın).
+        self._attr_cache = {}
 
         token = self._mint_token()
         await room.connect(self.settings.livekit_url, token)
@@ -238,8 +267,10 @@ class LiveKitAgent:
                 if stt is None:
                     # Per-client ayarlar: STT motoru + dil katılımcı attribute'larından.
                     attrs = self._attrs(participant)
-                    # TEŞHİS: brain'in gerçekte gördüğü attribute'lar (wake gate +
-                    # settings buradan okunuyor). Boşsa istemci yayını gelmiyor demek.
+                    # TEŞHİS: brain'in gerçekte gördüğü BİRLEŞİK attribute'lar (canlı
+                    # view + event önbelleği). Wake gate + settings buradan okunuyor.
+                    # Hâlâ boşsa istemci attribute'ı HİÇ yayınlamamış demek (event de
+                    # gelmemiş). Doğrulama sonrası bu log kaldırılacak.
                     log.info("livekit agent: attrs=%r (participant=%s)",
                              attrs, getattr(participant, "identity", "?"))
                     # Wake gate: utterance BAŞINDA uyanık mıydı? Bitişte değil başta
@@ -519,15 +550,23 @@ class LiveKitAgent:
         except RuntimeError:
             pass  # çalışan event loop yok (beklenmez) → sessizce atla
 
-    @staticmethod
-    def _attrs(participant) -> dict:
+    def _attrs(self, participant) -> dict:
         """Katılımcının LiveKit attribute'larını dict olarak ver (yoksa boş).
-        Per-client ayarlar (stt_engine / voice / language) buradan okunur."""
+        Per-client ayarlar (stt_engine / voice / language) + candan.awake buradan
+        okunur. Canlı `participant.attributes` view'ı ile event-beslemeli önbelleği
+        birleştirir: canlı view bu SDK sürümünde boş gelebildiği için, kimlik bazlı
+        önbellek (participant_attributes_changed) üstüne bindirilir (en taze kazanır)."""
+        merged: dict = {}
         try:
             a = getattr(participant, "attributes", None)
-            return dict(a) if a else {}
+            if a:
+                merged.update(dict(a))
         except Exception:
-            return {}
+            pass
+        ident = getattr(participant, "identity", None)
+        if ident:
+            merged.update(self._attr_cache.get(ident, {}))
+        return merged
 
     async def _publish_transcripts(
         self, user_text: str, assistant_text: str, human_track_sid: str | None
