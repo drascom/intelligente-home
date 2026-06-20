@@ -150,6 +150,9 @@ final class WakeCoordinator: ObservableObject {
         cancelInactivityTimer()
         wake.stop()
         mode = .inactive
+        // Sürekli/canlı mod → LiveKit ses motoru girişi açık olmalı (uykuda kapatmış
+        // olabiliriz); mikrofonu publish etmeden önce girişi geri aç.
+        setLiveKitMicInput(enabled: true)
         setMicrophone(enabled: true)
         setAwake(continuous)
         // Sürekli mod (kullanıcı wake'i kapattı) → bağlandı + dinliyor = "hazır".
@@ -160,6 +163,12 @@ final class WakeCoordinator: ObservableObject {
         cancelInactivityTimer()
         mode = .sleeping
         setMicrophone(enabled: false)
+        // KRİTİK (mate-mac deseni): mic track'ini unpublish etmek YETMEZ — LiveKit'in
+        // ses motoru donanım mic'ini hâlâ tutar (menü çubuğunda turuncu) ve yerel Apple
+        // wake dinleyici (kendi AVAudioEngine'i) mic'i alamaz. Bu yüzden ses motorunun
+        // GİRİŞİNİ kapatıyoruz → LiveKit mic'i bırakır, Apple wake alır. ÇIKIŞ açık kalır
+        // → brain'in proaktif hatırlatma sesi uyku sırasında bile duyulur.
+        setLiveKitMicInput(enabled: false)
         // Uyku: brain bu andan itibaren başlayan sözleri yok saysın.
         setAwake(false)
         if playCue, settings?.cuesEnabled == true { cues.playSleeping() }
@@ -169,6 +178,9 @@ final class WakeCoordinator: ObservableObject {
     private func enterAwake() {
         mode = .awake
         wake.stop()
+        // Apple wake motoru mic'i bıraktı → LiveKit ses motorunun girişini geri aç
+        // (settle sonrası mikrofon publish edilecek).
+        setLiveKitMicInput(enabled: true)
         if settings?.cuesEnabled == true { cues.playWakeDetected() }
         // Chime'ı çal, KISA SÜRE BEKLE, sonra mikrofonu aç. Böylece konuşulan
         // "candan" (+ chime kuyruğu) mikrofona sızıp brain'e bir söz olarak
@@ -227,7 +239,7 @@ final class WakeCoordinator: ObservableObject {
     // MARK: - Yardımcılar
 
     private func startWakeListening() {
-        guard let settings else { return }
+        guard settings != nil else { return }
         Task {
             let ok = await wake.requestPermission()
             guard ok else {
@@ -235,16 +247,52 @@ final class WakeCoordinator: ObservableObject {
                 self.disableGate(continuous: false)
                 return
             }
-            do {
-                try wake.start(wakeWord: settings.wakeWord, language: settings.language)
-                // Başarıyla dinlemeye başladık → eski uyarıyı temizle.
-                self.unavailableMessage = nil
-                // Bağlandı + wake'e hazır = "her şey hazır" → bir kez knock-knock.
-                self.playReadyOnce()
-            } catch {
+            // LiveKit ses motoru girişi henüz kapandıysa CoreAudio cihazı ASENKRON
+            // bırakıyor; taze AVAudioEngine.start() çok erken denenirse '!dev'
+            // (kAudioHardwareBadDeviceError) ile patlar (mate-mac'teki aynı yarış).
+            // Kısa settle ver, sonra başlat; patlarsa backoff'lu retry.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            self.startWakeWithRetry(attempt: 0)
+        }
+    }
+
+    /// `wake.start()`'ı backoff'lu retry ile dener: LiveKit mic girişi yeni kapandığı
+    /// için ilk denemeler '!dev' ile patlayabilir (CoreAudio HAL geç serbest kalıyor).
+    private func startWakeWithRetry(attempt: Int) {
+        guard mode == .sleeping, let settings else { return }
+        do {
+            try wake.start(wakeWord: settings.wakeWord, language: settings.language)
+            self.unavailableMessage = nil
+            // Bağlandı + wake'e hazır = "her şey hazır" → bir kez knock-knock.
+            self.playReadyOnce()
+        } catch {
+            let maxAttempts = 6
+            if attempt + 1 < maxAttempts {
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    guard let self, self.mode == .sleeping else { return }
+                    self.startWakeWithRetry(attempt: attempt + 1)
+                }
+            } else {
                 self.unavailableMessage = error.localizedDescription
                 self.disableGate(continuous: false)
             }
+        }
+    }
+
+    /// LiveKit ses motorunun mikrofon GİRİŞİNİ aç/kapat — ÇIKIŞ (oynatma) HEP açık.
+    /// Uyku sırasında giriş kapatılır → LiveKit donanım mic'ini bırakır, yerel Apple
+    /// wake dinleyici alır (iki ses motoru mic'i çekiştirmez; turuncu mic söner). Çıkış
+    /// açık kaldığı için brain'in proaktif hatırlatma sesi uyku sırasında bile duyulur
+    /// (mate-mac'teki "ayrı sinyal kanalı + ses motoru pause" deseninin LiveKit karşılığı).
+    /// Best-effort: hata olursa wake yine de denenecek (settle+retry yutar).
+    private func setLiveKitMicInput(enabled: Bool) {
+        do {
+            try AudioManager.shared.setEngineAvailability(
+                AudioEngineAvailability(isInputAvailable: enabled, isOutputAvailable: true)
+            )
+        } catch {
+            // best-effort — kritik değil; wake start retry'ı toparlar.
         }
     }
 
