@@ -338,6 +338,10 @@ def _mint_livekit_token(identity: str, name: str) -> str:
         room=settings.livekit_room,
         can_publish=True,
         can_subscribe=True,
+        # İstemci kendi attribute'larını set(attributes:) ile yazabilsin (candan.awake +
+        # stt_engine/voice/language). Bu izin olmadan sunucu güncellemeyi reddeder →
+        # brain'de attrs={} kalır (wake gate no-op + ayarlar etkisiz).
+        can_update_own_metadata=True,
     )
     token = (
         api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
