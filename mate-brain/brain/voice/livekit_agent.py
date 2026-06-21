@@ -51,7 +51,7 @@ MAX_UTTERANCE_S = 12.0     # utterance başına sert tavan
 # süresi. Tek bir gürültü/eko karesi cevabı kesmesin diye eşik (özellikle uzun
 # cevaplarda gürültülü ortamda kesilme oluyordu). VPIO eko'yu zaten bastırır; bu da
 # kısa dış-gürültü blip'lerini eler, gerçek (sürekli) konuşma yine barge-in yapar.
-BARGE_IN_MIN_S = 0.45
+BARGE_IN_MIN_S = 0.25  # gerçek barge-in: ~0.25sn sürekli konuşma asistanı keser
 
 # STT, speaker-ID ve endpointing'in beklediği biçim. AudioStream'e bu hedefi
 # verince SDK kareleri içeride bu orana indirir (manuel AudioResampler gerekmez).
