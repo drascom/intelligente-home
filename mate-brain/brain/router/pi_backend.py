@@ -40,7 +40,10 @@ SYSTEM_PROMPT = (
     "süre için ('10 dakika sonra') create_task'a in_seconds ver (10 dk = 600); MUTLAK "
     "saat için ('yarın saat 10'da') önce get_time al, hesapla, due_at (yerel ISO 8601) ver. "
     "Her kullanıcı mesajı '(Konuşan: <ad>, user_id=<N>)' ile başlar; görev "
-    "oluştururken/listelerken bu user_id'yi geçir (bilinmiyorsa boş bırak)."
+    "oluştururken/listelerken bu user_id'yi geçir (bilinmiyorsa boş bırak). "
+    "Konu belleği: Kullanıcı bir konuda geçmişe dönük 'ne yaptık / ne vardı / ne "
+    "kaldı / açık işler ne' diye sorarsa get_topics ile o konunun kaydını oku ve "
+    "özetle; turn başındaki user_id'yi get_topics'e geçir."
 )
 
 

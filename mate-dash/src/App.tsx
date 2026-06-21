@@ -5,12 +5,13 @@ import type { BrainEvent } from "./types";
 import { fmtTime } from "./util";
 import SessionsPanel from "./SessionsPanel";
 import OpenItemsPanel from "./OpenItemsPanel";
+import TopicsPanel from "./TopicsPanel";
 import "./App.css";
 
 const LS_URL = "mate-dash.brainUrl";
 const LS_TOKEN = "mate-dash.token";
 
-type Tab = "live" | "sessions" | "items";
+type Tab = "live" | "sessions" | "items" | "topics";
 
 // Build-zamanı env (mate-dash/.env: VITE_BRAIN_URL / VITE_BRAIN_TOKEN).
 // Set'liyse localStorage/forma göre ÖNCELİKLİ → bağlantı dosyadan yönetilir.
@@ -37,6 +38,15 @@ export default function App() {
   // session_closed olayı geldikçe artan sinyal → paneller listeyi tazeler.
   const sessionClosedSignal = useMemo(
     () => events.filter((e) => e.type === "session_closed").length,
+    [events]
+  );
+
+  // topic_updated / session_closed olayı geldikçe artan sinyal → Konular paneli tazelenir.
+  const topicSignal = useMemo(
+    () =>
+      events.filter(
+        (e) => e.type === "topic_updated" || e.type === "session_closed"
+      ).length,
     [events]
   );
 
@@ -136,6 +146,12 @@ export default function App() {
             Açık İşler
             {itemCount > 0 && <span className="tab-badge">{itemCount}</span>}
           </button>
+          <button
+            className={`tab ${tab === "topics" ? "on" : ""}`}
+            onClick={() => setTab("topics")}
+          >
+            Konular
+          </button>
         </div>
       )}
 
@@ -179,6 +195,14 @@ export default function App() {
           token={token}
           refreshSignal={sessionClosedSignal}
           onCount={setItemCount}
+        />
+      )}
+
+      {enabled && state === "connected" && tab === "topics" && (
+        <TopicsPanel
+          brainUrl={brainUrl}
+          token={token}
+          refreshSignal={topicSignal}
         />
       )}
     </div>
