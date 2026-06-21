@@ -74,6 +74,29 @@ async def resolve_open_item(item_id: int, request: Request):
     return {"ok": True}
 
 
+# ---- konu thread'leri (topic-threaded memory) ----
+
+@router.get("/topics")
+async def list_topics(request: Request):
+    """Konu thread'leri (updated_at DESC). Opsiyonel scope_key / status filtresi."""
+    _admin_or_401(request.query_params.get("token") or "")
+    db = request.app.state.db
+    scope_key = request.query_params.get("scope_key") or None
+    status = request.query_params.get("status") or None
+    return {"topics": await db.list_topics(scope_key=scope_key, status=status)}
+
+
+@router.get("/topics/{topic_id}")
+async def get_topic(topic_id: int, request: Request):
+    """Tek konu thread'i + bağlı açık işleri."""
+    _admin_or_401(request.query_params.get("token") or "")
+    db = request.app.state.db
+    topic = await db.get_topic(topic_id)
+    if topic is None:
+        raise HTTPException(404, "topic not found")
+    return {"topic": topic, "open_items": await db.topic_open_items(topic_id)}
+
+
 # ---- TEST/DIAGNOSTIK: ses hattı olmadan düz metinle tam tur ----
 
 class DebugTurn(BaseModel):
@@ -104,3 +127,19 @@ async def debug_turn(body: DebugTurn, request: Request):
     await db.add_message(session_id, "assistant", answer)
     emit_turn(request.app.state.bus, body.scope_key, None, body.text, answer)
     return {"session_id": session_id, "answer": answer}
+
+
+@router.post("/debug/close-session/{session_id}")
+async def debug_close_session(session_id: int, request: Request):
+    """SADECE TEST/DIAGNOSTIK: idle beklemeden oturum kapanışını (konu yönlendirmesi
+    dahil) SENKRON tetikler → testin hemen ardından konuları inceleyebilmesi için."""
+    _admin_or_401(request.query_params.get("token") or "")
+    db = request.app.state.db
+    session = await db.get_session(session_id)
+    if session is None:
+        raise HTTPException(404, "session not found")
+    if session.get("status") == "closed":
+        return {"already_closed": True}
+    # Gerçek kapatma pipeline'ını SENKRON çağır (arka plan task'ı değil).
+    await request.app.state.segmenter._close_session(session, session.get("user_id"))
+    return {"closed": session_id}
