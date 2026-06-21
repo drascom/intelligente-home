@@ -46,6 +46,34 @@ export interface OpenItem {
   created_at: number;
 }
 
+// ---- Konular (Topics) ----
+export interface Topic {
+  id: number;
+  scope_key: string;
+  user_id: number | null;
+  title: string | null;
+  summary: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  last_activity_at: number | null;
+}
+
+// Konu detayındaki açık iş (topics endpoint'i topic_id alanını da döndürür).
+export interface TopicOpenItem {
+  id: number;
+  text: string;
+  session_id: number | null;
+  topic_id: number | null;
+  status: string;
+  created_at: number;
+}
+
+export interface TopicDetail {
+  topic: Topic;
+  open_items: TopicOpenItem[];
+}
+
 // Olay türü → renk + etiket (monitör satır rozetleri)
 export const TYPE_META: Record<string, { label: string; color: string }> = {
   utterance: { label: "Kullanıcı", color: "#4f9dff" },
@@ -61,6 +89,7 @@ export const TYPE_META: Record<string, { label: string; color: string }> = {
   client_connect: { label: "Bağlandı", color: "#94a3b8" },
   client_disconnect: { label: "Ayrıldı", color: "#64748b" },
   session_closed: { label: "Oturum ✕", color: "#818cf8" },
+  topic_updated: { label: "Konu", color: "#e879f9" },
 };
 
 export function typeMeta(type: string) {

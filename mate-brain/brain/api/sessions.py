@@ -78,12 +78,21 @@ async def resolve_open_item(item_id: int, request: Request):
 
 @router.get("/topics")
 async def list_topics(request: Request):
-    """Konu thread'leri (updated_at DESC). Opsiyonel scope_key / status filtresi."""
+    """Konu thread'leri (updated_at DESC). Opsiyonel scope_key / status filtresi.
+
+    `with_items=true` verilirse her konuya bağlı AÇIK (pending) işler de inline
+    eklenir (`open_items`) → ses asistanı tek çağrıda konu + açık işleri okur."""
     _admin_or_401(request.query_params.get("token") or "")
     db = request.app.state.db
     scope_key = request.query_params.get("scope_key") or None
     status = request.query_params.get("status") or None
-    return {"topics": await db.list_topics(scope_key=scope_key, status=status)}
+    with_items = (request.query_params.get("with_items") or "").lower() in ("1", "true", "yes")
+    topics = await db.list_topics(scope_key=scope_key, status=status)
+    if with_items:
+        # Küçük N+1 döngüsü: her konunun açık (pending) işlerini ekle.
+        for topic in topics:
+            topic["open_items"] = await db.topic_open_items(topic["id"], status="pending")
+    return {"topics": topics}
 
 
 @router.get("/topics/{topic_id}")

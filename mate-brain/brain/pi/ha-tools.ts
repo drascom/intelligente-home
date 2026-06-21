@@ -172,4 +172,61 @@ export default function (pi: ExtensionAPI) {
       return { content: [{ type: "text", text }], details: {} };
     },
   });
+
+  // --- Konu belleği (topic memory) recall tool'u ---
+  // NOT: /api/topics endpoint'i auth'u SADECE ?token= query param'ından okur
+  // (sessions.py _admin_or_401), bu yüzden token'ı URL'e query olarak koyuyoruz.
+  pi.registerTool({
+    name: "get_topics",
+    label: "Get topics",
+    description:
+      "Kullanıcının KONU BELLEĞİ kayıtlarını getirir — bir konuda daha önce ne " +
+      "konuşulduğu/yapıldığı ve açık (çözülmemiş) işleri. Kullanıcı 'X konusunda " +
+      "ne yaptık/ne vardı/ne kaldı/açık ne var' diye sorduğunda kullan.",
+    parameters: Type.Object({
+      user_id: Type.Optional(Type.Number({
+        description: "Konuşan kişinin user_id'si (turn bağlamından). Verilirse o " +
+          "kullanıcının konuları (scope_key=user-<id>) getirilir.",
+      })),
+      query: Type.Optional(Type.String({
+        description: "Hangi konu olduğuna dair ipucu (opsiyonel; model konuları kendisi süzer).",
+      })),
+    }),
+    async execute(_id, params) {
+      try {
+        const q = new URLSearchParams();
+        q.set("token", TOKEN);
+        q.set("status", "open");
+        q.set("with_items", "true");
+        if (params.user_id !== undefined && params.user_id !== null) {
+          q.set("scope_key", `user-${params.user_id}`);
+        }
+        const resp = await fetch(`${BASE}/api/topics?${q}`, { method: "GET" });
+        const raw = await resp.text();
+        if (!resp.ok) {
+          return { content: [{ type: "text", text: `error ${resp.status}: ${raw}` }], details: {} };
+        }
+        // Modelin sesli okuyabilmesi için sade/temiz JSON döndür.
+        let topics: any[] = [];
+        try {
+          topics = JSON.parse(raw)?.topics ?? [];
+        } catch {
+          topics = [];
+        }
+        const clean = topics.map((t) => ({
+          title: t.title,
+          summary: t.summary,
+          status: t.status,
+          last_activity_at: t.last_activity_at,
+          open_items: Array.isArray(t.open_items)
+            ? t.open_items.map((it: any) => it.text ?? it)
+            : [],
+        }));
+        return { content: [{ type: "text", text: JSON.stringify(clean) }], details: {} };
+      } catch (e) {
+        // Asla throw etme; boş liste/uyarı dön.
+        return { content: [{ type: "text", text: `[] (get_topics hatası: ${e})` }], details: {} };
+      }
+    },
+  });
 }
