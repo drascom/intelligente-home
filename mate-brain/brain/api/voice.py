@@ -134,7 +134,12 @@ async def voice_bridge(websocket: WebSocket):
             scope_key, user_id = (
                 (f"user-{speaker_id}", speaker_id) if speaker_id else (conversation_id, None)
             )
-            session_id = await db.resolve_session(scope_key, user_id)
+            # Konu-tabanlı oturum segmentasyonu (devam/böl kararı içeride); yoksa legacy.
+            seg = getattr(app.state, "segmenter", None)
+            if seg is not None:
+                session_id = await seg.resolve_session_for_turn(scope_key, user_id, text)
+            else:
+                session_id = await db.resolve_session(scope_key, user_id)
             if user_id is not None:
                 # presence: bu kişi en son bu cihazdan konuştu → chime buraya gider.
                 await db.set_presence(user_id, f"client:{client['id']}")

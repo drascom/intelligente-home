@@ -37,7 +37,8 @@ PING_INTERVAL_S = 30
 
 
 class Satellite:
-    def __init__(self, name: str, host: str, port: int, agent, db, settings, speaker=None):
+    def __init__(self, name: str, host: str, port: int, agent, db, settings,
+                 speaker=None, segmenter=None):
         self.name = name
         self.host = host
         self.port = port
@@ -45,6 +46,7 @@ class Satellite:
         self.db = db
         self.settings = settings
         self.speaker = speaker  # SpeakerID | None (voice-ID)
+        self.segmenter = segmenter  # SessionSegmenter | None (konu-tabanlı oturum)
         self.connected = False
         # Aktif oturumun writer'ı (announce için) + speak serileştirme kilidi:
         # anons ile turn cevabı aynı anda yazarsa Wyoming event akışı bozulur.
@@ -191,7 +193,12 @@ class Satellite:
         scope_key, user_id = (
             (f"user-{speaker_id}", speaker_id) if speaker_id else (self.conversation_id, None)
         )
-        session_id = await self.db.resolve_session(scope_key, user_id)
+        # Konu-tabanlı oturum segmentasyonu (devam/böl kararı içeride); yoksa legacy.
+        seg = self.segmenter
+        if seg is not None:
+            session_id = await seg.resolve_session_for_turn(scope_key, user_id, text)
+        else:
+            session_id = await self.db.resolve_session(scope_key, user_id)
         if user_id is not None:
             # presence: bu kişi en son bu satellite'tan konuştu → chime buraya gider.
             await self.db.set_presence(user_id, f"satellite:{self.name}")

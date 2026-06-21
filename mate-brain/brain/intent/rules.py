@@ -135,6 +135,10 @@ class HybridClassifier:
     def fit(self, examples_by_class: dict[str, list[str]]) -> None:
         self.e5.fit(examples_by_class)
 
+    def embed(self, text: str):
+        """Tek metnin normalize edilmiş E5 vektörü (oturum segmentasyonu için)."""
+        return self.e5.embed(text)
+
     def classify(
         self,
         text: str,

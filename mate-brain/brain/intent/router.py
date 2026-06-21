@@ -48,6 +48,17 @@ class IntentRouter:
         clf.fit(INTENTS)
         return clf
 
+    def embed(self, text: str):
+        """Tek metnin normalize edilmiş E5 vektörü (np.ndarray) ya da None.
+        Oturum konu-segmentasyonu için; tur yoluna asla istisna fırlatmaz."""
+        if self._clf is None or not text.strip():
+            return None
+        try:
+            return self._clf.embed(text)
+        except Exception:
+            log.exception("intent embed failed")
+            return None
+
     def classify(self, text: str, conversation_id: str | None = None):
         """Prediction or None (not ready / unavailable)."""
         if self._clf is None or not text.strip():

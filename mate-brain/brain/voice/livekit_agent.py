@@ -475,7 +475,12 @@ class LiveKitAgent:
             (f"user-{speaker_id}", speaker_id) if speaker_id else (self.conversation_id, None)
         )
         device_id = f"livekit:{self.settings.livekit_room}"
-        session_id = await self.db.resolve_session(scope_key, user_id)
+        # Konu-tabanlı oturum segmentasyonu (devam/böl kararı içeride); yoksa legacy.
+        seg = getattr(self.app.state, "segmenter", None)
+        if seg is not None:
+            session_id = await seg.resolve_session_for_turn(scope_key, user_id, text)
+        else:
+            session_id = await self.db.resolve_session(scope_key, user_id)
         if user_id is not None:
             await self.db.set_presence(user_id, device_id)
         # Teslim peek/consume'u kilit altında yap → proaktif yoklayıcı ile çift

@@ -35,9 +35,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id INTEGER,            -- speakers.id; NULL = bilinmeyen/cihaz kapsamı
     scope_key TEXT NOT NULL,
     title TEXT,                 -- ileride LLM auto-title
-    status TEXT NOT NULL DEFAULT 'active',  -- active | archived (ileride pending/done)
+    status TEXT NOT NULL DEFAULT 'active',  -- active = açık | closed = bitti (konu segmentasyonu)
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    ended_at REAL,              -- oturum kapanış anı (konu değişti / idle)
+    summary TEXT,               -- kapanışta LLM özeti (1-2 cümle)
+    centroid BLOB,              -- oturum gövdesinin koşan-ortalama embedding'i (float32 baytlar)
+    embed_count INTEGER NOT NULL DEFAULT 0  -- centroid'e katkıda bulunan tur sayısı
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope_key, status, updated_at);
 -- Görevler (task): triage'ın "hemen cevaplama, sonraya bırak" dalı. Kişiye göre.
@@ -52,7 +56,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_at REAL,                -- zamanlı hatırlatma anı (epoch); NULL = zamansız not
     notified_at REAL,           -- chime çalındığı an (vakti geldi, teslim bekliyor)
     created_at REAL NOT NULL,
-    done_at REAL
+    done_at REAL,
+    kind TEXT NOT NULL DEFAULT 'reminder'  -- reminder = hatırlatma | open_question = açık konu/çözülmemiş soru
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, status, created_at);
 -- İzleme olayları (dashboard geçmişi): bus olayları arka planda buraya yazılır
@@ -112,6 +117,12 @@ MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN speaker TEXT",
     "ALTER TABLE messages ADD COLUMN session_id INTEGER",
     "ALTER TABLE tasks ADD COLUMN notified_at REAL",
+    # Konu-tabanlı oturum segmentasyonu + açık-konu takibi (yeni sütunlar).
+    "ALTER TABLE sessions ADD COLUMN ended_at REAL",
+    "ALTER TABLE sessions ADD COLUMN summary TEXT",
+    "ALTER TABLE sessions ADD COLUMN centroid BLOB",
+    "ALTER TABLE sessions ADD COLUMN embed_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminder'",
 ]
 
 # Migration'lardan SONRA kurulacak index'ler (yeni eklenen sütunlara bağlı olanlar;
@@ -296,6 +307,129 @@ class Database:
             cur = await self._db.execute(
                 "SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)
             )
+        return [dict(r) for r in await cur.fetchall()]
+
+    # ---- konu-tabanlı oturum segmentasyonu (SessionSegmenter destekleri) ----
+
+    async def active_session(self, scope_key: str) -> dict | None:
+        """scope_key için en güncel AKTİF (status='active') oturum; yoksa None.
+        Segmenter'ın koşan-ortalama/idle kararı için centroid + embed_count döner."""
+        cur = await self._db.execute(
+            "SELECT id, scope_key, user_id, centroid, embed_count, summary,"
+            "       created_at, updated_at, title"
+            " FROM sessions WHERE scope_key = ? AND status = 'active'"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (scope_key,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def create_session(
+        self, scope_key: str, user_id: int | None,
+        centroid: bytes | None, embed_count: int,
+    ) -> int:
+        """Yeni AKTİF oturum aç (centroid + embed_count ile); id döner."""
+        now = time.time()
+        cur = await self._db.execute(
+            "INSERT INTO sessions"
+            " (user_id, scope_key, status, created_at, updated_at, centroid, embed_count)"
+            " VALUES (?, ?, 'active', ?, ?, ?, ?)",
+            (user_id, scope_key, now, now, centroid, embed_count),
+        )
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def update_session_centroid(
+        self, session_id: int, centroid: bytes, embed_count: int
+    ) -> None:
+        """Aynı konu devam ederken koşan-ortalama centroid'i + sayacı güncelle."""
+        await self._db.execute(
+            "UPDATE sessions SET centroid = ?, embed_count = ?, updated_at = ? WHERE id = ?",
+            (centroid, embed_count, time.time(), session_id),
+        )
+        await self._db.commit()
+
+    async def close_session(
+        self, session_id: int, title: str | None, summary: str | None, ended_at: float
+    ) -> None:
+        """Oturumu kapat (konu değişti / idle): status='closed' + başlık/özet/kapanış anı."""
+        await self._db.execute(
+            "UPDATE sessions SET status = 'closed', title = ?, summary = ?,"
+            "  ended_at = ?, updated_at = ? WHERE id = ?",
+            (title, summary, ended_at, time.time(), session_id),
+        )
+        await self._db.commit()
+
+    async def session_turns(self, session_id: int) -> list[dict]:
+        """Oturumdaki tüm mesajlar, id ASC (kapanış özeti için kronolojik transkript)."""
+        cur = await self._db.execute(
+            "SELECT role, content, speaker, created_at FROM messages"
+            " WHERE session_id = ? ORDER BY id ASC",
+            (session_id,),
+        )
+        return [
+            {"role": r["role"], "content": r["content"],
+             "speaker": r["speaker"], "created_at": r["created_at"]}
+            for r in await cur.fetchall()
+        ]
+
+    async def list_sessions_detailed(
+        self, user_id: int | None = None, limit: int = 100
+    ) -> list[dict]:
+        """Oturumlar (updated_at DESC, opsiyonel user_id filtresi) + her birine
+        turn_count = o oturuma ait mesaj sayısı. Tüm oturum sütunları + turn_count."""
+        params: list = []
+        where = ""
+        if user_id is not None:
+            where = " WHERE s.user_id = ?"
+            params.append(user_id)
+        params.append(limit)
+        cur = await self._db.execute(
+            "SELECT s.*,"
+            "  (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS turn_count"
+            f" FROM sessions s{where} ORDER BY s.updated_at DESC LIMIT ?",
+            params,
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def get_session(self, session_id: int) -> dict | None:
+        """Tek oturum satırı (tüm sütunlar + turn_count); yoksa None."""
+        cur = await self._db.execute(
+            "SELECT s.*,"
+            "  (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS turn_count"
+            " FROM sessions s WHERE s.id = ?",
+            (session_id,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def add_open_item(self, session_id: int, user_id: int | None, text: str) -> int:
+        """Açık konu / çözülmemiş soru → tasks(kind='open_question', status='pending'). id döner."""
+        now = time.time()
+        cur = await self._db.execute(
+            "INSERT INTO tasks (user_id, session_id, text, status, kind, created_at)"
+            " VALUES (?, ?, ?, 'pending', 'open_question', ?)",
+            (user_id, session_id, text, now),
+        )
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def list_open_items(
+        self, user_id: int | None = None, status: str = "pending"
+    ) -> list[dict]:
+        """Açık konular (kind='open_question'), opsiyonel user_id + status, created_at DESC."""
+        clauses = ["kind = 'open_question'"]
+        params: list = []
+        if user_id is not None:
+            clauses.append("user_id = ?"); params.append(user_id)
+        if status:
+            clauses.append("status = ?"); params.append(status)
+        where = " WHERE " + " AND ".join(clauses)
+        cur = await self._db.execute(
+            "SELECT id, user_id, session_id, text, status, kind, created_at, done_at"
+            f" FROM tasks{where} ORDER BY created_at DESC",
+            params,
+        )
         return [dict(r) for r in await cur.fetchall()]
 
     # ---- speakers (voice-ID) ----
