@@ -53,6 +53,15 @@ MAX_UTTERANCE_S = 12.0     # utterance başına sert tavan
 # kısa dış-gürültü blip'lerini eler, gerçek (sürekli) konuşma yine barge-in yapar.
 BARGE_IN_MIN_S = 0.25  # gerçek barge-in: ~0.25sn sürekli konuşma asistanı keser
 
+# Yayınladığımız AudioSource'un tampon boyutu (ms). SDK varsayılanı 1000ms = TTS
+# cevabı kuyruğa ANINDA dolar → kısa cevaplarda _speak task'ı hemen biter
+# (_tts_task.done()=True) → barge-in iptali HİÇ tetiklenmez; uzun cevapta da ~1sn
+# tampon iptalden sonra çalmaya devam eder. Küçük tutunca task ses süresi kadar
+# canlı kalır (barge-in iptal edilebilir) ve iptal sonrası kuyruk kuyruğu kısa.
+# Barge-in'de ayrıca source.clear_queue() ile bu artık tampon anında susturulur.
+# localhost (.25) TTS streaming → 200ms underrun riski düşük.
+AUDIO_QUEUE_MS = 200
+
 # STT, speaker-ID ve endpointing'in beklediği biçim. AudioStream'e bu hedefi
 # verince SDK kareleri içeride bu orana indirir (manuel AudioResampler gerekmez).
 STT_RATE = 16000
@@ -217,7 +226,9 @@ class LiveKitAgent:
                  self.settings.livekit_room, self.settings.livekit_url)
 
         # Yanıt sesini yayınlamak için tek bir ses kaynağı + track yayınla.
-        source = rtc.AudioSource(sample_rate=PUB_RATE, num_channels=PUB_CHANNELS)
+        source = rtc.AudioSource(
+            sample_rate=PUB_RATE, num_channels=PUB_CHANNELS, queue_size_ms=AUDIO_QUEUE_MS
+        )
         track = rtc.LocalAudioTrack.create_audio_track("assistant", source)
         options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
         await room.local_participant.publish_track(track, options)
@@ -711,6 +722,12 @@ class LiveKitAgent:
             # task'ı sonradan koşup "idle" yazma yarışını engeller). Utterance bitince
             # _handle_utterance "thinking"/"speaking", sonunda "idle" sürer.
             log.info("livekit agent: TTS iptal edildi (barge-in)")
+            # Kuyrukta bekleyen (queue_size_ms kadar) artık sesi ANINDA sustur →
+            # yoksa iptalden sonra tampon çalmaya devam eder ("kesilmedi" hissi).
+            try:
+                source.clear_queue()
+            except Exception:
+                pass
             self._set_agent_state("listening")
             raise
         except Exception as e:
