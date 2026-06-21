@@ -1,16 +1,19 @@
 """Konu-tabanlı oturum segmentasyonu.
 
 Her tur için: embedding ile aktif oturumun koşan-ortalama centroid'ine cosine
-bak. Eşik üstü → aynı konu (LLM yok, ucuz). Eşik altı → kısa Türkçe LLM hakemi
-(DEVAM / YENI). Uzun sessizlik (idle) → koşulsuz yeni oturum. Oturum kapanırken
-arka planda LLM ile başlık/özet/açık-konular çıkarılır (tur bloklanmaz).
+bak. Eşik üstü → aynı konu. Eşik altı → DOĞRUDAN konu sınırı (yeni oturum) — eskiden
+tur-içi LLM hakemi vardı ama ucuz/yan-kanal bir sohbet-LLM'i kalmadığından (vLLM
+donmuş, tek canlı LLM = bağlamı tutan kalıcı pi/Codex süreci) kaldırıldı; karar artık
+yalnızca embedding'e dayanıyor. Uzun sessizlik (idle) → koşulsuz yeni oturum. Oturum
+kapanırken arka planda TAZE STATELESS Codex (pi.complete_once) ile başlık/özet/açık-
+konular çıkarılır (tur bloklanmaz, asıl bağlam kirlenmez).
 
 Tasarım kuralları:
 - resolve_session_for_turn turu BLOKLAMAMALI: kapatma pipeline'ı her zaman
   asyncio.create_task ile arka plana atılır; yeni oturum SENKRON açılır
   (tur hemen session_id alır).
-- Hiçbir yol istisna fırlatmamalı (tur yoluna sızmaz); embedding/LLM yoksa
-  güvenli varsayılan = aktif oturumu sürdür (aşırı bölme yapma).
+- Hiçbir yol istisna fırlatmamalı (tur yoluna sızmaz); embedding yoksa
+  güvenli varsayılan = aktif oturumu sürdür (sinyal yok → aşırı bölme yapma).
 """
 
 from __future__ import annotations
@@ -25,17 +28,19 @@ import numpy as np
 
 log = logging.getLogger("brain.session")
 
-_LLM_JUDGE_TIMEOUT = 8.0     # konu-devam hakemi (tur içinde, eşik altı)
-_LLM_CLOSE_TIMEOUT = 20.0    # kapanış özeti (arka plan)
+_LLM_CLOSE_TIMEOUT = 60.0    # kapanış özeti (arka plan, taze stateless Codex)
 
 
 class SessionSegmenter:
-    def __init__(self, db, intent, llm, bus, settings):
+    def __init__(self, db, intent, llm, bus, settings, pi=None):
         self.db = db
         self.intent = intent      # IntentRouter (embed) — None olabilir
-        self.llm = llm            # LLMClient (chat) — None olabilir
+        # llm: eski tur-içi LLM hakemi için tutuluyordu; hakem KALDIRILDI (ucuz bir
+        # sohbet-LLM'i kalmadı) → şu an KULLANILMIYOR (ileride vLLM dönerse hazır dursun).
+        self.llm = llm
         self.bus = bus
         self.settings = settings
+        self.pi = pi              # PiBackend — kapanış özeti için stateless Codex; None olabilir
 
     # ---- ana giriş: tur için oturum çöz ----
 
@@ -75,22 +80,14 @@ class SessionSegmenter:
                 # Aynı konu (LLM YOK): koşan-ortalama centroid'i güncelle.
                 await self._extend_centroid(active, emb)
                 return active["id"]
-            # Eşik altı → LLM hakem.
-            same = await self._llm_continuation(active, text)
-            if same:
-                await self._extend_centroid(active, emb)
-                return active["id"]
+            # Eşik altı → DOĞRUDAN konu sınırı (LLM hakem YOK): eskiyi kapat (arka
+            # plan) + yeni oturum aç.
             self._schedule_close(active, user_id)
             return await self._new_session(scope_key, user_id, emb)
 
-        # 4) Embedding yok (model yok) → sadece LLM hakem; o da yoksa aktif sürer.
-        same = await self._llm_continuation(active, text)
-        if same:
-            # Embedding yoksa centroid güncellenemez; en azından updated_at tazelenir
-            # (add_message zaten yapar) — burada ekstra yazma gerekmez.
-            return active["id"]
-        self._schedule_close(active, user_id)
-        return await self._new_session(scope_key, user_id, emb)
+        # 4) Embedding yok (model yok) → konuya göre bölme sinyali yok; sadece idle
+        # guard'a güven (yukarıda çalıştı) ve aktif oturumu sürdür.
+        return active["id"]
 
     # ---- yardımcılar ----
 
@@ -150,42 +147,6 @@ class SessionSegmenter:
         """Kapatma pipeline'ını arka plana at — tur bloklanmasın."""
         asyncio.create_task(self._close_session(session, user_id))
 
-    async def _llm_continuation(self, active: dict, text: str) -> bool:
-        """Eşik altı / embedding yok: yeni söz aktif konunun DEVAMI mı?
-        Tek token bekler: DEVAM | YENI. Hata/timeout/llm yok → DEVAM (aşırı bölme)."""
-        if self.llm is None:
-            return True
-        try:
-            recent = await self.db.recent_messages(active["id"], limit=4)
-        except Exception:
-            recent = []
-        ctx_lines = [f"{m['role']}: {m['content']}" for m in recent]
-        if not ctx_lines and active.get("summary"):
-            ctx_lines = [f"özet: {active['summary']}"]
-        context = "\n".join(ctx_lines) if ctx_lines else "(önceki tur yok)"
-        prompt = (
-            "Bir sesli asistan konuşmasında konu takibi yapıyorsun. Aşağıda devam "
-            "eden oturumun son turları ve kullanıcının YENİ sözü var. Yeni söz aynı "
-            "konunun DEVAMI mı, yoksa YENI bir konu mu? Sadece tek kelime cevap ver: "
-            "DEVAM ya da YENI.\n\n"
-            f"Son turlar:\n{context}\n\n"
-            f"Yeni söz:\n{text}\n\n"
-            "Cevap (DEVAM/YENI):"
-        )
-        try:
-            resp = await asyncio.wait_for(
-                self.llm.chat([{"role": "user", "content": prompt}]),
-                timeout=_LLM_JUDGE_TIMEOUT,
-            )
-            answer = (resp.get("content") or "").strip().upper()
-            # "YENI"/"YENİ" → yeni konu. Aksi (DEVAM dahil belirsiz) → devam.
-            if "YENI" in answer or "YENİ" in answer:
-                return False
-            return True
-        except Exception:
-            log.warning("konu hakemi LLM hatası/timeout → DEVAM varsayılan")
-            return True
-
     async def _close_session(self, session: dict, user_id: int | None) -> None:
         """Kapatma pipeline'ı (arka plan task'ı olarak güvenli). Asla fırlatmaz."""
         try:
@@ -230,7 +191,7 @@ class SessionSegmenter:
         )
         fallback_title = (first_user[:60] if first_user else None)
 
-        if self.llm is None:
+        if self.pi is None:
             return fallback_title, None, []
 
         transcript = "\n".join(
@@ -247,11 +208,9 @@ class SessionSegmenter:
             f"Transkript:\n{transcript}\n"
         )
         try:
-            resp = await asyncio.wait_for(
-                self.llm.chat([{"role": "user", "content": prompt}]),
-                timeout=_LLM_CLOSE_TIMEOUT,
-            )
-            content = resp.get("content") or ""
+            # Taze STATELESS Codex (asistanın kalıcı bağlamı kirlenmez). Codex çıktıyı
+            # sarabildiğinden _parse_json regex'i {...} bloğunu çekip alır.
+            content = await self.pi.complete_once(prompt, timeout=_LLM_CLOSE_TIMEOUT)
             data = self._parse_json(content)
             title = data.get("title") or fallback_title
             summary = data.get("summary")
@@ -266,7 +225,7 @@ class SessionSegmenter:
                 open_items,
             )
         except Exception:
-            log.warning("oturum özeti LLM hatası → fallback başlık")
+            log.warning("oturum özeti Codex hatası → fallback başlık")
             return fallback_title, None, []
 
     @staticmethod
