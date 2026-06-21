@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     # sentence-transformers installed, otherwise degrades to full agent path.
     intent_fastpath: bool = True
 
+    # Konu-tabanlı oturum segmentasyonu (SessionSegmenter). e5 cosine bu eşiğin
+    # ÜSTÜ = aynı konu, LLM atlanır; ALTI = LLM hakem karar verir. Gerçek Türkçe
+    # turlarla kalibre EDİLMELİ (varsayılan deneysel başlangıç).
+    session_sim_threshold: float = 0.86
+    # Bu kadar saniye sessizlik (son tur üstünden) → yeni oturum (uzun boşluk =
+    # yeni konuşma). 1800 = 30 dk. Kalibre edilebilir.
+    session_idle_seconds: float = 1800
+
     # MQTT node management plane (SYSTEM_PLAN Layer 2). Host boş = düzlem kapalı.
     # Dev: zigbee2mqtt sunucusundaki mosquitto (192.168.0.90), kullanıcı "brain".
     mqtt_host: str = ""

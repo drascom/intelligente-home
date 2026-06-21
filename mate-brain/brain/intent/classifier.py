@@ -54,6 +54,11 @@ class IntentClassifier:
             show_progress_bar=False,
         )
 
+    def embed(self, text: str) -> "np.ndarray | None":
+        """Tek bir metnin normalize edilmiş E5 vektörü (cosine = dot product).
+        Oturum konu-segmentasyonu için _encode'u yeniden kullanır."""
+        return self._encode([text])[0]
+
     def fit(self, examples_by_class: dict[str, list[str]]) -> None:
         for cls, texts in examples_by_class.items():
             if not texts:

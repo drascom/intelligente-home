@@ -11,6 +11,41 @@ export interface BrainEvent {
 
 export type ConnState = "disconnected" | "connecting" | "connected";
 
+// ---- Oturumlar / Açık İşler ----
+export interface Session {
+  id: number;
+  scope_key: string;
+  user_id: number | null;
+  title: string | null;
+  summary: string | null;
+  status: "active" | "closed";
+  created_at: number;
+  updated_at: number;
+  ended_at: number | null;
+  turn_count: number;
+}
+
+export interface SessionTurn {
+  role: "user" | "assistant";
+  content: string;
+  speaker: string | null;
+  created_at: number;
+}
+
+export interface SessionDetail {
+  session: Session;
+  turns: SessionTurn[];
+}
+
+export interface OpenItem {
+  id: number;
+  text: string;
+  session_id: number | null;
+  user_id: number | null;
+  status: "pending" | "done";
+  created_at: number;
+}
+
 // Olay türü → renk + etiket (monitör satır rozetleri)
 export const TYPE_META: Record<string, { label: string; color: string }> = {
   utterance: { label: "Kullanıcı", color: "#4f9dff" },
@@ -25,6 +60,7 @@ export const TYPE_META: Record<string, { label: string; color: string }> = {
   fcm: { label: "Push", color: "#f472b6" },
   client_connect: { label: "Bağlandı", color: "#94a3b8" },
   client_disconnect: { label: "Ayrıldı", color: "#64748b" },
+  session_closed: { label: "Oturum ✕", color: "#818cf8" },
 };
 
 export function typeMeta(type: string) {

@@ -11,7 +11,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from brain.api import client_api, monitor, openai_compat, speaker_api, task_api, voice
+from brain.api import (
+    client_api, monitor, openai_compat, sessions, speaker_api, task_api, voice,
+)
 from brain.config import settings
 from brain.db import Database
 from brain.ha.mirror import HAMirror
@@ -49,6 +51,12 @@ async def lifespan(app: FastAPI):
     app.state.mirror = mirror
     app.state.agent = Agent(llm, mirror, intent, pi_backend, bus=bus)
 
+    # Konu-tabanlı oturum segmentasyonu: her tur için doğru oturumu çözer
+    # (embedding cosine + eşik altında LLM hakem; idle/konu değişiminde kapatır).
+    from brain.session.segmenter import SessionSegmenter
+
+    app.state.segmenter = SessionSegmenter(db, intent, app.state.agent.llm, bus, settings)
+
     # Speaker-ID (voice-ID): kapalı/eksikse None → tanıma atlanır.
     app.state.speaker = build_speaker_id(settings)
     if app.state.speaker is not None:
@@ -65,7 +73,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(intent.start()))
 
     app.state.satellites = [
-        Satellite(name, host, port, app.state.agent, db, settings, speaker=app.state.speaker)
+        Satellite(name, host, port, app.state.agent, db, settings,
+                  speaker=app.state.speaker, segmenter=app.state.segmenter)
         for name, host, port in parse_satellites(settings.satellites)
     ]
     for sat in app.state.satellites:
@@ -138,6 +147,7 @@ app.include_router(speaker_api.router)
 app.include_router(task_api.router)
 app.include_router(voice.router)
 app.include_router(monitor.router)
+app.include_router(sessions.router)
 
 
 if __name__ == "__main__":

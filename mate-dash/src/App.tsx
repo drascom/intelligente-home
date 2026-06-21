@@ -2,25 +2,21 @@ import { useMemo, useState } from "react";
 import { useMonitor } from "./useMonitor";
 import { typeMeta, TYPE_META } from "./types";
 import type { BrainEvent } from "./types";
+import { fmtTime } from "./util";
+import SessionsPanel from "./SessionsPanel";
+import OpenItemsPanel from "./OpenItemsPanel";
 import "./App.css";
 
 const LS_URL = "mate-dash.brainUrl";
 const LS_TOKEN = "mate-dash.token";
+
+type Tab = "live" | "sessions" | "items";
 
 // Build-zamanı env (mate-dash/.env: VITE_BRAIN_URL / VITE_BRAIN_TOKEN).
 // Set'liyse localStorage/forma göre ÖNCELİKLİ → bağlantı dosyadan yönetilir.
 const env = import.meta.env as Record<string, string | undefined>;
 const ENV_URL = env.VITE_BRAIN_URL || "";
 const ENV_TOKEN = env.VITE_BRAIN_TOKEN || "";
-
-function fmtTime(ts: number): string {
-  const d = new Date(ts * 1000);
-  return (
-    d.toLocaleTimeString("tr-TR", { hour12: false }) +
-    "." +
-    String(d.getMilliseconds()).padStart(3, "0")
-  );
-}
 
 export default function App() {
   const [brainUrl, setBrainUrl] = useState(
@@ -33,17 +29,16 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [filter, setFilter] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("live");
+  const [itemCount, setItemCount] = useState(0);
 
   const { events, state, clear, loadOlder } = useMonitor({ brainUrl, token, enabled, paused });
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [noMore, setNoMore] = useState(false);
 
-  const onLoadOlder = async () => {
-    setLoadingOlder(true);
-    const n = await loadOlder();
-    setLoadingOlder(false);
-    if (n === 0) setNoMore(true);
-  };
+  // session_closed olayı geldikçe artan sinyal → paneller listeyi tazeler.
+  const sessionClosedSignal = useMemo(
+    () => events.filter((e) => e.type === "session_closed").length,
+    [events]
+  );
 
   const connect = () => {
     localStorage.setItem(LS_URL, brainUrl);
@@ -70,25 +65,6 @@ export default function App() {
       alert("Görev silme başarısız: " + e);
     }
   };
-
-  const toggleFilter = (type: string) =>
-    setFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      return next;
-    });
-
-  const shown = useMemo(
-    () => (filter.size ? events.filter((e) => filter.has(e.type)) : events),
-    [events, filter]
-  );
-
-  const counts = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const e of events) m[e.type] = (m[e.type] || 0) + 1;
-    return m;
-  }, [events]);
 
   return (
     <div className="app">
@@ -139,6 +115,126 @@ export default function App() {
         </div>
       </header>
 
+      {enabled && state === "connected" && (
+        <div className="tabs">
+          <button
+            className={`tab ${tab === "live" ? "on" : ""}`}
+            onClick={() => setTab("live")}
+          >
+            Canlı Akış
+          </button>
+          <button
+            className={`tab ${tab === "sessions" ? "on" : ""}`}
+            onClick={() => setTab("sessions")}
+          >
+            Oturumlar
+          </button>
+          <button
+            className={`tab ${tab === "items" ? "on" : ""}`}
+            onClick={() => setTab("items")}
+          >
+            Açık İşler
+            {itemCount > 0 && <span className="tab-badge">{itemCount}</span>}
+          </button>
+        </div>
+      )}
+
+      {/* Açık iş sayacını sekme açılmadan da güncel tutmak için panel hep monte;
+          görünmediğinde gizlenir (CSS) — sayaç + session_closed tazelemesi sürer. */}
+      {enabled && state === "connected" && tab !== "items" && (
+        <div className="hidden-mount">
+          <OpenItemsPanel
+            brainUrl={brainUrl}
+            token={token}
+            refreshSignal={sessionClosedSignal}
+            onCount={setItemCount}
+          />
+        </div>
+      )}
+
+      {(!enabled || state !== "connected" || tab === "live") && (
+        <LiveFlow
+          events={events}
+          state={state}
+          enabled={enabled}
+          filter={filter}
+          setFilter={setFilter}
+          expanded={expanded}
+          setExpanded={setExpanded}
+          loadOlder={loadOlder}
+        />
+      )}
+
+      {enabled && state === "connected" && tab === "sessions" && (
+        <SessionsPanel
+          brainUrl={brainUrl}
+          token={token}
+          refreshSignal={sessionClosedSignal}
+        />
+      )}
+
+      {enabled && state === "connected" && tab === "items" && (
+        <OpenItemsPanel
+          brainUrl={brainUrl}
+          token={token}
+          refreshSignal={sessionClosedSignal}
+          onCount={setItemCount}
+        />
+      )}
+    </div>
+  );
+}
+
+function LiveFlow({
+  events,
+  state,
+  enabled,
+  filter,
+  setFilter,
+  expanded,
+  setExpanded,
+  loadOlder,
+}: {
+  events: BrainEvent[];
+  state: string;
+  enabled: boolean;
+  filter: Set<string>;
+  setFilter: React.Dispatch<React.SetStateAction<Set<string>>>;
+  expanded: string | null;
+  setExpanded: React.Dispatch<React.SetStateAction<string | null>>;
+  loadOlder: () => Promise<number>;
+}) {
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [noMore, setNoMore] = useState(false);
+
+  const onLoadOlder = async () => {
+    setLoadingOlder(true);
+    const n = await loadOlder();
+    setLoadingOlder(false);
+    if (n === 0) setNoMore(true);
+  };
+
+  const toggleFilter = (type: string) =>
+    setFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+
+  const shown = useMemo(
+    () => (filter.size ? events.filter((e) => filter.has(e.type)) : events),
+    [events, filter]
+  );
+
+  const counts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const e of events) m[e.type] = (m[e.type] || 0) + 1;
+    return m;
+  }, [events]);
+
+  return (
+    <>
       <div className="filters">
         {Object.keys(TYPE_META).map((type) => {
           const m = typeMeta(type);
@@ -195,7 +291,7 @@ export default function App() {
           </button>
         )}
       </main>
-    </div>
+    </>
   );
 }
 

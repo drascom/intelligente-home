@@ -137,7 +137,12 @@ async def chat(
 ):
     db = request.app.state.db
     scope_key = body.conversation_id or f"client-{client['id']}"
-    session_id = await db.resolve_session(scope_key)
+    # Konu-tabanlı oturum segmentasyonu (devam/böl kararı içeride); yoksa legacy.
+    seg = getattr(request.app.state, "segmenter", None)
+    if seg is not None:
+        session_id = await seg.resolve_session_for_turn(scope_key, None, body.message)
+    else:
+        session_id = await db.resolve_session(scope_key)
     history = await db.recent_messages(session_id)
     answer = await request.app.state.agent.respond(history, body.message)
     await db.add_message(session_id, "user", body.message)
@@ -176,7 +181,12 @@ async def ws_chat(websocket: WebSocket):
             if msg.get("type") != "chat" or not msg.get("text"):
                 await websocket.send_json({"type": "error", "error": "expected {type:'chat', text}"})
                 continue
-            session_id = await db.resolve_session(conv)
+            # Konu-tabanlı oturum segmentasyonu (devam/böl kararı içeride); yoksa legacy.
+            seg = getattr(app.state, "segmenter", None)
+            if seg is not None:
+                session_id = await seg.resolve_session_for_turn(conv, None, msg["text"])
+            else:
+                session_id = await db.resolve_session(conv)
             history = await db.recent_messages(session_id)
             answer = await app.state.agent.respond(history, msg["text"])
             await db.add_message(session_id, "user", msg["text"])
