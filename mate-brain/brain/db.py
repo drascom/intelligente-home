@@ -131,6 +131,12 @@ POST_MIGRATION_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id)",
 ]
 
+# Oturum okuma sütunları — centroid BLOB HARİÇ (binary float32, JSON serileştirilemez).
+_SESSION_COLS = (
+    "s.id, s.user_id, s.scope_key, s.title, s.status, s.created_at, "
+    "s.updated_at, s.ended_at, s.summary, s.embed_count"
+)
+
 
 class Database:
     def __init__(self, path: str):
@@ -385,7 +391,8 @@ class Database:
             params.append(user_id)
         params.append(limit)
         cur = await self._db.execute(
-            "SELECT s.*,"
+            # centroid BLOB DIŞTA: JSON serileştirilemez (binary float32 → 500).
+            f"SELECT {_SESSION_COLS},"
             "  (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS turn_count"
             f" FROM sessions s{where} ORDER BY s.updated_at DESC LIMIT ?",
             params,
@@ -393,9 +400,10 @@ class Database:
         return [dict(r) for r in await cur.fetchall()]
 
     async def get_session(self, session_id: int) -> dict | None:
-        """Tek oturum satırı (tüm sütunlar + turn_count); yoksa None."""
+        """Tek oturum satırı (centroid HARİÇ tüm sütunlar + turn_count); yoksa None."""
         cur = await self._db.execute(
-            "SELECT s.*,"
+            # centroid BLOB DIŞTA (JSON serileştirilemez).
+            f"SELECT {_SESSION_COLS},"
             "  (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS turn_count"
             " FROM sessions s WHERE s.id = ?",
             (session_id,),
