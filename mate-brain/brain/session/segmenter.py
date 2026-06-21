@@ -29,6 +29,7 @@ import numpy as np
 log = logging.getLogger("brain.session")
 
 _LLM_CLOSE_TIMEOUT = 60.0    # kapanış özeti (arka plan, taze stateless Codex)
+_LLM_ROUTE_TIMEOUT = 90.0    # konu yönlendirmesi (transkript + mevcut konular → routing)
 
 
 class SessionSegmenter:
@@ -155,13 +156,15 @@ class SessionSegmenter:
                 await self.db.close_session(sid, None, None, now)
                 return
 
-            title, summary, open_items = await self._summarize(turns)
-
+            # Oturum-seviyesi başlık/özet hâlâ üretilir (liste/transkript ekranı için);
+            # ASIL değer artık konu thread'lerinde. Açık işler ARTIK burada DEĞİL,
+            # _route_to_topics içinde ilgili konuya bağlanarak yazılır (çift yazma yok).
+            title, summary, _ = await self._summarize(turns)
             await self.db.close_session(sid, title, summary, now)
-            for item in open_items:
-                item_text = (item or "").strip()
-                if item_text:
-                    await self.db.add_open_item(sid, owner, item_text)
+
+            # Retrospektif konu yönlendirmesi: konuşmayı konulara böl → mevcut thread'i
+            # güncelle ya da yeni aç + açık işleri konuya bağla (güvenli, asla fırlatmaz).
+            routed = await self._route_to_topics(session, turns)
 
             if self.bus:
                 self.bus.emit(
@@ -170,13 +173,107 @@ class SessionSegmenter:
                         "session_id": sid,
                         "title": title,
                         "summary": summary,
-                        "open_items": open_items,
+                        "topics": routed,
                         "turn_count": len(turns),
                     },
                     conversation_id=scope_key,
                 )
         except Exception:
             log.exception("oturum kapatma başarısız (arka plan) — yok sayıldı")
+
+    async def _route_to_topics(self, session: dict, turns: list[dict]) -> list[dict]:
+        """RETROSPEKTİF konu yönlendirmesi (oturum kapanışında, tur başına DEĞİL).
+        Tek Codex çağrısı: transkript + bu scope'taki MEVCUT konu kayıtları → konuşmayı
+        konulara böl; her konuyu mevcut bir thread'le EŞLEŞTİR (güncelle) ya da YENİ aç.
+        Her konunun açık işleri ilgili konu thread'ine bağlanır. Asla fırlatmaz → []."""
+        try:
+            scope_key = session.get("scope_key")
+            user_id = session.get("user_id")
+            if not scope_key:
+                return []
+
+            existing = await self.db.topics_for_scope(scope_key)
+            existing_ids = {t["id"] for t in existing}
+
+            transcript = "\n".join(
+                f"{t.get('role')}: {t.get('content')}" for t in turns if t.get("content")
+            )
+
+            if self.pi is None or not transcript:
+                return []
+
+            prompt = (
+                "Sen bir ev asistanının KONU BELLEĞİsin. Aşağıda biten bir konuşmanın "
+                "transkripti ve şu ana kadarki MEVCUT KONU kayıtları var. Konuşmayı "
+                "konulara böl; her konuyu mevcut bir kayıtla EŞLEŞTİR (devamıysa) ya da "
+                "YENİ aç. SADECE geçerli JSON döndür, başka hiçbir şey yazma:\n"
+                '{"topics":[{"match_id": <mevcut konu id\'si (int) VEYA null>, '
+                '"title":"<kısa konu başlığı>", "summary":"<bu konunun GÜNCEL durumu: '
+                "varsa eski özet + bu konuşmadaki gelişme, 1-3 cümle Türkçe>\", "
+                '"open_items":["<bu konuda çözülmemiş soru/yerine getirilmemiş istek>", ...]}]}\n'
+                "match_id: konu mevcut kayıtlardan birinin DEVAMIYSA o id; değilse null. "
+                "open_items yoksa boş liste. Hepsi Türkçe.\n\n"
+                "MEVCUT KONULAR (JSON):\n"
+                f"{json.dumps(existing, ensure_ascii=False)}\n\n"
+                f"TRANSKRİPT:\n{transcript}\n"
+            )
+
+            out = await self.pi.complete_once(prompt, timeout=_LLM_ROUTE_TIMEOUT)
+            data = self._parse_json(out)
+            topics = data.get("topics", [])
+            if not isinstance(topics, list):
+                return []
+
+            applied: list[dict] = []
+            for t in topics:
+                if not isinstance(t, dict):
+                    continue
+                title = (t.get("title") or "").strip()[:120]
+                summary = (t.get("summary") or "").strip() or None
+                raw_items = t.get("open_items") or []
+                if not isinstance(raw_items, list):
+                    raw_items = []
+                open_items = [
+                    str(x) for x in raw_items if isinstance(x, (str, int, float))
+                ]
+
+                match_id = t.get("match_id")
+                matched = isinstance(match_id, int) and match_id in existing_ids
+                if matched:
+                    await self.db.update_topic(match_id, title, summary)
+                    tid = match_id
+                else:
+                    tid = await self.db.create_topic(scope_key, user_id, title, summary)
+
+                # Açık işleri ilgili konu thread'ine bağla (çift yazma yok).
+                for item in open_items:
+                    item_text = (item or "").strip()
+                    if item_text:
+                        await self.db.add_open_item(
+                            session["id"], user_id, item_text, topic_id=tid
+                        )
+
+                if self.bus:
+                    self.bus.emit(
+                        "topic_updated", "topic", title or "(konu)",
+                        payload={
+                            "topic_id": tid,
+                            "title": title,
+                            "summary": summary,
+                            "open_items": open_items,
+                            "matched": matched,
+                        },
+                        conversation_id=scope_key,
+                    )
+
+                applied.append({
+                    "topic_id": tid, "title": title, "summary": summary,
+                    "open_items": open_items, "matched": matched,
+                })
+            return applied
+        except Exception:
+            log.warning("konu yönlendirmesi (topic routing) başarısız → atlandı")
+            return []
 
     async def _summarize(self, turns: list[dict]) -> tuple[str | None, str | None, list[str]]:
         """Transkriptten STRICT JSON başlık/özet/açık-konular. Hata → savunmacı fallback."""

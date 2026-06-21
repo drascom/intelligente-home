@@ -57,9 +57,25 @@ CREATE TABLE IF NOT EXISTS tasks (
     notified_at REAL,           -- chime çalındığı an (vakti geldi, teslim bekliyor)
     created_at REAL NOT NULL,
     done_at REAL,
-    kind TEXT NOT NULL DEFAULT 'reminder'  -- reminder = hatırlatma | open_question = açık konu/çözülmemiş soru
+    kind TEXT NOT NULL DEFAULT 'reminder',  -- reminder = hatırlatma | open_question = açık konu/çözülmemiş soru
+    topic_id INTEGER            -- bağlı olduğu konu thread'i (topics.id); NULL = konusuz
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, status, created_at);
+-- Konu thread'leri (topic-threaded memory): bir oturum KAPANDIĞINDA retrospektif
+-- olarak konuşma konulara bölünüp her konu kalıcı bir thread'e yönlendirilir
+-- (mevcutu GÜNCELLE ya da YENİ aç). Her konu = koşan özet + açık işler.
+-- scope_key sessions ile aynı routing anahtarı (kişi/cihaz kapsamı).
+CREATE TABLE IF NOT EXISTS topics (
+    id INTEGER PRIMARY KEY,
+    scope_key TEXT NOT NULL,
+    user_id INTEGER,            -- speakers.id; NULL = bilinmeyen/cihaz kapsamı
+    title TEXT,                 -- kısa konu başlığı (LLM)
+    summary TEXT,               -- konunun güncel durumu (koşan özet)
+    status TEXT NOT NULL DEFAULT 'open',  -- open = aktif thread | closed = kapatıldı
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    last_activity_at REAL       -- bu konuya son değinilen an
+);
 -- İzleme olayları (dashboard geçmişi): bus olayları arka planda buraya yazılır
 -- (emit yolu DIŞINDA). id = bus event id (zaman-tohumlu, monoton) → sayfalama +
 -- tekilleştirme. Canlı akış değişmedi; bu sadece geriye gitme/restart sonrası geçmiş.
@@ -123,12 +139,15 @@ MIGRATIONS = [
     "ALTER TABLE sessions ADD COLUMN centroid BLOB",
     "ALTER TABLE sessions ADD COLUMN embed_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminder'",
+    # Konu thread'leri (topic-threaded memory): tasks → topics bağlantısı.
+    "ALTER TABLE tasks ADD COLUMN topic_id INTEGER",
 ]
 
 # Migration'lardan SONRA kurulacak index'ler (yeni eklenen sütunlara bağlı olanlar;
 # SCHEMA içinde olursa eski DB'de "no such column" verir).
 POST_MIGRATION_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_topics_scope ON topics(scope_key, status, updated_at)",
 ]
 
 # Oturum okuma sütunları — centroid BLOB HARİÇ (binary float32, JSON serileştirilemez).
@@ -411,16 +430,97 @@ class Database:
         row = await cur.fetchone()
         return dict(row) if row else None
 
-    async def add_open_item(self, session_id: int, user_id: int | None, text: str) -> int:
-        """Açık konu / çözülmemiş soru → tasks(kind='open_question', status='pending'). id döner."""
+    async def add_open_item(
+        self, session_id: int, user_id: int | None, text: str, topic_id: int | None = None
+    ) -> int:
+        """Açık konu / çözülmemiş soru → tasks(kind='open_question', status='pending'). id döner.
+        topic_id verilirse açık iş ilgili konu thread'ine bağlanır (topic-threaded memory)."""
         now = time.time()
         cur = await self._db.execute(
-            "INSERT INTO tasks (user_id, session_id, text, status, kind, created_at)"
-            " VALUES (?, ?, ?, 'pending', 'open_question', ?)",
-            (user_id, session_id, text, now),
+            "INSERT INTO tasks (user_id, session_id, text, status, kind, topic_id, created_at)"
+            " VALUES (?, ?, ?, 'pending', 'open_question', ?, ?)",
+            (user_id, session_id, text, topic_id, now),
         )
         await self._db.commit()
         return cur.lastrowid
+
+    # ---- konu thread'leri (topic-threaded memory) ----
+
+    async def topics_for_scope(self, scope_key: str) -> list[dict]:
+        """Routing girdisi: bu scope'taki AÇIK konu kayıtları (id, title, summary),
+        en güncel önce. LLM bunlara karşı eşleştirir/yeni açar."""
+        cur = await self._db.execute(
+            "SELECT id, title, summary FROM topics"
+            " WHERE scope_key = ? AND status = 'open' ORDER BY updated_at DESC LIMIT 50",
+            (scope_key,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def create_topic(
+        self, scope_key: str, user_id: int | None, title: str | None, summary: str | None
+    ) -> int:
+        """Yeni konu thread'i aç (status='open'); id döner."""
+        now = time.time()
+        cur = await self._db.execute(
+            "INSERT INTO topics"
+            " (scope_key, user_id, title, summary, status, created_at, updated_at, last_activity_at)"
+            " VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
+            (scope_key, user_id, title, summary, now, now, now),
+        )
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def update_topic(
+        self, topic_id: int, title: str | None, summary: str | None
+    ) -> None:
+        """Mevcut konu thread'inin başlığını/özetini güncelle + aktivite anını tazele."""
+        now = time.time()
+        await self._db.execute(
+            "UPDATE topics SET title = ?, summary = ?, updated_at = ?, last_activity_at = ?"
+            " WHERE id = ?",
+            (title, summary, now, now, topic_id),
+        )
+        await self._db.commit()
+
+    async def list_topics(
+        self, scope_key: str | None = None, user_id: int | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
+        """Konu thread'leri (tüm sütunlar), opsiyonel scope_key/user_id/status filtresi,
+        updated_at DESC. API için."""
+        clauses, params = [], []
+        if scope_key is not None:
+            clauses.append("scope_key = ?"); params.append(scope_key)
+        if user_id is not None:
+            clauses.append("user_id = ?"); params.append(user_id)
+        if status:
+            clauses.append("status = ?"); params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        cur = await self._db.execute(
+            f"SELECT * FROM topics{where} ORDER BY updated_at DESC",
+            params,
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def get_topic(self, topic_id: int) -> dict | None:
+        """Tek konu satırı (tüm sütunlar); yoksa None."""
+        cur = await self._db.execute("SELECT * FROM topics WHERE id = ?", (topic_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def topic_open_items(self, topic_id: int, status: str = "pending") -> list[dict]:
+        """Bir konuya bağlı açık işler (kind='open_question'), opsiyonel status, created_at DESC."""
+        clauses = ["topic_id = ?", "kind = 'open_question'"]
+        params: list = [topic_id]
+        if status:
+            clauses.append("status = ?"); params.append(status)
+        where = " WHERE " + " AND ".join(clauses)
+        cur = await self._db.execute(
+            "SELECT id, user_id, session_id, topic_id, text, status, kind, created_at, done_at"
+            f" FROM tasks{where} ORDER BY created_at DESC",
+            params,
+        )
+        return [dict(r) for r in await cur.fetchall()]
 
     async def list_open_items(
         self, user_id: int | None = None, status: str = "pending"
