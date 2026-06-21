@@ -167,6 +167,18 @@ class LiveKitAgent:
         def _on_disconnected(reason):
             log.warning("livekit agent: odadan koptu (%s)", reason)
             track_queue.put_nowait(None)  # _session'ı uyandır → reconnect
+            # KİLİT FİX (#6): ajan o an _consume_track içinde 'async for event in
+            # stream' ile bekliyorsa, oda kopunca stream yield'i kesip ASKIDA kalır →
+            # None hiç okunmaz, ConnectionError fırlatılmaz, reconnect olmaz. Aktif
+            # stream'i aclose ederek async for'u sonlandır (idempotent: _consume_track
+            # finally'si de kapatır). İstemci mic'i sürekli yayınladığından ajan
+            # neredeyse her zaman _consume_track içindedir → bu fix kritik.
+            st = self._active_stream
+            if st is not None:
+                try:
+                    asyncio.create_task(st.aclose())
+                except RuntimeError:
+                    pass  # çalışan loop yok (beklenmez) → sessiz geç
 
         @room.on("participant_attributes_changed")
         def _on_attrs_changed(changed_attributes, participant):
@@ -186,6 +198,8 @@ class LiveKitAgent:
 
         # Yeni oturum → eski önbelleği temizle (kimlikler/ayarlar bayatlamasın).
         self._attr_cache = {}
+        # Aktif AudioStream — kopunca _on_disconnected aclose etsin diye tutulur.
+        self._active_stream = None
 
         token = self._mint_token()
         await room.connect(self.settings.livekit_url, token)
@@ -251,6 +265,8 @@ class LiveKitAgent:
         stream = rtc.AudioStream.from_track(
             track=track, sample_rate=STT_RATE, num_channels=STT_CHANNELS
         )
+        # Kopunca _on_disconnected'in sonlandırabilmesi için aktif stream'i yayınla.
+        self._active_stream = stream
         stt: WhisperSession | None = None
         buf = bytearray()           # voice-ID için ham utterance PCM (s16le 16k mono)
         speech_seen = False
@@ -333,6 +349,7 @@ class LiveKitAgent:
         except Exception as e:
             log.warning("livekit agent: track tüketimi bitti (%s)", e)
         finally:
+            self._active_stream = None
             if stt is not None:
                 await stt.abort()
             try:
