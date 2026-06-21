@@ -8,9 +8,9 @@ struct ControlBar: View {
     @EnvironmentObject private var localMedia: LocalMedia
 
     @Binding var chat: Bool
-    /// Kullanıcı "kapat" (phone.down) ile bağlantıyı bilerek sonlandırdı mı?
-    /// true ise otomatik yeniden bağlanma yapılmaz (bkz. ConnectingView).
-    @Binding var userDisconnected: Bool
+    /// Mic butonu LiveKit-mute yerine wake uyku/uyanık geçişini sürer (mic hep
+    /// yayında kalır → wake çalışmaya devam eder).
+    @ObservedObject var wakeCoordinator: WakeCoordinator
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.voiceEnabled) private var voiceEnabled
     @Environment(\.textEnabled) private var textEnabled
@@ -31,7 +31,6 @@ struct ControlBar: View {
                 textInputButton()
                 flexibleSpacer()
             }
-            disconnectButton()
             biggerSpacer()
         }
         .buttonStyle(
@@ -77,9 +76,11 @@ struct ControlBar: View {
     private func audioControls() -> some View {
         HStack(spacing: .zero) {
             Spacer()
-            AsyncButton(action: localMedia.toggleMicrophone) {
+            Button(action: { wakeCoordinator.toggleSleep() }) {
                 HStack(spacing: .grid) {
-                    Image(systemName: localMedia.isMicrophoneEnabled ? "microphone.fill" : "microphone.slash.fill")
+                    // Uyku = "moon" (brain duymaz, "candan" bekler); uyanık = mic.
+                    // LiveKit-mute YOK — mic capture sürer ki wake PCM aksın.
+                    Image(systemName: wakeCoordinator.mode == .sleeping ? "moon.zzz.fill" : "microphone.fill")
                         .transition(.symbolEffect)
                     BarAudioVisualizer(
                         audioTrack: localMedia.microphoneTrack,
@@ -123,27 +124,6 @@ struct ControlBar: View {
         )
         // Sohbet/ses görünümü geçişi yereldir (agent'a bir şey göndermez), bu
         // yüzden ajan algılanmadan önce de (yalnızca oturum bağlıyken) izin ver.
-        .disabled(!session.isConnected)
-    }
-
-    private func disconnectButton() -> some View {
-        AsyncButton {
-            // Bilerek kapatma → otomatik yeniden bağlanmayı engelle.
-            userDisconnected = true
-            await session.end()
-            session.restoreMessageHistory([])
-        } label: {
-            Image(systemName: "phone.down.fill")
-                .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(
-            ControlBarButtonStyle(
-                foregroundColor: .fgSerious,
-                backgroundColor: .bgSerious,
-                borderColor: .separatorSerious
-            )
-        )
         .disabled(!session.isConnected)
     }
 }

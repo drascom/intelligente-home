@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- macOS sandbox: required for native Mac app to use mic + reach the LiveKit server -->
+	<!-- macOS sandbox KAPALI (mate-mac ile aynı): sandbox açıkken on-device
+	     SFSpeech (wake word) 'com.apple.audioanalyticsd' mach-lookup'ını yapamayıp
+	     PRECONDITION FAILURE ile çöküyordu. Mic erişimi TCC izniyle (Info.plist
+	     usage string), ağ da sandbox olmadan zaten çalışır. Bu yerel, kendi
+	     sunucumuza bağlanan dev app — App Store dağıtımı yok. -->
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.device.audio-input</key>
-	<true/>
-	<key>com.apple.security.network.client</key>
-	<true/>
+	<false/>
 </dict>
 </plist>

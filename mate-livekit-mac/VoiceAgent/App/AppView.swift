@@ -13,9 +13,6 @@ struct AppView: View {
     // (görselleştirici) görünümüne geçilebilir.
     @State private var chat: Bool = true
     @State private var showSettings = false
-    // Kullanıcı "kapat" butonuna bastıysa true → ConnectingView otomatik yeniden
-    // bağlanmaz, manuel "Bağlan" gösterir. Açılışta false → otomatik bağlanır.
-    @State private var userDisconnected = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -72,7 +69,7 @@ struct AppView: View {
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {
                 if session.isConnected {
-                    ControlBar(chat: $chat, userDisconnected: $userDisconnected)
+                    ControlBar(chat: $chat, wakeCoordinator: wakeCoordinator)
                         .glassBackgroundEffect()
                 }
             }
@@ -94,7 +91,7 @@ struct AppView: View {
         #else
             .safeAreaInset(edge: .bottom) {
                     if session.isConnected, !keyboardFocus {
-                        ControlBar(chat: $chat, userDisconnected: $userDisconnected)
+                        ControlBar(chat: $chat, wakeCoordinator: wakeCoordinator)
                             .transition(.asymmetric(
                                 insertion: .move(edge: .bottom).combined(with: .opacity),
                                 removal: .opacity
@@ -145,7 +142,7 @@ struct AppView: View {
     }
 
     private func connecting() -> some View {
-        ConnectingView(userDisconnected: $userDisconnected)
+        ConnectingView()
             .onAppear {
                 // Bağlantı kurulunca transkript görünümüyle başla.
                 chat = true

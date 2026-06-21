@@ -143,6 +143,20 @@ final class WakeCoordinator: ObservableObject {
         evaluate()
     }
 
+    /// ControlBar "mic" butonu için manuel uyku/uyanık geçişi.
+    /// LiveKit-mute YAPILMAZ — mic her zaman yayında/capture'da kalır ki wake PCM
+    /// aksın. Gürültülü ortamda otomatik re-arm (inaktivite) tetiklenmediğinde
+    /// kullanıcı buradan elle uykuya alır (brain awake=0 ile duymaz); "candan" ile
+    /// (veya tekrar basarak) uyandırır.
+    func toggleSleep() {
+        guard connected, settings?.wakeWordEnabled == true else { return }
+        if mode == .sleeping {
+            enterAwake()        // manuel uyandırma ("candan" demeden)
+        } else {
+            enterSleeping()     // manuel uyku: mic yayında kalır, wake dinler
+        }
+    }
+
     func agentStateChanged(_ state: AgentState?) {
         guard mode == .awake else { return }
         switch state {

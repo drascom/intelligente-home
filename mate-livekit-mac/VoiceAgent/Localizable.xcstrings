@@ -1,6 +1,18 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "“%@” bekleniyor" : {
+
+    },
+    "“%@” ile uyandırmak için: Sistem Ayarları › Klavye › Dikte'yi açın (dil: Türkçe — Dikte/Siri dili sistem diliyle uyuşmalı), sonra yeniden bağlanın. O zamana kadar mikrofon açık kalır." : {
+
+    },
+    "Açıkken \"%@\" duyulana kadar bekler; kapalıyken sürekli dinler." : {
+
+    },
+    "Açıkken konuşmaya başladığında ajan susup sana döner; kapalıyken sözünü bitirir." : {
+
+    },
     "agent.listening" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11,6 +23,27 @@
           }
         }
       }
+    },
+    "Almanca" : {
+
+    },
+    "Ayarlar" : {
+
+    },
+    "Bağlan" : {
+
+    },
+    "Bağlanılamadı" : {
+
+    },
+    "Bağlanılıyor…" : {
+
+    },
+    "Bağlantı kapatıldı" : {
+
+    },
+    "Bip sesleri" : {
+
     },
     "connect.connecting" : {
       "extractionState" : "manual",
@@ -56,6 +89,12 @@
         }
       }
     },
+    "Dil" : {
+
+    },
+    "Dil, ses ve STT motoru sunucuya (brain) gönderilir; yanıt buna göre üretilir." : {
+
+    },
     "error.ok" : {
       "localizations" : {
         "en" : {
@@ -76,6 +115,24 @@
         }
       }
     },
+    "Fransızca" : {
+
+    },
+    "Geçiş Sesleri" : {
+
+    },
+    "İngilizce" : {
+
+    },
+    "İspanyolca" : {
+
+    },
+    "Kaydet" : {
+
+    },
+    "Konuşurken müdahaleye izin ver" : {
+
+    },
     "message.placeholder" : {
       "localizations" : {
         "en" : {
@@ -85,6 +142,42 @@
           }
         }
       }
+    },
+    "Nemotron" : {
+
+    },
+    "Ses (örn: nese)" : {
+
+    },
+    "Ses Motoru" : {
+
+    },
+    "Sözünü Kes / Barge-in" : {
+
+    },
+    "STT motoru" : {
+
+    },
+    "Tetikleyici kelime (örn: candan)" : {
+
+    },
+    "Türkçe" : {
+
+    },
+    "Vazgeç" : {
+
+    },
+    "Wake Word" : {
+
+    },
+    "Wake word başlatılamadı — mikrofon sürekli açık" : {
+
+    },
+    "Wake word kullan" : {
+
+    },
+    "Wake, konuşma sonu ve uyku geçişlerinde kısa yumuşak tonlar çalar." : {
+
     },
     "warning.reconnecting" : {
       "extractionState" : "manual",
@@ -107,6 +200,12 @@
           }
         }
       }
+    },
+    "Whisper" : {
+
+    },
+    "Yeniden dene" : {
+
     }
   },
   "version" : "1.0"
