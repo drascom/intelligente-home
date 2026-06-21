@@ -2,30 +2,36 @@ import AVFoundation
 import LiveKit
 import SwiftUI
 
-/// Wake-word kapısı + geçiş sesleri — **TEK ses motoru** tasarımı.
+/// Wake-word kapısı + geçiş sesleri — **TEK ses motoru + sunucu kapısı** tasarımı.
 ///
 /// Eski tasarım mikrofonu iki ayrı `AVAudioEngine` arasında devrediyordu (Apple
 /// wake dinleyici ↔ LiveKit WebRTC). macOS CoreAudio bu devri temiz yapamıyor →
 /// `StartIO error 35`, aggregate device hataları, sessiz mic. Yeni tasarım:
-/// **LiveKit mikrofonu sürekli yakalar; SFSpeech yalnız PCM'i gözlemler.**
+/// **LiveKit mikrofonu sürekli yakalar VE sürekli yayınlar; SFSpeech yalnız PCM'i
+/// gözlemler; uyku/uyanık ayrımı SUNUCUDA `candan.awake` ile yapılır.**
+///
+/// Neden publish/unpublish DEĞİL (deneyle doğrulandı):
+///   • PCM (localAudioRenderer) yalnız mic track YAYINDAYKEN akıyor; unpublish edince
+///     ilk tampondan sonra duruyor → wake sağır kalıyor.
+///   • `startLocalRecording()` + published track BİRLİKTE CoreAudio'yu overload edip
+///     (`skipping cycle due to overload`, -10877) ~28sn'de bir full-reconnect'e
+///     (CLIENT_REQUEST_LEAVE) yol açıyordu.
+///   • Çözüm: TEK yol — track'i sürekli yayında tut (startLocalRecording YOK).
+///     Brain, `candan.awake=="0"` iken sesi/transkripti yok sayar (sunucu kapısı).
 ///
 /// Durum makinesi (wakeWordEnabled açıkken):
-///   • Bağlanınca → `startLocalRecording()` + PCM renderer ekle (mic yakalanır ama
-///     YAYINLANMAZ → brain duymaz). Uyku moduna gir.
-///   • UYKU → tanıma isteği aktif, track yayınlanmamış. Konuşulan ses brain'e
-///     gitmez; yalnız yerel wake tanıma görür.
-///   • Wake duyulunca → tanıma isteğini durdur, MEVCUT yakalamayı YAYINLA
-///     (`setMicrophone(true)`). Motor yeniden başlamaz, cihaz devri yok, yarış yok.
-///   • UYANIK → track yayında; ses brain'e akar.
-///   • Re-arm (hareketsizlik) → track'i unpublish et, taze tanıma isteği başlat.
-///     Yerel kayıt (capture) DOKUNULMAZ → wake dinleme sürer.
-///   • Disconnect → `stopLocalRecording()` + renderer'ı kaldır.
+///   • Bağlanınca → PCM renderer ekle + mic track'i YAYINLA (sürekli). Uyku moduna gir.
+///   • UYKU → `candan.awake="0"`; mic yayında ama brain yok sayar; wake tanıma aktif.
+///   • Wake duyulunca → tanımayı durdur, `candan.awake="1"` (publish/settle YOK).
+///   • UYANIK → brain sesi işler.
+///   • Re-arm (hareketsizlik) → `candan.awake="0"`, taze tanıma isteği başlat.
+///   • Disconnect → renderer'ı kaldır (mic disconnect ile zaten düşer).
 ///
-/// wakeWordEnabled kapalıyken kapı devre dışı: sürekli mod — track yayında kalır.
+/// wakeWordEnabled kapalıyken kapı devre dışı: sürekli mod — `candan.awake="1"`.
 ///
-/// NOT (gizlilik): Yerel kayıt uyku sırasında da sürdüğü için macOS mikrofon
-/// gizlilik göstergesi (turuncu nokta) açık kalır. Bu DOĞRU — uygulama gerçekten
-/// wake kelimesini dinliyor. UI'da "… bekleniyor" ipucu bunu açıkça belirtir.
+/// NOT (gizlilik): Mic uyku sırasında da yayında olduğundan ses sunucuya gider ama
+/// brain `awake="0"` iken yok sayar; macOS mikrofon göstergesi (turuncu nokta) açık
+/// kalır — uygulama gerçekten wake kelimesini dinliyor.
 @MainActor
 final class WakeCoordinator: ObservableObject {
     enum Mode { case inactive, sleeping, awake }
@@ -35,10 +41,6 @@ final class WakeCoordinator: ObservableObject {
 
     /// Ajan boştayken yeniden uykuya geçmeden önce beklenen takip süresi.
     private let inactivityWindowSeconds: UInt64 = 10
-    /// Wake duyulduktan sonra mikrofonu YAYINLAMADAN önce beklenen kısa süre.
-    /// Bu artık SADECE konuşulan "candan"ın kuyruğunun brain'e gitmesini önlemek
-    /// içindir — CİHAZ DEVRİ İÇİN DEĞİL (mic zaten canlı yakalıyor, motor devri yok).
-    private let readyCueSettleSeconds: Double = 0.5
 
     private let wake = WakeWordDetector()
     private let cues = CueSounds()
@@ -51,8 +53,6 @@ final class WakeCoordinator: ObservableObject {
     private var connected = false
     private var inactivityTask: Task<Void, Never>?
     private var cueHandlerRegistered = false
-    /// LiveKit yerel kaydı (startLocalRecording) aktif mi? Renderer'a PCM akar.
-    private var localRecordingActive = false
     /// Mikrofon brain'e canlı mı (track yayında)? `candan.awake` attribute'unun kaynağı.
     private var isAwake = false
     /// Track'in YAYINDA olması istenen niyet. `setMicrophone` ile güncellenir; reaktif
@@ -99,37 +99,28 @@ final class WakeCoordinator: ObservableObject {
         Task { await session.room.unregisterTextStreamHandler(for: "candan.cue") }
     }
 
-    // MARK: - Yerel yakalama (tek motor: LiveKit) — renderer + startLocalRecording
+    // MARK: - Wake yakalama (tek yol: sürekli yayınlanan mic track + PCM renderer)
 
-    /// LiveKit ses motorunu yerel kayda al ve PCM renderer'ı bağla. Böylece track
-    /// YAYINLANMASA bile (uyku) mic PCM'i wake tanıyıcıya akar. Idempotent.
-    private func startLocalCapture() {
-        guard localRecordingActive == false else { return }
+    /// PCM renderer'ı bağla + mic track'i SÜREKLI yayınla. Track yayındayken LiveKit
+    /// ses motoru capture eder → localAudioRenderer wake tanıyıcıya PCM verir.
+    /// `startLocalRecording` YOK: published track + startLocalRecording BİRLİKTE
+    /// CoreAudio'yu overload edip full-reconnect'e yol açıyordu (deneyle doğrulandı);
+    /// ayrıca PCM zaten yalnız track YAYINDAYKEN akıyor. Idempotent.
+    private func startWakeCapture() {
         if wakeRenderer == nil {
             let renderer = WakePCMRenderer { [wake] buffer in wake.appendPCM(buffer) }
             wakeRenderer = renderer
             AudioManager.shared.add(localAudioRenderer: renderer)
         }
-        do {
-            try AudioManager.shared.startLocalRecording()
-            localRecordingActive = true
-            Log.line("[Audio] startLocalRecording aktif — PCM renderer bağlı (tek motor)")
-        } catch {
-            Log.error("[Audio] startLocalRecording HATA: \(error.localizedDescription)")
-        }
+        setMicrophone(enabled: true) // sürekli yayın → engine capture → renderer PCM
     }
 
-    private func stopLocalCapture() {
-        if localRecordingActive {
-            do { try AudioManager.shared.stopLocalRecording() }
-            catch { Log.error("[Audio] stopLocalRecording HATA: \(error.localizedDescription)") }
-            localRecordingActive = false
-        }
+    private func stopWakeCapture() {
         if let renderer = wakeRenderer {
             AudioManager.shared.remove(localAudioRenderer: renderer)
             wakeRenderer = nil
         }
-        Log.line("[Audio] local recording durdu + renderer kaldırıldı")
+        Log.line("[Audio] wake capture durdu + renderer kaldırıldı")
     }
 
     // MARK: - Dış olaylar (AppView'dan sürülür)
@@ -138,9 +129,9 @@ final class WakeCoordinator: ObservableObject {
         connected = isConnected
         if isConnected {
             registerCueHandler()
-            // TEK motor: bağlanır bağlanmaz yerel yakalamayı başlat (track henüz
-            // yayınlanmaz — mod uyku/sürekliye göre setMicrophone'u ayarlar).
-            startLocalCapture()
+            // TEK yol: bağlanır bağlanmaz renderer'ı bağla + mic'i sürekli yayınla.
+            // Uyku/uyanık ayrımı setAwake (candan.awake) ile sunucuda yapılır.
+            startWakeCapture()
             evaluate()
         } else {
             teardown()
@@ -194,43 +185,31 @@ final class WakeCoordinator: ObservableObject {
             Log.line("[Coord] enterSleeping atlandı (zaten uykuda)")
             return
         }
-        Log.line("[Coord] → UYKU (mic unpublish; brain duymaz; wake PCM startLocalRecording'den akar)")
+        Log.line("[Coord] → UYKU (mic yayında kalır; sunucu awake=0 ile yok sayar)")
         cancelInactivityTimer()
         mode = .sleeping
         // Temiz yeniden başlatma: stale tanıma isteğini temizle.
         wake.stop()
-        // TEK yakalama yolu: ÖNCE startLocalRecording'i garanti et (renderer → wake PCM),
-        // SONRA published mic track'i UNPUBLISH et. Böylece uyku sırasında yalnız tek
-        // capture döner; brain'e giden ikinci (RED-encode'lu) yayın yolu kapanır →
-        // CoreAudio IO overload + ~28sn full-reconnect döngüsü biter. Capture sürdüğü
-        // için wake dinleme çalışır VE brain uyku sırasındaki sesi görmez.
-        startLocalCapture() // idempotent: renderer + startLocalRecording
-        setMicrophone(enabled: false) // MUTE değil UNPUBLISH (aşağıda)
+        // Mic UNPUBLISH EDİLMEZ — sürekli yayında (tek yol; PCM akmaya devam eder →
+        // wake dinler). Uyku yalnızca SUNUCU kapısı: candan.awake=0 → brain uyku
+        // sesini/transkriptini yok sayar.
         setAwake(false)
         if playCue, settings?.cuesEnabled == true { cues.playSleeping() }
         startWakeListening()
     }
 
     private func enterAwake() {
-        Log.line("[Coord] → UYANIK (wake tanıma stop, mevcut yakalamayı publish)")
+        Log.line("[Coord] → UYANIK (sunucu kapısını aç: awake=1; mic zaten yayında)")
         mode = .awake
         // Tanımayı durdur (artık wake aramaya gerek yok). Renderer bağlı kalır;
         // aktif istek olmadığı için appendPCM sessiz no-op olur.
         wake.stop()
         if settings?.cuesEnabled == true { cues.playWakeDetected() }
-        // Mic ZATEN yakalıyor (startLocalRecording). Publish etmeden önce KISA
-        // settle: konuşulan "candan"ın kuyruğu brain'e gitmesin. VPIO açık olduğundan
-        // chime echo-cancel edilir. Bu bekleme CİHAZ DEVRİ İÇİN DEĞİL — motor devri
-        // yok; sadece söz kuyruğu için. Bekleme sırasında mod değiştiyse publish etme.
-        let settle = readyCueSettleSeconds
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
-            guard let self, self.mode == .awake else { return }
-            // Track YAYINLANDIĞI an awake='1': settle'dan önce gönderirsek konuşulan
-            // "candan" hâlâ açık pencerede sayılabilirdi.
-            self.setMicrophone(enabled: true)
-            self.setAwake(true)
-        }
+        // Mic ZATEN sürekli yayında → publish YOK demek = setMicrophone/setAwake
+        // sırasızlık yarışı YOK. Settle de YOK (ilk komut sözcükleri kesilmesin):
+        // brain, awake=0 iken başlayan "candan" sözünü zaten yok sayar; awake=1
+        // sonrası konuşma işlenir.
+        setAwake(true)
         armInactivityTimer()
     }
 
@@ -246,7 +225,7 @@ final class WakeCoordinator: ObservableObject {
         cancelInactivityTimer()
         unregisterCueHandler()
         wake.stop()
-        stopLocalCapture()
+        stopWakeCapture()
         mode = .inactive
         playedReady = false
     }
@@ -322,14 +301,13 @@ final class WakeCoordinator: ObservableObject {
         }
     }
 
-    // MARK: - Track mute/unmute — yakalama bundan BAĞIMSIZ
+    // MARK: - Track publish/unpublish
 
-    /// Mic'i brain'e YAYINLA (publish) ya da yayından TAMAMEN KALDIR (unpublish).
-    /// enabled=true → setMicrophone(true): track oluşturup yayınlar (brain duyar).
-    /// enabled=false → MUTE DEĞİL UNPUBLISH: published mic track(ler)i tamamen kaldırır.
-    /// Böylece startLocalRecording capture'ı (renderer → wake PCM) TEK yakalama yolu
-    /// olarak kalır; brain'e giden ikinci (RED-encode'lu) yayın yolu kapanır →
-    /// CoreAudio IO overload + ~28sn full-reconnect döngüsü biter.
+    /// Mic track'ini YAYINLA (publish) ya da yayından TAMAMEN KALDIR (unpublish).
+    /// Normal akışta yalnız `startWakeCapture` tarafından enabled=true ile çağrılır
+    /// (mic sürekli yayında kalır; uyku/uyanık ayrımı sunucuda candan.awake ile).
+    /// enabled=false yalnız reaktif guard (`microphoneStateChanged`) içindir:
+    /// istenmeden yayına giren stray track'i kaldırır.
     private func setMicrophone(enabled: Bool) {
         micShouldBeLive = enabled
         guard let session else { return }
@@ -344,7 +322,7 @@ final class WakeCoordinator: ObservableObject {
                     for pub in lp.localAudioTracks {
                         try? await lp.unpublish(publication: pub)
                     }
-                    Log.line("[Mic] unpublished — brain duymaz, wake PCM startLocalRecording'den akar")
+                    Log.line("[Mic] unpublished — stray track kaldırıldı")
                 }
             } catch {
                 Log.error("[Mic] setMicrophone(\(enabled)) HATA: \(error.localizedDescription)")
