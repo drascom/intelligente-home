@@ -47,6 +47,11 @@ RECONNECT_DELAY = 5
 SILENCE_RMS = 700          # int16 mean-abs level treated as silence (satellite ile aynı)
 SILENCE_AFTER_S = 1.0      # bu kadar son-sessizlikten sonra utterance biter
 MAX_UTTERANCE_S = 12.0     # utterance başına sert tavan
+# Barge-in: uçuştaki TTS cevabını kesmek için gereken SÜREKLİ (ardışık) konuşma
+# süresi. Tek bir gürültü/eko karesi cevabı kesmesin diye eşik (özellikle uzun
+# cevaplarda gürültülü ortamda kesilme oluyordu). VPIO eko'yu zaten bastırır; bu da
+# kısa dış-gürültü blip'lerini eler, gerçek (sürekli) konuşma yine barge-in yapar.
+BARGE_IN_MIN_S = 0.25  # gerçek barge-in: ~0.25sn sürekli konuşma asistanı keser
 
 # STT, speaker-ID ve endpointing'in beklediği biçim. AudioStream'e bu hedefi
 # verince SDK kareleri içeride bu orana indirir (manuel AudioResampler gerekmez).
@@ -171,14 +176,18 @@ class LiveKitAgent:
         def _on_disconnected(reason):
             log.warning("livekit agent: odadan koptu (%s)", reason)
             track_queue.put_nowait(None)  # _session'ı uyandır → reconnect
-            # Aktif AudioStream'i zorla kapat → `_consume_track`'teki `async for`
-            # askıda kalmışsa (track durdu) uyanır ve reconnect döngüsü tıkanmaz.
-            stream = self._active_stream
-            if stream is not None:
+            # KİLİT FİX (#6): ajan o an _consume_track içinde 'async for event in
+            # stream' ile bekliyorsa, oda kopunca stream yield'i kesip ASKIDA kalır →
+            # None hiç okunmaz, ConnectionError fırlatılmaz, reconnect olmaz. Aktif
+            # stream'i aclose ederek async for'u sonlandır (idempotent: _consume_track
+            # finally'si de kapatır). İstemci mic'i sürekli yayınladığından ajan
+            # neredeyse her zaman _consume_track içindedir → bu fix kritik.
+            st = self._active_stream
+            if st is not None:
                 try:
-                    asyncio.create_task(stream.aclose())
-                except Exception:
-                    pass
+                    asyncio.create_task(st.aclose())
+                except RuntimeError:
+                    pass  # çalışan loop yok (beklenmez) → sessiz geç
 
         @room.on("participant_attributes_changed")
         def _on_attrs_changed(changed_attributes, participant):
@@ -198,6 +207,8 @@ class LiveKitAgent:
 
         # Yeni oturum → eski önbelleği temizle (kimlikler/ayarlar bayatlamasın).
         self._attr_cache = {}
+        # Aktif AudioStream — kopunca _on_disconnected aclose etsin diye tutulur.
+        self._active_stream = None
 
         token = self._mint_token()
         await room.connect(self.settings.livekit_url, token)
@@ -264,12 +275,13 @@ class LiveKitAgent:
         stream = rtc.AudioStream.from_track(
             track=track, sample_rate=STT_RATE, num_channels=STT_CHANNELS
         )
-        # Aktif stream'i sakla → oda koparsa disconnect handler aclose() ile
-        # `async for`u uyandırabilir (bulletproof reconnect).
+        # Kopunca _on_disconnected'in sonlandırabilmesi için aktif stream'i yayınla
+        # (bulletproof reconnect: askıdaki `async for`u aclose ile uyandırır).
         self._active_stream = stream
         stt: WhisperSession | None = None
         buf = bytearray()           # voice-ID için ham utterance PCM (s16le 16k mono)
         speech_seen = False
+        consec_speech_s = 0.0       # ardışık konuşma süresi (barge-in eşiği için)
         silence_s = 0.0
         utterance_s = 0.0
         utterance_awake = True      # bu utterance BAŞINDA istemci uyanık mıydı (wake gate)
@@ -310,6 +322,7 @@ class LiveKitAgent:
                         continue
                     buf = bytearray()
                     speech_seen = False
+                    consec_speech_s = 0.0
                     silence_s = 0.0
                     utterance_s = 0.0
 
@@ -327,20 +340,27 @@ class LiveKitAgent:
 
                 if self._is_silence(payload, STT_WIDTH):
                     silence_s += chunk_s
+                    consec_speech_s = 0.0  # sessizlik ardışık konuşmayı sıfırlar
                 else:
-                    # İlk gerçek konuşma karesi → uçuştaki TTS'i kes (barge-in).
-                    # Sessiz karelerde DEĞİL: yoksa cevap sesi daha başlamadan
-                    # her boş karede iptal olur ve hiç duyulmaz.
+                    # Kullanıcı konuşmaya BAŞLADI (ilk gerçek konuşma karesi) →
+                    # idle→listening geçişi (utterance başına bir kez). İstemci bu
+                    # değişimi görünce 10sn oto-uyku zamanlayıcısını İPTAL eder →
+                    # cümle ortasında uyumaz. NOT: TTS kesme (barge-in) burada DEĞİL;
+                    # aşağıda SÜREKLİ konuşma eşiğiyle (BARGE_IN_MIN_S) yapılır ki kısa
+                    # blip/eko uzun cevabı kesmesin (#8/#9). Sleep-timer iptali ise
+                    # ilk karede olmalı: kısa komutlar 0.25sn eşiğine ulaşmadan bitebilir.
                     if not speech_seen:
-                        if self._tts_task and not self._tts_task.done():
-                            self._tts_task.cancel()
-                        # Kullanıcı konuşmaya BAŞLADI → idle→listening geçişi. İstemci
-                        # bu değişimi görünce 10sn oto-uyku zamanlayıcısını İPTAL eder
-                        # → cümle ortasında uyumaz. Utterance başına yalnız bir kez
-                        # (speech_seen False→True geçişinde), her karede değil.
                         self._set_agent_state("listening")
                     speech_seen = True
                     silence_s = 0.0
+                    consec_speech_s += chunk_s
+                    # Barge-in: uçuştaki TTS cevabını kes — ama TEK karede değil,
+                    # SÜREKLİ konuşma eşiği (BARGE_IN_MIN_S) aşılınca. Gürültülü
+                    # ortamda kısa blip/eko cevabı (özellikle uzun cevabı) kesmesin;
+                    # gerçek (sürekli) konuşma yine keser.
+                    if (consec_speech_s >= BARGE_IN_MIN_S
+                            and self._tts_task and not self._tts_task.done()):
+                        self._tts_task.cancel()
 
                 ended = (speech_seen and silence_s >= SILENCE_AFTER_S) or (
                     utterance_s >= MAX_UTTERANCE_S
