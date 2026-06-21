@@ -210,9 +210,13 @@ class SessionSegmenter:
                 '{"topics":[{"match_id": <mevcut konu id\'si (int) VEYA null>, '
                 '"title":"<kısa konu başlığı>", "summary":"<bu konunun GÜNCEL durumu: '
                 "varsa eski özet + bu konuşmadaki gelişme, 1-3 cümle Türkçe>\", "
-                '"open_items":["<bu konuda çözülmemiş soru/yerine getirilmemiş istek>", ...]}]}\n'
-                "match_id: konu mevcut kayıtlardan birinin DEVAMIYSA o id; değilse null. "
-                "open_items yoksa boş liste. Hepsi Türkçe.\n\n"
+                '"open_items":["<bu konuda AÇIK KALAN iş>", ...]}]}\n'
+                "match_id: konu mevcut kayıtlardan birinin DEVAMIYSA o id; değilse null.\n"
+                "open_items = kullanıcının İSTEYİP de henüz GERÇEKLEŞMEYEN her şey: "
+                "cevaplanmamış sorular, yerine getirilmemiş istekler VE asistanın "
+                "'erişimim yok / yapamam / bilmiyorum' deyip YAPAMADIĞI istekler (kullanıcı "
+                "hâlâ istiyor → açık iş). Asistan işi GERÇEKTEN yaptıysa (ör. ışığı açtı) "
+                "açık iş DEĞİL. Yoksa boş liste. Hepsi Türkçe, kısa emir kipi.\n\n"
                 "MEVCUT KONULAR (JSON):\n"
                 f"{json.dumps(existing, ensure_ascii=False)}\n\n"
                 f"TRANSKRİPT:\n{transcript}\n"
