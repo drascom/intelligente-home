@@ -72,21 +72,16 @@ class SessionSegmenter:
             self._schedule_close(active, user_id)
             return await self._new_session(scope_key, user_id, emb)
 
-        # 3) Embedding + centroid varsa: cosine ölç.
-        centroid = self._centroid_unit(active.get("centroid"))
-        if emb is not None and centroid is not None:
-            cosine = float(np.dot(emb, centroid))
-            if cosine >= self.settings.session_sim_threshold:
-                # Aynı konu (LLM YOK): koşan-ortalama centroid'i güncelle.
-                await self._extend_centroid(active, emb)
-                return active["id"]
-            # Eşik altı → DOĞRUDAN konu sınırı (LLM hakem YOK): eskiyi kapat (arka
-            # plan) + yeni oturum aç.
-            self._schedule_close(active, user_id)
-            return await self._new_session(scope_key, user_id, emb)
-
-        # 4) Embedding yok (model yok) → konuya göre bölme sinyali yok; sadece idle
-        # guard'a güven (yukarıda çalıştı) ve aktif oturumu sürdür.
+        # 3) Aynı konuşma öbeği sürüyor (idle değil) → AYNI oturum.
+        # Embedding ile per-turn KONU BÖLME YAPILMAZ: e5 multilingual-small Türkçe
+        # kısa sözlerde konuyu ayırt edemiyor (ölçüldü: alakasız sözler ~0.85 cosine,
+        # hiçbir eşik çalışmıyor). Oturum sınırı = idle boşluğu (yukarıda) — yani
+        # "konuşma öbeği" oturumu. Konu detayı kapanışta Codex özeti/açık-işlerinde.
+        # Centroid yine de güncellenir ("X konulu oturumu bul" cosine araması için).
+        # (session_sim_threshold şu an kullanılmıyor; daha iyi embedding gelince
+        # segmentasyon yeniden açılabilir.)
+        if emb is not None:
+            await self._extend_centroid(active, emb)
         return active["id"]
 
     # ---- yardımcılar ----
