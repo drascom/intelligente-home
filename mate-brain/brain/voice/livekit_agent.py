@@ -83,6 +83,10 @@ class LiveKitAgent:
         # serileştiren kilit (çift teslim olmasın).
         self._poll_task: asyncio.Task | None = None
         self._deliver_lock = asyncio.Lock()
+        # Şu an tüketilen AudioStream referansı (bulletproof reconnect): `async for`
+        # askıdayken oda koparsa harici bir handler bunu aclose() ile uyandırabilir.
+        # _consume_track stream'i kurunca set eder, finally'de None'a çeker.
+        self._active_stream = None
         # Uzak katılımcı attribute'ları (per-client ayarlar + candan.awake), kimlik
         # bazlı önbellek. `participant_attributes_changed` event'i ile beslenir.
         # NEDEN: bu SDK sürümünde `RemoteParticipant.attributes` view'ı utterance
@@ -221,8 +225,9 @@ class LiveKitAgent:
         self._room = room
         # Yayınladığımız track'in sid'i: asistan transcript'ini bu track'e bağlamak için.
         self._pub_track_sid = getattr(track, "sid", None)
-        # Yayına hazırız → dinleme durumu (istemci agentState'i bununla sürer).
-        self._set_agent_state("listening")
+        # Yayına hazırız → REST durumu = "idle" (istemci agentState'i bununla
+        # sürer; idle → 10sn oto-uyku zamanlayıcısını kurar).
+        self._set_agent_state("idle")
         # Proaktif teslim yoklayıcısını başlat (vakti gelen hatırlatmaları
         # kullanıcı konuşmadan söyler).
         self._poll_task = asyncio.create_task(self._poll_deliveries())
@@ -270,7 +275,8 @@ class LiveKitAgent:
         stream = rtc.AudioStream.from_track(
             track=track, sample_rate=STT_RATE, num_channels=STT_CHANNELS
         )
-        # Kopunca _on_disconnected'in sonlandırabilmesi için aktif stream'i yayınla.
+        # Kopunca _on_disconnected'in sonlandırabilmesi için aktif stream'i yayınla
+        # (bulletproof reconnect: askıdaki `async for`u aclose ile uyandırır).
         self._active_stream = stream
         stt: WhisperSession | None = None
         buf = bytearray()           # voice-ID için ham utterance PCM (s16le 16k mono)
@@ -336,6 +342,15 @@ class LiveKitAgent:
                     silence_s += chunk_s
                     consec_speech_s = 0.0  # sessizlik ardışık konuşmayı sıfırlar
                 else:
+                    # Kullanıcı konuşmaya BAŞLADI (ilk gerçek konuşma karesi) →
+                    # idle→listening geçişi (utterance başına bir kez). İstemci bu
+                    # değişimi görünce 10sn oto-uyku zamanlayıcısını İPTAL eder →
+                    # cümle ortasında uyumaz. NOT: TTS kesme (barge-in) burada DEĞİL;
+                    # aşağıda SÜREKLİ konuşma eşiğiyle (BARGE_IN_MIN_S) yapılır ki kısa
+                    # blip/eko uzun cevabı kesmesin (#8/#9). Sleep-timer iptali ise
+                    # ilk karede olmalı: kısa komutlar 0.25sn eşiğine ulaşmadan bitebilir.
+                    if not speech_seen:
+                        self._set_agent_state("listening")
                     speech_seen = True
                     silence_s = 0.0
                     consec_speech_s += chunk_s
@@ -352,20 +367,35 @@ class LiveKitAgent:
                 )
                 if ended:
                     session, stt = stt, None
-                    await self._handle_utterance(
-                        session, bytes(buf), participant, track, utterance_awake
-                    )
+                    # LLM/TTS'e sert tavan: utterance işleme takılırsa (model/ağ)
+                    # track tüketicisi kilitlenmesin → uyar ve döngüye devam et.
+                    try:
+                        await asyncio.wait_for(
+                            self._handle_utterance(
+                                session, bytes(buf), participant, track, utterance_awake
+                            ),
+                            timeout=60.0,
+                        )
+                    except asyncio.TimeoutError:
+                        log.warning(
+                            "livekit agent: utterance işleme 60sn'i aştı, atlandı"
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as e:
             log.warning("livekit agent: track tüketimi bitti (%s)", e)
         finally:
+            # finally ASLA askıda kalmamalı (aksi halde reconnect döngüsü tıkanır):
+            # aclose/abort'u kısa timeout'a sar, her hatayı yut.
             self._active_stream = None
             if stt is not None:
-                await stt.abort()
+                try:
+                    await asyncio.wait_for(stt.abort(), timeout=2.0)
+                except (asyncio.TimeoutError, Exception):
+                    pass
             try:
-                await stream.aclose()
-            except Exception:
+                await asyncio.wait_for(stream.aclose(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception):
                 pass
 
     @staticmethod
@@ -418,7 +448,7 @@ class LiveKitAgent:
         # mute'u sesi durdurmuyor; "candan" sızıntısı burada engellenir.
         if not awake:
             log.info("livekit agent: uyku modunda söz, atlandı: %r", text[:60])
-            self._set_agent_state("listening")
+            self._set_agent_state("idle")
             return
         if text and looks_hallucinated(text):
             log.info("livekit agent: transcript hayalet görünüyor, atlanıyor: %r", text[:80])
@@ -475,11 +505,11 @@ class LiveKitAgent:
             # İstemcinin seçtiği TTS sesi (attribute), yoksa varsayılan.
             voice = self._attrs(participant).get("voice") or None
             # TTS'i ayrı task'ta çal → bir sonraki utterance barge-in ile iptal edebilsin.
-            # _speak başında "speaking", bitince "listening" durumunu yayar.
+            # _speak başında "speaking", bitince "idle" durumunu yayar.
             self._tts_task = asyncio.create_task(self._speak(answer, voice))
         else:
-            # Yanıt yok → dinlemeye dön (aksi halde "thinking"de takılı kalır).
-            self._set_agent_state("listening")
+            # Yanıt yok → REST'e dön (aksi halde "thinking"de takılı kalır).
+            self._set_agent_state("idle")
 
     async def _poll_deliveries(self) -> None:
         """Arka plan döngüsü: vakti gelip chime çalınmış (notified) ama henüz
@@ -651,7 +681,7 @@ class LiveKitAgent:
         source = self._source
         if source is None:
             log.warning("livekit agent: TTS atlandı — yayın kaynağı yok")
-            self._set_agent_state("listening")
+            self._set_agent_state("idle")
             return
         fmt = None
         frames_pub = 0
@@ -673,15 +703,20 @@ class LiveKitAgent:
             log.info("livekit agent: TTS bitti — %d giriş baytı, %d kare yayınlandı",
                      bytes_in, frames_pub)
         except asyncio.CancelledError:
-            # Barge-in: dinlemeye dön (asla "speaking"de takılı kalma). _set_agent_state
-            # bloklamadan zamanlar → iptal sırasında await riski yok.
+            # Barge-in = kullanıcı KONUŞMAYA başladı (TTS'i kesen tek şey
+            # _consume_track'teki speech-start). Doğru durum "listening" (idle DEĞİL):
+            # idle yazarsak istemci 10sn oto-uyku zamanlayıcısını barge-in ORTASINDA
+            # kurar → cümle ortasında uyur. speech-start zaten "listening" yaydı;
+            # burada onu pekiştiriyoruz (aynı değer → istemcide no-op, ama iptal
+            # task'ı sonradan koşup "idle" yazma yarışını engeller). Utterance bitince
+            # _handle_utterance "thinking"/"speaking", sonunda "idle" sürer.
             log.info("livekit agent: TTS iptal edildi (barge-in)")
             self._set_agent_state("listening")
             raise
         except Exception as e:
             log.warning("livekit agent: TTS başarısız: %r", e)
-        # Konuşma bitti (normal veya hata) → dinlemeye dön.
-        self._set_agent_state("listening")
+        # Konuşma bitti (normal veya hata) → REST'e dön.
+        self._set_agent_state("idle")
 
     async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
         """s16le PCM'i kaynağın yayın biçimine (48 kHz mono) indir ve kare kare

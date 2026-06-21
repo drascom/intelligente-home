@@ -1,34 +1,68 @@
 import AVFoundation
 import Foundation
+import LiveKit
 import Speech
 
-/// SFSpeech tabanlı wake-word dinleyici. Kendi AVAudioEngine'iyle mikrofonu
-/// dinler; tetikleyici kelimeyi duyunca `onWakeDetected` çağırır ve durur.
+/// SFSpeech tabanlı wake-word tanıyıcı — **kendi AVAudioEngine'i YOK**.
 ///
-/// mate-mac'ten port edildi; bu uygulamada LiveKit mikrofonu wake olana kadar
-/// kapalı tutulur, wake duyulunca açılır (bkz. WakeCoordinator).
+/// Eski tasarımda bu sınıf mikrofonu kendi `AVAudioEngine`'iyle dinliyordu; bu da
+/// LiveKit'in WebRTC ses motoruyla AYNI fiziksel cihazı çekiştiriyordu → macOS
+/// CoreAudio iki motor arası temiz devir yapamıyor (`StartIO error 35`, aggregate
+/// device hatası, "there already is a thread"). Çözüm: TEK motor. LiveKit mikrofonu
+/// SÜREKLİ yakalar; bu sınıf yalnızca o PCM tamponlarını **gözlemler**.
+///
+/// PCM, `WakePCMRenderer` (LiveKit `AudioRenderer`) üzerinden ses render thread'inde
+/// `appendPCM(_:)`'e gelir ve aktif `SFSpeechAudioBufferRecognitionRequest`'e eklenir.
+/// Tetikleyici kelime duyulunca `onWakeDetected` çağrılır.
 @MainActor
 final class WakeWordDetector: NSObject, ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var lastHeard: String = ""
 
     private var recognizer: SFSpeechRecognizer?
-    private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
-    private var engine: AVAudioEngine?
     private var wakePattern: String = "candan"
     private var rotationTimer: DispatchSourceTimer?
 
+    // Aktif tanıma isteği — ses render thread'inden (`appendPCM`) ve main'den
+    // (rotate/stop) erişildiği için kilitle korunur.
+    private nonisolated(unsafe) var request: SFSpeechAudioBufferRecognitionRequest?
+    private nonisolated let requestLock = NSLock()
+
     var onWakeDetected: (() -> Void)?
     /// Tanıma kalıcı olarak kullanılamıyor (örn. macOS'ta Siri+Dikte kapalı).
-    /// Bir kez çağrılır; UI kullanıcıyı sistem ayarına yönlendirmeli.
     var onUnavailable: ((String) -> Void)?
     private var reportedUnavailable = false
 
+    // MARK: - PCM girişi (ses render thread'i)
+
+    // TEŞHİS: PCM gerçekten akıyor mu? render() çağrılıyor mu? İlk tamponu (format
+    // ile) ve her ~500 tamponda bir akışı logla. PCM hiç gelmiyorsa → renderer
+    // bağlanması/startLocalRecording sorunu. Geliyorsa ama wake yoksa → format/tanıma.
+    private nonisolated let pcmDiagLock = NSLock()
+    private nonisolated(unsafe) var pcmCount = 0
+
+    /// LiveKit yerel mic PCM tamponunu aktif tanıma isteğine ekler. Ses render
+    /// thread'inden çağrılır → MainActor'a HOP ETME, her tampon için Task AÇMA.
+    /// `request` kilitle korunur; aktif istek yoksa sessiz no-op (uyanık/teardown).
+    nonisolated func appendPCM(_ buffer: AVAudioPCMBuffer) {
+        pcmDiagLock.lock()
+        let n = pcmCount; pcmCount += 1
+        pcmDiagLock.unlock()
+        if n == 0 {
+            let f = buffer.format
+            Log.line("[Wake] PCM İLK tampon: \(Int(f.sampleRate))Hz ch=\(f.channelCount) fmt=\(f.commonFormat.rawValue) interleaved=\(f.isInterleaved) frames=\(buffer.frameLength)")
+        } else if n % 500 == 0 {
+            Log.line("[Wake] PCM akıyor: \(n) tampon")
+        }
+        requestLock.lock(); defer { requestLock.unlock() }
+        request?.append(buffer)
+    }
+
+    // MARK: - İzinler
+
     // nonisolated: SFSpeech, yetki completion'ını ARBITRARY bir arka plan
-    // kuyruğunda çağırır. Bu metot @MainActor olsaydı completion closure'ı da
-    // main-actor-isolated sayılır ve arka planda çağrılınca Swift executor
-    // assertion'ı (SIGTRAP) ile çökerdi. nonisolated → assertion eklenmez.
+    // kuyruğunda çağırır; @MainActor olsaydı executor assertion'ı (SIGTRAP) atardı.
     nonisolated func requestPermission() async -> Bool {
         await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { status in
@@ -36,6 +70,8 @@ final class WakeWordDetector: NSObject, ObservableObject {
             }
         }
     }
+
+    // MARK: - Yaşam döngüsü
 
     func start(wakeWord: String, language: String) throws {
         guard !isListening else { return }
@@ -54,47 +90,41 @@ final class WakeWordDetector: NSObject, ObservableObject {
         }
         recognizer = rec
 
-        try startSession()
-        // Apple session ~1 dk sonra kesilir; periyodik rotate.
+        startRecognition()
+        // Apple tanıma oturumu ~1 dk sonra kesilir; periyodik olarak yalnız
+        // isteği/task'ı yenile (LiveKit kaydı/motoru ASLA dokunulmaz).
         scheduleRotation()
         isListening = true
-        print("[Wake] listening for '\(wakePattern)' (\(localeId))")
+        Log.line("[Wake] SFSpeech dinliyor '\(wakePattern)' locale=\(localeId) onDevice=\(rec.supportsOnDeviceRecognition) available=\(rec.isAvailable) · PCM=LiveKit capture")
     }
 
     func stop() {
         rotationTimer?.cancel()
         rotationTimer = nil
-        endSession()
+        endRecognition()
         isListening = false
     }
 
-    private func startSession() throws {
+    // MARK: - Tanıma isteği (yalnız bu yenilenir; ses motoru LiveKit'te kalır)
+
+    private func startRecognition() {
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if recognizer?.supportsOnDeviceRecognition == true {
             req.requiresOnDeviceRecognition = true
         }
-        request = req
+        requestLock.lock(); request = req; requestLock.unlock()
 
-        let eng = AVAudioEngine()
-        // Tap'i nonisolated yardımcıdan kur: tap closure'ı ses render thread'inde
-        // çağrılır; @MainActor bağlamında oluşturulursa isolation assertion'ı ile
-        // çökerdi. nonisolated helper içindeki closure main-actor-isolated olmaz.
-        Self.installTap(on: eng, feeding: req)
-        eng.prepare()
-        try eng.start()
-        engine = eng
-
-        // @Sendable: SFSpeech result handler'ı da arka plan kuyruğunda çağrılır.
-        // Closure'ı @Sendable yapınca main-actor izolasyon assertion'ı eklenmez;
-        // tüm @MainActor state erişimi içeride Task { @MainActor in } ile yapılır.
+        // @Sendable: SFSpeech result handler'ı arka plan kuyruğunda çağrılır.
         let handler: @Sendable (SFSpeechRecognitionResult?, Error?) -> Void = { [weak self] result, error in
             if let result {
                 let text = result.bestTranscription.formattedString.lowercased()
+                Log.line("[Wake] duydu: '\(text)'")
                 Task { @MainActor in
                     guard let self else { return }
                     self.lastHeard = text
                     if self.matches(text: text) {
+                        Log.line("[Wake] EŞLEŞTİ → tetikle")
                         let cb = self.onWakeDetected
                         self.stop()
                         cb?()
@@ -102,10 +132,9 @@ final class WakeWordDetector: NSObject, ObservableObject {
                 }
             }
             if let error {
-                // Otomatik rotate yine de yapacak; sessizce loglayıp geç.
-                print("[Wake] task error: \(error.localizedDescription)")
-                // macOS: SFSpeech, sistemde Siri veya Dikte açık olmadan hiç
-                // çalışmıyor — rotate çözmez, kullanıcıyı bilgilendir.
+                Log.error("[Wake] SFSpeech task hatası: \(error.localizedDescription)")
+                // macOS: SFSpeech, Siri/Dikte açık değilse hiç çalışmaz — rotate
+                // çözmez, kullanıcıyı sistem ayarına yönlendir.
                 let msg = error.localizedDescription
                 if msg.localizedCaseInsensitiveContains("dictation"),
                    msg.localizedCaseInsensitiveContains("disabled") {
@@ -121,12 +150,11 @@ final class WakeWordDetector: NSObject, ObservableObject {
         task = recognizer?.recognitionTask(with: req, resultHandler: handler)
     }
 
-    private func endSession() {
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        engine = nil
+    private func endRecognition() {
+        requestLock.lock()
         request?.endAudio()
         request = nil
+        requestLock.unlock()
         task?.cancel()
         task = nil
     }
@@ -137,25 +165,13 @@ final class WakeWordDetector: NSObject, ObservableObject {
         timer.setEventHandler { [weak self] in
             Task { @MainActor in
                 guard let self, self.isListening else { return }
-                self.endSession()
-                do { try self.startSession() }
-                catch { print("[Wake] rotate failed: \(error)") }
+                // Yalnız isteği/task'ı yenile — LiveKit kaydı dokunulmaz.
+                self.endRecognition()
+                self.startRecognition()
             }
         }
         timer.resume()
         rotationTimer = timer
-    }
-
-    /// Tap kurulumu — nonisolated: kurulan closure ses render thread'inde çalışır,
-    /// main-actor bağlamında oluşturulmamalı (yoksa isolation assertion → çöker).
-    nonisolated private static func installTap(
-        on engine: AVAudioEngine, feeding req: SFSpeechAudioBufferRecognitionRequest
-    ) {
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            req.append(buffer)
-        }
     }
 
     private func matches(text: String) -> Bool {
@@ -163,4 +179,15 @@ final class WakeWordDetector: NSObject, ObservableObject {
         let pattern = "\\b\(NSRegularExpression.escapedPattern(for: wakePattern))\\b"
         return text.range(of: pattern, options: .regularExpression) != nil
     }
+}
+
+/// LiveKit `AudioManager.shared.add(localAudioRenderer:)` ile kaydedilir; yerel mic
+/// PCM tamponlarını ses render thread'inde alıp wake tanıyıcıya iletir. Ayrı küçük
+/// bir tip: `AudioRenderer` `@objc` protokolü `render`'ı nonisolated ister, oysa
+/// `WakeWordDetector` @MainActor. `onPCM` `@Sendable` ve `appendPCM` nonisolated
+/// olduğundan render thread'inden güvenle çağrılır (MainActor hop yok).
+final class WakePCMRenderer: NSObject, AudioRenderer {
+    private let onPCM: @Sendable (AVAudioPCMBuffer) -> Void
+    init(onPCM: @escaping @Sendable (AVAudioPCMBuffer) -> Void) { self.onPCM = onPCM }
+    func render(pcmBuffer: AVAudioPCMBuffer) { onPCM(pcmBuffer) }
 }

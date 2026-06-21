@@ -23,6 +23,28 @@ struct VoiceAgentApp: App {
     private let settings = SettingsStore()
 
     init() {
+        // VPIO (voice-processing I/O / donanım AEC) AÇIK.
+        //
+        // NEDEN AÇIK: mic SÜREKLI yayında (sunucu awake kapısı) olduğundan asistanın
+        // TTS cevabı hoparlörden çalarken mic onu yakalıyordu → brain kendi sesini
+        // "kullanıcı konuşması" sanıp barge-in ile cevabını kesiyordu; ayrıca full-duplex
+        // (aynı anda capture+playback) VPIO'suz CoreAudio'yu zorluyordu (HALC overload).
+        // VPIO donanım AEC + gürültü bastırma (NS) + AGC yapar: asistanın KENDİ sesini
+        // mic girişinden iptal eder (brain yalnız DIŞ sesi/kullanıcıyı duyar), gürültüyü
+        // bastırır, full-duplex'i verimli yürütür. Wake renderer de temizlenmiş PCM alır.
+        // Motor başlamadan (bağlanmadan) ÖNCE ayarlanmalı (motor yeniden başlatma ister).
+        //
+        // ⚠️ USB KULAKLIK CAVEAT: VPIO input+output'u birleştiren CoreAudio AGGREGATE
+        // DEVICE kurar; USB tek-cihaz kulaklıkta bu kurulamıyor → StartIO `error 35` →
+        // mic hiç başlamaz → wake duyulmaz. Dahili mic+hoparlörde sorun YOK. USB
+        // kullanılacaksa cihaz tipine göre KOŞULLU kapatılmalı (sonraki iş).
+        do {
+            try AudioManager.shared.setVoiceProcessingEnabled(true)
+            Log.line("[Audio] setVoiceProcessingEnabled(true) OK → isVoiceProcessingEnabled=\(AudioManager.shared.isVoiceProcessingEnabled)")
+        } catch {
+            Log.error("[Audio] setVoiceProcessingEnabled(true) THREW: \(error.localizedDescription) → VPIO açılamadı")
+        }
+
         // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel
         // alıcıyla (CandanTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
         // hem asistan satırını "assistant" kimliğinden yollar; SDK'nın varsayılan
@@ -37,7 +59,11 @@ struct VoiceAgentApp: App {
                 participantName: "mac-client",
                 roomName: "mate-demo"
             ),
-            options: SessionOptions(room: room),
+            // preConnectAudio KAPALI: açıkken Session bağlanmadan ÖNCE mic'i açıp bir
+            // preconnect track yayınlar; sonradan setMicrophone AYRI track üzerinde
+            // çalışır → İKİ mic track (biri hep canlı, brain'e sızar + wake dinleyiciyle
+            // mic çakışır). Kapalı = tek deterministik track (WakeCoordinator yönetir).
+            options: SessionOptions(room: room, preConnectAudio: false),
             receivers: [CandanTranscriptionReceiver(room: room)]
         )
     }

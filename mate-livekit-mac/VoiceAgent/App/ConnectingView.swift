@@ -3,18 +3,14 @@ import SwiftUI
 
 /// Bağlantı durumu ekranı (eski StartView'in yerine).
 ///
-/// Manuel "Bağlan" butonu YOKTUR: uygulama açılışta otomatik bağlanır; bağlantı
-/// koptuğunda (manuel/ağ) bu ekran tekrar görünür ve yeniden bağlanır. Bağlanma
-/// başarılı olunca AppView `interactions()`'a geçer ve (wakeWordEnabled ise)
-/// WakeCoordinator uyku moduna girip "candan" bekler.
-///
-/// Otomatik bağlanma HATA YOKKEN yapılır; hata varsa döngüye girmemek için
-/// otomatik denemez — kullanıcı "Yeniden dene" ile tekrar başlatır.
+/// Manuel buton YOKTUR — uygulama HEP bağlı olmalı: açılışta otomatik bağlanır;
+/// bağlantı koptuğunda (ağ vs.) bu ekran tekrar görünür ve kendiliğinden yeniden
+/// bağlanır. Hata olsa bile kullanıcı müdahalesi gerekmeden kendini onarır
+/// (kısa beklemeyle yeniden dener). Bağlanma başarılı olunca AppView
+/// `interactions()`'a geçer ve (wakeWordEnabled ise) WakeCoordinator uyku moduna
+/// girip "candan" bekler.
 struct ConnectingView: View {
     @EnvironmentObject private var session: Session
-
-    /// Kullanıcı bilerek kapattıysa otomatik bağlanma; manuel "Bağlan" göster.
-    @Binding var userDisconnected: Bool
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -22,19 +18,25 @@ struct ConnectingView: View {
         VStack(spacing: 6 * .grid) {
             if let error = session.error {
                 errorState(error)
-            } else if userDisconnected {
-                disconnectedState()
             } else {
                 connectingState()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, horizontalSizeClass == .regular ? 32 * .grid : 16 * .grid)
-        // Açılışta otomatik bağlan. Hata varsa (döngü olmasın) ya da kullanıcı
-        // bilerek kapattıysa otomatik denemez; ikisinde de manuel buton gösterilir.
+        // HEP bağlı kal: hata yokken otomatik bağlan.
         // session.start() yalnızca bağlantı kopuksa iş yapar (aksi halde no-op).
         .task {
-            guard session.error == nil, !userDisconnected else { return }
+            guard session.error == nil else { return }
+            await session.start()
+        }
+        // Hata varsa kendi kendine onar: kısa bekleme + yeniden dene (sıkı döngü
+        // olmasın diye her denemede bekle). Manuel buton yok.
+        .task(id: session.error?.localizedDescription) {
+            guard session.error != nil else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            session.dismissError()
             await session.start()
         }
         #if os(visionOS)
@@ -52,35 +54,8 @@ struct ConnectingView: View {
         }
     }
 
-    private func disconnectedState() -> some View {
-        VStack(spacing: 4 * .grid) {
-            Image(systemName: "phone.down.circle.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(.fg3)
-            Text("Bağlantı kapatıldı")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.fg1)
-            AsyncButton {
-                userDisconnected = false
-                await session.start()
-            } label: {
-                HStack {
-                    Spacer()
-                    Text("Bağlan")
-                    Spacer()
-                }
-                .frame(width: 48 * .grid, height: 11 * .grid)
-            }
-            #if os(visionOS)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            #else
-            .buttonStyle(ProminentButtonStyle())
-            #endif
-            .padding(.top, 2 * .grid)
-        }
-    }
-
+    /// Hata durumu: manuel buton YOK — kendi kendine yeniden dener (bkz. body'deki
+    /// `.task(id:)`). Kullanıcıya yalnızca durum gösterilir.
     private func errorState(_ error: Session.Error) -> some View {
         VStack(spacing: 4 * .grid) {
             Image(systemName: "wifi.exclamationmark")
@@ -94,31 +69,19 @@ struct ConnectingView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            AsyncButton {
-                // Hatayı temizle ve yeniden bağlanmayı dene.
-                session.dismissError()
-                await session.start()
-            } label: {
-                HStack {
-                    Spacer()
-                    Text("Yeniden dene")
-                    Spacer()
-                }
-                .frame(width: 48 * .grid, height: 11 * .grid)
+            HStack(spacing: 2 * .grid) {
+                Spinner()
+                Text("Yeniden deneniyor…")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.fg3)
             }
-            #if os(visionOS)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            #else
-            .buttonStyle(ProminentButtonStyle())
-            #endif
             .padding(.top, 2 * .grid)
         }
     }
 }
 
 #Preview {
-    ConnectingView(userDisconnected: .constant(false))
+    ConnectingView()
         .environmentObject(
             Session(tokenSource: LiteralTokenSource(
                 serverURL: URL(string: "wss://example.com")!,
