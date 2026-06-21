@@ -114,6 +114,36 @@ class PiBackend:
         if self._proc and self._proc.returncode is None:
             self._proc.terminate()
 
+    async def complete_once(self, prompt: str, timeout: float = 60.0) -> str:
+        """Stateless tek-seferlik Codex çağrısı — asistanın kalıcı proc'unu/bağlamını
+        KULLANMAZ. Taze geçici pi süreci açar, tek prompt gönderir, yanıtı okur, süreci
+        kapatır. Oturum özeti gibi yan-kanal işler için (bağlam kirlenmez). Hata → ''."""
+        import os
+        cmd = [
+            settings.pi_binary, "--mode", "rpc",
+            "--provider", settings.pi_model.split("/")[0],
+            "--model", settings.pi_model,
+            "--no-session", "--no-extensions", "--no-skills",
+            "--no-prompt-templates", "--no-context-files", "--no-builtin-tools",
+            "--system-prompt", "Sen kısa bir özetleyicisin. Yalnızca istenen çıktıyı (ör. JSON) ver, başka hiçbir şey yazma.",
+        ]
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, env={**os.environ},
+            )
+            return await asyncio.wait_for(self._turn(proc, prompt), timeout)
+        except Exception as e:
+            log.warning("pi complete_once failed: %s", e)
+            return ""
+        finally:
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
     async def respond(
         self, user_text: str, speaker_id: int | None = None,
         speaker: str | None = None, timeout: float = 120.0,

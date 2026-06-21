@@ -63,10 +63,11 @@ class Settings(BaseSettings):
     # sentence-transformers installed, otherwise degrades to full agent path.
     intent_fastpath: bool = True
 
-    # Konu-tabanlı oturum segmentasyonu (SessionSegmenter). e5 cosine bu eşiğin
-    # ÜSTÜ = aynı konu, LLM atlanır; ALTI = LLM hakem karar verir. Gerçek Türkçe
-    # turlarla kalibre EDİLMELİ (varsayılan deneysel başlangıç).
-    session_sim_threshold: float = 0.86
+    # Konu-tabanlı oturum segmentasyonu (SessionSegmenter). embedding-only bölme
+    # eşiği: e5 cosine bu eşiğin ALTI → YENİ konu/oturum (LLM YOK). Gerçek
+    # konuşmalarla kalibre edilecek; e5 kısa-söz benzerlikleri 0.79–0.87 dar
+    # bandında olduğundan bu kaba bir sinyaldir (kaliteli özet/açık-iş Codex'ten gelir).
+    session_sim_threshold: float = 0.80
     # Bu kadar saniye sessizlik (son tur üstünden) → yeni oturum (uzun boşluk =
     # yeni konuşma). 1800 = 30 dk. Kalibre edilebilir.
     session_idle_seconds: float = 1800

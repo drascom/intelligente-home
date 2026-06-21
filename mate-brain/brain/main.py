@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     # (embedding cosine + eşik altında LLM hakem; idle/konu değişiminde kapatır).
     from brain.session.segmenter import SessionSegmenter
 
-    app.state.segmenter = SessionSegmenter(db, intent, app.state.agent.llm, bus, settings)
+    app.state.segmenter = SessionSegmenter(db, intent, app.state.agent.llm, bus, settings, pi=pi_backend)
 
     # Speaker-ID (voice-ID): kapalı/eksikse None → tanıma atlanır.
     app.state.speaker = build_speaker_id(settings)
