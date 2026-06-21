@@ -47,6 +47,11 @@ RECONNECT_DELAY = 5
 SILENCE_RMS = 700          # int16 mean-abs level treated as silence (satellite ile aynı)
 SILENCE_AFTER_S = 1.0      # bu kadar son-sessizlikten sonra utterance biter
 MAX_UTTERANCE_S = 12.0     # utterance başına sert tavan
+# Barge-in: uçuştaki TTS cevabını kesmek için gereken SÜREKLİ (ardışık) konuşma
+# süresi. Tek bir gürültü/eko karesi cevabı kesmesin diye eşik (özellikle uzun
+# cevaplarda gürültülü ortamda kesilme oluyordu). VPIO eko'yu zaten bastırır; bu da
+# kısa dış-gürültü blip'lerini eler, gerçek (sürekli) konuşma yine barge-in yapar.
+BARGE_IN_MIN_S = 0.45
 
 # STT, speaker-ID ve endpointing'in beklediği biçim. AudioStream'e bu hedefi
 # verince SDK kareleri içeride bu orana indirir (manuel AudioResampler gerekmez).
@@ -270,6 +275,7 @@ class LiveKitAgent:
         stt: WhisperSession | None = None
         buf = bytearray()           # voice-ID için ham utterance PCM (s16le 16k mono)
         speech_seen = False
+        consec_speech_s = 0.0       # ardışık konuşma süresi (barge-in eşiği için)
         silence_s = 0.0
         utterance_s = 0.0
         utterance_awake = True      # bu utterance BAŞINDA istemci uyanık mıydı (wake gate)
@@ -310,6 +316,7 @@ class LiveKitAgent:
                         continue
                     buf = bytearray()
                     speech_seen = False
+                    consec_speech_s = 0.0
                     silence_s = 0.0
                     utterance_s = 0.0
 
@@ -327,14 +334,18 @@ class LiveKitAgent:
 
                 if self._is_silence(payload, STT_WIDTH):
                     silence_s += chunk_s
+                    consec_speech_s = 0.0  # sessizlik ardışık konuşmayı sıfırlar
                 else:
-                    # İlk gerçek konuşma karesi → uçuştaki TTS'i kes (barge-in).
-                    # Sessiz karelerde DEĞİL: yoksa cevap sesi daha başlamadan
-                    # her boş karede iptal olur ve hiç duyulmaz.
-                    if not speech_seen and self._tts_task and not self._tts_task.done():
-                        self._tts_task.cancel()
                     speech_seen = True
                     silence_s = 0.0
+                    consec_speech_s += chunk_s
+                    # Barge-in: uçuştaki TTS cevabını kes — ama TEK karede değil,
+                    # SÜREKLİ konuşma eşiği (BARGE_IN_MIN_S) aşılınca. Gürültülü
+                    # ortamda kısa blip/eko cevabı (özellikle uzun cevabı) kesmesin;
+                    # gerçek (sürekli) konuşma yine keser.
+                    if (consec_speech_s >= BARGE_IN_MIN_S
+                            and self._tts_task and not self._tts_task.done()):
+                        self._tts_task.cancel()
 
                 ended = (speech_seen and silence_s >= SILENCE_AFTER_S) or (
                     utterance_s >= MAX_UTTERANCE_S
