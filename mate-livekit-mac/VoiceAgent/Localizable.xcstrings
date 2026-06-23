@@ -30,16 +30,10 @@
     "Ayarlar" : {
 
     },
-    "Bağlan" : {
-
-    },
     "Bağlanılamadı" : {
 
     },
     "Bağlanılıyor…" : {
-
-    },
-    "Bağlantı kapatıldı" : {
 
     },
     "Bip sesleri" : {
@@ -121,6 +115,9 @@
     "Geçiş Sesleri" : {
 
     },
+    "Hoparlör" : {
+
+    },
     "İngilizce" : {
 
     },
@@ -142,6 +139,9 @@
           }
         }
       }
+    },
+    "Mikrofon" : {
+
     },
     "Nemotron" : {
 
@@ -204,7 +204,7 @@
     "Whisper" : {
 
     },
-    "Yeniden dene" : {
+    "Yeniden deneniyor…" : {
 
     }
   },

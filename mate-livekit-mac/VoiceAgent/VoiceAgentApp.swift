@@ -36,14 +36,11 @@ struct VoiceAgentApp: App {
         //
         // ⚠️ USB KULAKLIK CAVEAT: VPIO input+output'u birleştiren CoreAudio AGGREGATE
         // DEVICE kurar; USB tek-cihaz kulaklıkta bu kurulamıyor → StartIO `error 35` →
-        // mic hiç başlamaz → wake duyulmaz. Dahili mic+hoparlörde sorun YOK. USB
-        // kullanılacaksa cihaz tipine göre KOŞULLU kapatılmalı (sonraki iş).
-        do {
-            try AudioManager.shared.setVoiceProcessingEnabled(true)
-            Log.line("[Audio] setVoiceProcessingEnabled(true) OK → isVoiceProcessingEnabled=\(AudioManager.shared.isVoiceProcessingEnabled)")
-        } catch {
-            Log.error("[Audio] setVoiceProcessingEnabled(true) THREW: \(error.localizedDescription) → VPIO açılamadı")
-        }
+        // mic hiç başlamaz → wake duyulmaz. Dahili mic+hoparlörde sorun YOK. Bu yüzden
+        // VPIO'yu cihaz tipine göre KOŞULLU açıyoruz (yalnız dahili) — başlangıçta
+        // mevcut giriş cihazına göre, sonradan cihaz değişiminde AudioDeviceSelector'da.
+        // Bkz. VoiceProcessingPolicy. Motor başlamadan ÖNCE ayarlanmalı (burası init).
+        VoiceProcessingPolicy.applyForCurrentInputDevice()
 
         // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel
         // alıcıyla (CandanTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
