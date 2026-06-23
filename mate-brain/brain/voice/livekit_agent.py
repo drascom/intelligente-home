@@ -312,9 +312,10 @@ class LiveKitAgent:
                     # gelmemiş). Doğrulama sonrası bu log kaldırılacak.
                     log.info("livekit agent: attrs=%r (participant=%s)",
                              attrs, getattr(participant, "identity", "?"))
-                    # Wake gate: utterance BAŞINDA uyanık mıydı? Bitişte değil başta
-                    # okunur → istemci hemen sonra uyusa bile yarış olmaz. Attribute
-                    # yoksa uyanık say (geri-uyum).
+                    # Wake gate (1/2): utterance BAŞINDA uyanık mıydı? Bitişte de
+                    # ayrıca doğrulanır (aşağıda `still_awake`) → başta stale awake=1
+                    # okunan, gerçekte uyku-sonrası başlamış söz bitişte elenir.
+                    # Attribute yoksa uyanık say (geri-uyum).
                     utterance_awake = attrs.get("candan.awake", "1") != "0"
                     engine_name, stt_host, stt_port = self.settings.resolve_stt_engine(
                         attrs.get("stt_engine")
@@ -378,12 +379,22 @@ class LiveKitAgent:
                 )
                 if ended:
                     session, stt = stt, None
+                    # Wake gate'i BİTİŞTE de doğrula. utterance BAŞINDA awake=1
+                    # görünse bile (istemci uykuya yeni geçmiş + attribute henüz
+                    # brain'e yayılmamış = stale read), söz BİTERKEN awake=0 ise
+                    # düşür → "uykuya geçince süren söz hâlâ cevaplanıyor" kuyruk
+                    # bug'ı kapanır. Meşru "uyan→konuş" turu güvende: istemci
+                    # konuşma boyunca uyanık kalır (listening/thinking/speaking
+                    # state'i 10sn idle-uyku sayacını iptal eder), bittiğinde de
+                    # awake=1; yalnız uyku-sonrası sızan utterance elenir.
+                    still_awake = self._attrs(participant).get("candan.awake", "1") != "0"
                     # LLM/TTS'e sert tavan: utterance işleme takılırsa (model/ağ)
                     # track tüketicisi kilitlenmesin → uyar ve döngüye devam et.
                     try:
                         await asyncio.wait_for(
                             self._handle_utterance(
-                                session, bytes(buf), participant, track, utterance_awake
+                                session, bytes(buf), participant, track,
+                                utterance_awake and still_awake,
                             ),
                             timeout=60.0,
                         )
