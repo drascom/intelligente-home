@@ -329,6 +329,16 @@ final class WakeCoordinator: ObservableObject {
         Task {
             do {
                 if enabled {
+                    // İZİN YARIŞI FIX: connectionChanged(true) → startWakeCapture →
+                    // setMicrophone, sunucunun JoinResponse'u local participant
+                    // permissions'ı doldurmadan ÖNCE ateşlenebiliyor. O an
+                    // permissions.canPublish=false (SDK default) → SDK yerel kontrolde
+                    // "does not have permission to publish" fırlatıp publish'i HİÇ
+                    // denemiyor (retry yok) → mic bir daha yayına girmiyor. İzin
+                    // gelene kadar (bağlı kaldığımız + niyet hâlâ "live" olduğu sürece)
+                    // kısa aralıklarla bekle, sonra publish et.
+                    try await waitForPublishPermission(lp)
+                    guard micShouldBeLive else { return } // bu sırada uyku/kapanma olduysa vazgeç
                     try await lp.setMicrophone(enabled: true)
                     Log.line("[Mic] published — brain duyar")
                 } else {
@@ -342,6 +352,20 @@ final class WakeCoordinator: ObservableObject {
                 Log.error("[Mic] setMicrophone(\(enabled)) HATA: \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Sunucu JoinResponse'u local participant izinlerini doldurana kadar
+    /// (`permissions.canPublish == true`) bekle. Bağlantı düşerse ya da publish
+    /// niyeti kalkarsa erken çıkar. ~5sn üst sınır (50 × 100ms) — izin normalde
+    /// bağlantıdan hemen sonra gelir; gelmiyorsa publish denenip gerçek hatayı loglar.
+    private func waitForPublishPermission(_ lp: LocalParticipant) async throws {
+        guard !lp.permissions.canPublish else { return }
+        for _ in 0 ..< 50 {
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            guard connected, micShouldBeLive else { return }
+            if lp.permissions.canPublish { return }
+        }
+        Log.line("[Mic] canPublish izni ~5sn'de gelmedi — yine de publish deneniyor")
     }
 
     /// Track beklenmedik şekilde yayına girerse (örn. `session.start()` bağlanınca
