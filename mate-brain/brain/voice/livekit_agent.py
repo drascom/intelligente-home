@@ -195,6 +195,9 @@ class LiveKitAgent:
         room = rtc.Room()
         # Uzak katılımcının ses track'i geldiğinde işlenmek üzere kuyruğa al.
         track_queue: asyncio.Queue = asyncio.Queue()
+        # Oda kopunca set edilir → tüketim döngüsünü YARIŞLA iptal etmek için
+        # (deadlock-proof reconnect; aşağıdaki asyncio.wait'e bak).
+        disconnected = asyncio.Event()
 
         @room.on("track_subscribed")
         def _on_track_subscribed(track, publication, participant):
@@ -206,7 +209,8 @@ class LiveKitAgent:
         @room.on("disconnected")
         def _on_disconnected(reason):
             log.warning("livekit agent: odadan koptu (%s)", reason)
-            track_queue.put_nowait(None)  # _session'ı uyandır → reconnect
+            disconnected.set()           # tüketim döngüsü yarışını bitir → iptal → reconnect
+            track_queue.put_nowait(None)  # yedek uyandırma (döngü kuyruktaysa)
             # KİLİT FİX (#6): ajan o an _consume_track içinde 'async for event in
             # stream' ile bekliyorsa, oda kopunca stream yield'i kesip ASKIDA kalır →
             # None hiç okunmaz, ConnectionError fırlatılmaz, reconnect olmaz. Aktif
@@ -266,22 +270,28 @@ class LiveKitAgent:
         self._poll_task = asyncio.create_task(self._poll_deliveries())
 
         try:
-            # Halihazırda odadaki uzak katılımcıların ses track'lerini de yakala
-            # (biz katılmadan önce abone olunmuş olabilir).
-            for participant in room.remote_participants.values():
-                if participant.identity == "assistant":
-                    continue
-                for pub in participant.track_publications.values():
-                    if pub.track is not None and pub.kind == rtc.TrackKind.KIND_AUDIO:
-                        track_queue.put_nowait((pub.track, participant))
-
-            while True:
-                item = await track_queue.get()
-                if item is None:
-                    raise ConnectionError("livekit room disconnected")
-                track, participant = item
-                # İlk insan track'ini tükenene dek işle (utterance döngüsü içeride).
-                await self._consume_track(rtc, track, participant)
+            # Tüketim döngüsünü ayrı task'ta çalıştır ve oda-kopuş event'iyle
+            # YARIŞTIR. Kopunca consume_task İPTAL edilir → _consume_track nerede
+            # takılırsa takılsın (async for / wait_for / _handle_utterance)
+            # CancelledError ile çözülür, finally'leri koşar, _session döner →
+            # run() yeniden bağlanır. Eski "None sentinel + ConnectionError" yolu
+            # döngü kuyruğu OKUMUYORken (ör. _handle_utterance içinde) deadlock
+            # olabiliyordu (oda kapalı kalıyordu) — bu yarış o deadlock'ı kökten bitirir.
+            consume_task = asyncio.create_task(self._consume_loop(rtc, room, track_queue))
+            disc_task = asyncio.create_task(disconnected.wait())
+            done, pending = await asyncio.wait(
+                {consume_task, disc_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for t in pending:
+                t.cancel()
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
+            if consume_task in done and not consume_task.cancelled():
+                exc = consume_task.exception()
+                if exc is not None:
+                    log.warning("livekit agent: tüketim döngüsü hatası (%r)", exc)
         finally:
             self.connected = False
             self._source = None
@@ -296,6 +306,24 @@ class LiveKitAgent:
                 await room.disconnect()
             except Exception:
                 pass
+
+    async def _consume_loop(self, rtc, room, track_queue: asyncio.Queue) -> None:
+        """İnsan ses track'lerini sırayla tüket. Oda kopunca _session bu task'ı
+        İPTAL eder → her await noktasında temiz çözülür (deadlock-proof reconnect)."""
+        # Biz katılmadan önce abone olunmuş mevcut uzak track'leri de yakala.
+        for participant in room.remote_participants.values():
+            if participant.identity == "assistant":
+                continue
+            for pub in participant.track_publications.values():
+                if pub.track is not None and pub.kind == rtc.TrackKind.KIND_AUDIO:
+                    track_queue.put_nowait((pub.track, participant))
+        while True:
+            item = await track_queue.get()
+            if item is None:
+                return  # disconnect sentinel (yedek; normalde event yarışı bitirir)
+            track, participant = item
+            # İlk insan track'ini tükenene dek işle (utterance döngüsü içeride).
+            await self._consume_track(rtc, track, participant)
 
     async def _consume_track(self, rtc, track, participant=None) -> None:
         """Bir uzak ses track'inden kareleri çek; RMS endpointing ile utterance
