@@ -132,10 +132,18 @@ final class WakeWordDetector: NSObject, ObservableObject {
                 }
             }
             if let error {
-                Log.error("[Wake] SFSpeech task hatası: \(error.localizedDescription)")
+                let msg = error.localizedDescription
+                // BEKLENEN durumlar — gerçek hata DEĞİL, loglamaya gerek yok:
+                //  • "No speech detected": wake dinleyici boştayken sessizlik penceresi
+                //    dolunca her re-arm'da döner (idle'da sürekli tekrarlar).
+                //  • "canceled/cancelled": rotate (50s) veya stop() tanımayı iptal edince.
+                let benign = msg.localizedCaseInsensitiveContains("No speech")
+                    || msg.localizedCaseInsensitiveContains("cancel")
+                if !benign {
+                    Log.error("[Wake] SFSpeech task hatası: \(msg)")
+                }
                 // macOS: SFSpeech, Siri/Dikte açık değilse hiç çalışmaz — rotate
                 // çözmez, kullanıcıyı sistem ayarına yönlendir.
-                let msg = error.localizedDescription
                 if msg.localizedCaseInsensitiveContains("dictation"),
                    msg.localizedCaseInsensitiveContains("disabled") {
                     Task { @MainActor in
