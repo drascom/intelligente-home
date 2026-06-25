@@ -26,6 +26,7 @@ enum NoiseFilter {
         "vpStrategyManager.mm",
         "Voice_Processor_Interface_Adapter",
         "Far_End_Voice_Proc_Node",
+        "getting headset info",          // AQMEIO_HAL: USB headset HAL açılırken zararsız sorgu
     ]
 
     private nonisolated(unsafe) static var installed = false
