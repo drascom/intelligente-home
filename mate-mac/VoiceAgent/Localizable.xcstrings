@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "“%@” bekleniyor" : {
+
+    },
     "agent.listening" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14,23 +17,6 @@
     },
     "Bağlanıyor…" : {
 
-    },
-    "control.reconnect" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reconnect"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Yeniden Bağlan"
-          }
-        }
-      }
     },
     "connect.connecting" : {
       "extractionState" : "manual",
@@ -76,6 +62,23 @@
         }
       }
     },
+    "control.reconnect" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnect"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeniden Bağlan"
+          }
+        }
+      }
+    },
     "error.ok" : {
       "localizations" : {
         "en" : {
@@ -107,6 +110,114 @@
       }
     },
     "Ses cihazı (mikrofon + hoparlör)" : {
+
+    },
+    "Ses cihazı seç" : {
+
+    },
+    "settings.close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapat"
+          }
+        }
+      }
+    },
+    "settings.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayarlar"
+          }
+        }
+      }
+    },
+    "settings.wake.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When on, the app waits until it hears the word; when off, it listens continuously."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Açıkken kelime duyulana kadar bekler; kapalıyken sürekli dinler."
+          }
+        }
+      }
+    },
+    "settings.wake.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake Word"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tetikleyici Kelime"
+          }
+        }
+      }
+    },
+    "settings.wake.toggle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use wake word"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tetikleyici kelime kullan"
+          }
+        }
+      }
+    },
+    "settings.wake.word" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trigger word (e.g. candan)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tetikleyici kelime (örn: candan)"
+          }
+        }
+      }
+    },
+    "Wake word başlatılamadı — mikrofon sürekli açık" : {
 
     },
     "warning.reconnecting" : {

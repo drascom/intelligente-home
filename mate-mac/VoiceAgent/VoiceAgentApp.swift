@@ -23,6 +23,9 @@ struct VoiceAgentApp: App {
     // independently of the macOS system default, and remembers the choice.
     @StateObject private var deviceStore = AudioDeviceStore()
 
+    // User settings (wake word, brain attributes, cues…), persisted to UserDefaults.
+    @StateObject private var settings = SettingsStore()
+
     init() {
         // Mute the harmless macOS 26 VPIO/CoreAudio stderr firehose so real logs
         // stay readable. Install before anything touches the audio engine.
@@ -57,6 +60,7 @@ struct VoiceAgentApp: App {
                 .environmentObject(session)
                 .environmentObject(localMedia)
                 .environmentObject(deviceStore)
+                .environmentObject(settings)
                 .environment(\.voiceEnabled, true)
                 .environment(\.textEnabled, true)
                 .task { deviceStore.start(localMedia: localMedia) }

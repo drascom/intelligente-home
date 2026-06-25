@@ -24,10 +24,6 @@ import SwiftUI
         @EnvironmentObject private var localMedia: LocalMedia
         @EnvironmentObject private var deviceStore: AudioDeviceStore
 
-        private var currentLabel: String {
-            deviceStore.preferredDeviceName ?? "Sistem varsayılanı"
-        }
-
         var body: some View {
             Menu {
                 // Read devices live (this closure re-evaluates on every open) so the
@@ -47,16 +43,16 @@ import SwiftUI
                     }
                 }
             } label: {
-                HStack(spacing: .grid) {
-                    Image(systemName: "chevron.down")
-                    Text(currentLabel)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .frame(height: 11 * .grid)
-                .font(.system(size: 12, weight: .semibold))
-                .contentShape(Rectangle())
+                // Dropdown tetikleyici: cihaz adı yerine sade bir mikrofon ikonu.
+                // (Soldaki mic-seviye göstergesi "microphone.fill" kullanıyor; bu
+                // farklı bir glyph — "mic.fill" — karışmasın diye.)
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 17, weight: .medium))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
             }
+            .menuIndicator(.hidden)
+            .accessibilityLabel(Text("Ses cihazı seç"))
         }
 
         /// Names present in BOTH the input and output device lists = devices that

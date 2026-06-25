@@ -4,12 +4,22 @@ import SwiftUI
 struct AppView: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var localMedia: LocalMedia
+    @EnvironmentObject private var settings: SettingsStore
+
+    /// Wake-word kapısı + geçiş sesleri + `candan.awake` attribute yayını.
+    @StateObject private var wakeCoordinator = WakeCoordinator()
 
     // Show the transcript/chat view by default; the user can still toggle it
     // off with the text-input button in the ControlBar.
     @State private var chat: Bool = true
+    @State private var showSettings = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
+
+    /// Bağlandığında + brain ayarları değiştiğinde attribute yeniden yayınlansın.
+    private var attributeSnapshot: String {
+        "\(session.isConnected)|\(settings.sttEngine)|\(settings.voice)|\(settings.language)"
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -22,6 +32,34 @@ struct AppView: View {
             errors()
         }
         .environment(\.namespace, namespace)
+        .overlay(alignment: .topTrailing) { settingsButton() }
+        .overlay(alignment: .top) {
+            if session.isConnected {
+                if let msg = wakeCoordinator.unavailableMessage {
+                    wakeUnavailableBanner(msg)
+                } else {
+                    wakeHint()
+                }
+            }
+        }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        // Brain ayarları + candan.awake TEK sözlükte birlikte gider (WakeCoordinator).
+        .task(id: attributeSnapshot) { wakeCoordinator.publishAttributes() }
+        .onAppear { wakeCoordinator.attach(session: session, settings: settings) }
+        .onChange(of: session.isConnected) { _, connected in
+            wakeCoordinator.connectionChanged(connected)
+        }
+        // session.start() bağlanınca mic'i otomatik publish eder; uyku modundaysak
+        // WakeCoordinator istenmeden yayınlanan track'i geri bırakır.
+        .onChange(of: localMedia.isMicrophoneEnabled) { _, enabled in
+            wakeCoordinator.microphoneStateChanged(enabled)
+        }
+        .onChange(of: session.agent.agentState) { _, state in
+            wakeCoordinator.agentStateChanged(state)
+        }
+        .onChange(of: settings.wakeWordEnabled) { _, _ in
+            wakeCoordinator.wakeWordEnabledChanged()
+        }
         .task { await autoConnect() }
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {
@@ -81,6 +119,67 @@ struct AppView: View {
             }
             try? await Task.sleep(for: .seconds(2))
         }
+    }
+
+    private func settingsButton() -> some View {
+        Button { showSettings = true } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 17))
+                .padding()
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.fg2)
+        .accessibilityLabel(Text("settings.title"))
+    }
+
+    /// Uyku modunda (wake bekliyor) küçük durum ipucu; tetikleyici kelimeyi hatırlatır.
+    @ViewBuilder
+    private func wakeHint() -> some View {
+        if wakeCoordinator.mode == .sleeping {
+            Text("“\(settings.wakeWord)” bekleniyor")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 2 * .grid)
+                .padding(.horizontal, 4 * .grid)
+                .background(Capsule().fill(.bg2))
+                .shimmering()
+                .padding(.top, 2 * .grid)
+                .transition(.blurReplace)
+        }
+    }
+
+    /// Wake başlatılamadığında (SFSpeech yok / Dikte kapalı / izin yok) nedeni öne
+    /// çıkar; bu durumda kapı devre dışıdır ve mikrofon SÜREKLİ açıktır.
+    private func wakeUnavailableBanner(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 2 * .grid) {
+            HStack(alignment: .firstTextBaseline, spacing: 2 * .grid) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Wake word başlatılamadı — mikrofon sürekli açık")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.fg1)
+                Spacer(minLength: 2 * .grid)
+                Button {
+                    wakeCoordinator.unavailableMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(3 * .grid)
+        .background(RoundedRectangle(cornerRadius: .cornerRadiusLarge).fill(.bg2))
+        .padding(.horizontal)
+        .padding(.top, 2 * .grid)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private func connecting() -> some View {

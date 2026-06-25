@@ -24,10 +24,11 @@ struct ControlBar: View {
                 audioControls()
                 flexibleSpacer()
             }
-            if textEnabled {
-                textInputButton()
+            #if os(macOS)
+                AudioDeviceSelector()
+                    .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
                 flexibleSpacer()
-            }
+            #endif
             reconnectButton()
             biggerSpacer()
         }
@@ -92,33 +93,9 @@ struct ControlBar: View {
                 .padding(.horizontal, 2 * .grid)
                 .contentShape(Rectangle())
             }
-            #if os(macOS)
-                separator()
-                AudioDeviceSelector()
-                    .frame(height: Constants.buttonHeight)
-            #endif
             Spacer()
         }
         .frame(width: Constants.buttonWidth)
-    }
-
-    private func textInputButton() -> some View {
-        Button {
-            chat.toggle()
-        } label: {
-            Image(systemName: "ellipsis.message.fill")
-                .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(
-            ControlBarButtonStyle(
-                isToggled: chat,
-                foregroundColor: .fg1,
-                backgroundColor: .bg2,
-                borderColor: .separator1
-            )
-        )
-        .disabled(!session.agent.isConnected)
     }
 
     /// Reconnect / refresh button.
