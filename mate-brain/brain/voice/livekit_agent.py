@@ -50,12 +50,11 @@ MAX_UTTERANCE_S = 12.0     # utterance başına sert tavan
 
 # Smart Turn v3 endpointing (turn_detector AÇIKKEN sessizlik eşiğinin yerini alır):
 # konuşmacının gerçekten bitip bitmediğini sesten tahmin eder → cümle ortası
-# duraksamada (Türkçe fiil-sonu) kesmez. Akış: bu kadar son-sessizlik birikince
-# modele İLK kez sorulur; "devam" derse her TURN_RECHECK_S ek sessizlikte yeniden
-# sorulur; model ısrarla "devam" dese bile TURN_MAX_SILENCE_S'te zorla biter.
-TURN_TRIGGER_SILENCE_S = 0.5   # ilk tur-kontrolü için gereken son-sessizlik (snappy)
-TURN_RECHECK_S = 0.35          # "devam" sonrası yeniden-kontrol aralığı (ek sessizlik)
-TURN_MAX_SILENCE_S = 2.5       # güvenlik tavanı: bu sessizlikte her hâlükârda bitir
+# duraksamada (Türkçe fiil-sonu) kesmez. Akış: `turn_min_endpointing_delay` kadar
+# son-sessizlik birikince modele İLK kez sorulur; "devam" derse her
+# `turn_recheck_interval` ek sessizlikte yeniden sorulur; model ısrarla "devam"
+# dese bile `turn_max_endpointing_delay`'de zorla biter. Eşik+gecikmeler config'ten
+# ayarlanabilir (Settings.turn_min/max_endpointing_delay, turn_recheck_interval).
 # Barge-in: uçuştaki TTS cevabını kesmek için gereken SÜREKLİ (ardışık) konuşma
 # süresi. Tek bir gürültü/eko karesi cevabı kesmesin diye eşik (özellikle uzun
 # cevaplarda gürültülü ortamda kesilme oluyordu). VPIO eko'yu zaten bastırır; bu da
@@ -120,6 +119,10 @@ class LiveKitAgent:
         # data-channel'dan HIZLI gelir → utterance başında awake okunduğunda cache
         # zaten '1' olur ve start-gate (awake=0) tek başına "candan"ı yakalayamaz.
         self._wake_pending = False
+        # Barge-in (araya girme) izni: agent konuşurken kullanıcı sesi TTS'i kessin mi.
+        # İstemci `candan.barge_in` attribute'u ile canlı kontrol eder ('0'=KAPALI →
+        # kesme yok, '1'/yok=AÇIK). _on_attrs_changed event'i ile güncellenir.
+        self._barge_in_enabled = True
         # Smart Turn v3 (ses-tabanlı EOU): açıksa _consume_track endpointing kararını
         # sabit sessizlik zamanlayıcısı yerine modele bağlar. Kapalıysa None →
         # eski saf-sessizlik davranışı (SILENCE_AFTER_S).
@@ -248,13 +251,18 @@ class LiveKitAgent:
                 prev = self._attr_cache.get(ident, {}).get("candan.awake")
                 if changed.get("candan.awake") == "1" and prev == "0":
                     self._wake_pending = True
+                # Barge-in izni: '0' → agent konuşurken kesme YOK; '1'/yok → AÇIK.
+                if "candan.barge_in" in changed:
+                    self._barge_in_enabled = changed["candan.barge_in"] != "0"
                 self._attr_cache.setdefault(ident, {}).update(changed)
             except Exception:
                 pass
             log.info("livekit agent: attrs değişti (%s): %r", ident, changed_attributes)
 
         # Yeni oturum → eski önbelleği temizle (kimlikler/ayarlar bayatlamasın).
+        # Barge-in iznini de varsayılana (AÇIK) al; istemci connect'te yeniden yayınlar.
         self._attr_cache = {}
+        self._barge_in_enabled = True
         # Aktif AudioStream — kopunca _on_disconnected aclose etsin diye tutulur.
         self._active_stream = None
 
@@ -435,8 +443,10 @@ class LiveKitAgent:
                     # Barge-in: uçuştaki TTS cevabını kes — ama TEK karede değil,
                     # SÜREKLİ konuşma eşiği (BARGE_IN_MIN_S) aşılınca. Gürültülü
                     # ortamda kısa blip/eko cevabı (özellikle uzun cevabı) kesmesin;
-                    # gerçek (sürekli) konuşma yine keser.
-                    if (consec_speech_s >= BARGE_IN_MIN_S
+                    # gerçek (sürekli) konuşma yine keser. İstemci barge-in'i KAPATTIYSA
+                    # (candan.barge_in='0') hiç kesme: agent cevabını tamamlar.
+                    if (self._barge_in_enabled
+                            and consec_speech_s >= BARGE_IN_MIN_S
                             and self._tts_task and not self._tts_task.done()):
                         self._tts_task.cancel()
 
@@ -446,18 +456,19 @@ class LiveKitAgent:
                 #  • smart-turn KAPALI → eski saf-sessizlik eşiği (SILENCE_AFTER_S).
                 #  • smart-turn AÇIK → yeterli son-sessizlik birikince modele sor;
                 #    "tamam" derse bitir, "devam" derse bekle (re-check), ama
-                #    TURN_MAX_SILENCE_S güvenlik tavanında her hâlükârda bitir.
+                #    turn_max_endpointing_delay güvenlik tavanında her hâlükârda bitir.
                 if utterance_s >= MAX_UTTERANCE_S:
                     ended = True
                 elif not speech_seen:
                     ended = False
                 elif self.turn_detector is None:
                     ended = silence_s >= SILENCE_AFTER_S
-                elif silence_s >= TURN_MAX_SILENCE_S:
+                elif silence_s >= self.settings.turn_max_endpointing_delay:
                     ended = True
-                elif silence_s >= TURN_TRIGGER_SILENCE_S and (
+                elif silence_s >= self.settings.turn_min_endpointing_delay and (
                     last_turn_check_s == 0.0
-                    or silence_s - last_turn_check_s >= TURN_RECHECK_S
+                    or silence_s - last_turn_check_s
+                    >= self.settings.turn_recheck_interval
                 ):
                     last_turn_check_s = silence_s
                     ended = await self.turn_detector.is_complete(bytes(buf))

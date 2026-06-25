@@ -116,6 +116,18 @@ class Settings(BaseSettings):
     turn_detector_file: str = "smart-turn-v3.2-cpu.onnx"
     # Tahmin eşiği: p >= eşik → tur tamamlandı. Model varsayılanı 0.5.
     turn_detector_threshold: float = 0.5
+    # Endpointing sabırı (smart-turn AÇIKKEN). Kullanıcı tek bir uzun düşünceyi
+    # parça parça söyleyip aralarda duraksıyor ("Sana bir şey söyleyeyim… sormak
+    # istiyorum…"); bir parça tam-cümle gibi dursa bile sıra kapanmamalı.
+    # min: tur "tamam" sayılmadan önce gereken son-sessizlik. Mid-düşünce
+    #   duraksamaları genelde bundan KISA → kullanıcı devam edince sessizlik sıfırlanır
+    #   ve sıra hiç kapanmaz. SABIRLI ol (0.5 çok erkendi, parçaları kesiyordu).
+    # max: model ısrarla "devam" dese bile bu kadar son-sessizlikte zorla bitir.
+    # recheck: "devam" kararından sonra modele yeniden-sorma aralığı (ek sessizlik).
+    # Hepsi env ile ayarlanabilir (TURN_MIN_ENDPOINTING_DELAY vb.).
+    turn_min_endpointing_delay: float = 1.6
+    turn_max_endpointing_delay: float = 6.0
+    turn_recheck_interval: float = 0.4
 
     def resolve_stt_engine(self, engine: str | None) -> tuple[str, str, int]:
         """(name, host, port) çöz. Bilinmeyen/eksik motor → varsayılan (whisper).
