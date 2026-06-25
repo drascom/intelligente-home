@@ -107,9 +107,11 @@ class Settings(BaseSettings):
     # bitirmediğini utterance sesinden tahmin eder → cümle ortası duraksamada
     # (özellikle Türkçe fiil-sonu) kullanıcıyı kesmez, tam düşüncede hemen biter.
     # Model: pipecat-ai/smart-turn-v3 (Whisper-tiny + lineer kafa, ~8MB ONNX, CPU,
-    # BSD-2). Kapalıyken (varsayılan) eski saf-sessizlik endpointing kullanılır.
+    # BSD-2). VARSAYILAN AÇIK: model ilk utterance'ta hf_hub'dan tembel indirilip
+    # cache'lenir (~8MB); fail-open olduğu için indirme/yükleme hatasında otomatik
+    # eski saf-sessizlik endpointing'e düşer. TURN_DETECTOR_ENABLED=0 ile kapatılır.
     # Deps (brain venv): onnxruntime, transformers, huggingface_hub.
-    turn_detector_enabled: bool = False
+    turn_detector_enabled: bool = True
     turn_detector_repo: str = "pipecat-ai/smart-turn-v3"
     turn_detector_file: str = "smart-turn-v3.2-cpu.onnx"
     # Tahmin eşiği: p >= eşik → tur tamamlandı. Model varsayılanı 0.5.
