@@ -5,7 +5,9 @@ struct AppView: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var localMedia: LocalMedia
 
-    @State private var chat: Bool = false
+    // Show the transcript/chat view by default; the user can still toggle it
+    // off with the text-input button in the ControlBar.
+    @State private var chat: Bool = true
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -14,12 +16,13 @@ struct AppView: View {
             if session.isConnected {
                 interactions()
             } else {
-                start()
+                connecting()
             }
 
             errors()
         }
         .environment(\.namespace, namespace)
+        .task { await autoConnect() }
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {
                 if session.isConnected {
@@ -64,11 +67,30 @@ struct AppView: View {
         #endif
     }
 
-    private func start() -> some View {
-        StartView()
-            .onAppear {
-                chat = false
+    /// Auto-connect: keep a live connection to the room without a manual Start
+    /// button. The SDK heals transient drops itself (`.reconnecting`); this loop
+    /// covers the cases it can't — initial connect, and a full disconnect
+    /// (room closed / agent gone) — by re-calling `start()` until connected.
+    /// `start()` no-ops while already connecting/connected, so the 2s poll is
+    /// cheap and self-healing.
+    private func autoConnect() async {
+        while !Task.isCancelled {
+            if !session.isConnected {
+                if session.error != nil { session.dismissError() }
+                await session.start()
             }
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
+    private func connecting() -> some View {
+        VStack(spacing: 4 * .grid) {
+            Spinner()
+            Text("Bağlanıyor…")
+                .font(.system(size: 13))
+                .foregroundStyle(.fg3)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder

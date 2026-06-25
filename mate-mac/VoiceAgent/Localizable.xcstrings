@@ -12,6 +12,26 @@
         }
       }
     },
+    "Bağlanıyor…" : {
+
+    },
+    "control.reconnect" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnect"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeniden Bağlan"
+          }
+        }
+      }
+    },
     "connect.connecting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -85,6 +105,9 @@
           }
         }
       }
+    },
+    "Ses cihazı (mikrofon + hoparlör)" : {
+
     },
     "warning.reconnecting" : {
       "extractionState" : "manual",

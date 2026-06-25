@@ -63,4 +63,7 @@ fastlane/test_output
 
 .env.xcconfig
 
+# Local-only secrets (LiveKit server URL + participant token)
+VoiceAgent/Secrets.swift
+
 .DS_Store

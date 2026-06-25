@@ -6,40 +6,60 @@ struct VoiceAgentApp: App {
     // MARK: - Self-hosted server connection (mate / candan assistant)
     //
     // We bypass the LiveKit Cloud sandbox and connect directly to our
-    // self-hosted LiveKit server with a manually-minted token.
+    // self-hosted LiveKit server (oracle-stage) with a manually-minted token.
     //
-    // Server URL + participant token must NOT be hardcoded here. Mint a token
-    // on the server and supply it locally (e.g. a gitignored Secrets.swift,
-    // mirroring mate-livekit-mac):
-    //   ssh root@192.168.0.150 '/usr/local/bin/lk token create \
-    //     --api-key devkey --api-secret <LIVEKIT_API_SECRET on vox> \
-    //     --join --room mate-demo --identity starter-ios --valid-for 24h'
+    // Server URL + participant token live in a gitignored `Secrets.swift`.
+    // See that file for how to mint a fresh token on oracle-stage.
     //
     // To revert to the LiveKit Cloud sandbox, replace the `session`
     // initializer with the original SandboxTokenSource version (see git
     // history / README) and supply LIVEKIT_SANDBOX_ID via .env.xcconfig.
 
-    private static let selfHostedServerURL = URL(string: "ws://192.168.0.150:7880")!
-
-    private static let selfHostedToken = "PASTE_TOKEN_HERE"
-
     // Voice-only assistant: no screen share / broadcast capture configured.
-    private let session = Session(
-        tokenSource: LiteralTokenSource(
-            serverURL: Self.selfHostedServerURL,
-            participantToken: Self.selfHostedToken,
-            participantName: "starter-ios",
-            roomName: "mate-demo"
+    private let session: Session
+    private let localMedia: LocalMedia
+
+    // Pins the app's audio input/output to the user's chosen device,
+    // independently of the macOS system default, and remembers the choice.
+    @StateObject private var deviceStore = AudioDeviceStore()
+
+    init() {
+        // Mute the harmless macOS 26 VPIO/CoreAudio stderr firehose so real logs
+        // stay readable. Install before anything touches the audio engine.
+        #if os(macOS)
+        AudioLogNoiseFilter.install()
+        #endif
+
+        // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel
+        // alıcıyla (CandanTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
+        // hem asistan satırını "assistant" kimliğinden yollar; SDK'nın varsayılan
+        // receiver'ı gönderene göre atfettiği için kullanıcı sözünü yanlış işaretler.
+        // Varsayılan transcription receiver'ı bizimkiyle DEĞİŞTİRİYORUZ (aynı topic'e
+        // iki kayıt çakışır). Metin gönderme (senders) varsayılan kalır.
+        let room = Room()
+        let session = Session(
+            tokenSource: LiteralTokenSource(
+                serverURL: URL(string: Secrets.livekitServerURL)!,
+                participantToken: Secrets.livekitToken,
+                participantName: "mac-client",
+                roomName: "mate-demo"
+            ),
+            options: SessionOptions(room: room),
+            receivers: [CandanTranscriptionReceiver(room: room)]
         )
-    )
+        self.session = session
+        localMedia = LocalMedia(session: session)
+    }
 
     var body: some Scene {
         WindowGroup {
             AppView()
                 .environmentObject(session)
-                .environmentObject(LocalMedia(session: session))
+                .environmentObject(localMedia)
+                .environmentObject(deviceStore)
                 .environment(\.voiceEnabled, true)
                 .environment(\.textEnabled, true)
+                .task { deviceStore.start(localMedia: localMedia) }
         }
         #if os(macOS)
         .defaultSize(width: 900, height: 900)

@@ -28,7 +28,7 @@ struct ControlBar: View {
                 textInputButton()
                 flexibleSpacer()
             }
-            disconnectButton()
+            reconnectButton()
             biggerSpacer()
         }
         .buttonStyle(
@@ -121,22 +121,31 @@ struct ControlBar: View {
         .disabled(!session.agent.isConnected)
     }
 
-    private func disconnectButton() -> some View {
+    /// Reconnect / refresh button.
+    ///
+    /// The app auto-connects and the `autoConnect` loop in ``AppView`` re-dials
+    /// the room as soon as the session drops, so a manual "disconnect" only ever
+    /// produces an immediate reconnect. We surface that real behaviour here: the
+    /// action still tears down the session (`session.end()` + clear history), and
+    /// the auto-connect loop brings it right back — i.e. a refresh.
+    private func reconnectButton() -> some View {
         AsyncButton {
             await session.end()
             session.restoreMessageHistory([])
         } label: {
-            Image(systemName: "phone.down.fill")
+            Image(systemName: "arrow.clockwise")
                 .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
                 .contentShape(Rectangle())
         }
         .buttonStyle(
             ControlBarButtonStyle(
-                foregroundColor: .fgSerious,
-                backgroundColor: .bgSerious,
-                borderColor: .separatorSerious
+                foregroundColor: .fg1,
+                backgroundColor: .bg2,
+                borderColor: .separator1
             )
         )
+        .help("control.reconnect")
+        .accessibilityLabel(Text("control.reconnect"))
         .disabled(!session.isConnected)
     }
 }
