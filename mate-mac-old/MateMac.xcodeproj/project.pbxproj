@@ -1,0 +1,517 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		057E6A375D824629DC3517BA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC42DF9AE4E1D04081255B3 /* SettingsView.swift */; };
+		0ACB93A7DA7F3ABE535D4A17 /* MateApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A641A85FF88121532F26A24 /* MateApp.swift */; };
+		15BE5A2BCB0FAC9992BF6375 /* mdf.c in Sources */ = {isa = PBXBuildFile; fileRef = 8AB1FF64B86D47EAA31D6179 /* mdf.c */; };
+		1B9ADA049340602977DB86A1 /* preprocess.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DF430B3870CEC679972A3F0 /* preprocess.c */; };
+		1C5425F49B97C6729C50F6CD /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E504C072EA6239819FC721 /* ConversationManager.swift */; };
+		1DC6CCE3C726585959DB8A76 /* EnrollmentRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C6B76FD1AE611D76D95297 /* EnrollmentRecorder.swift */; };
+		2C37928FD7FC0F73F9890447 /* EnrollmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C8907571EB93BACBF43F21 /* EnrollmentView.swift */; };
+		38C2701C62148E122350DD93 /* EchoCanceller.swift in Sources */ = {isa = PBXBuildFile; fileRef = A899F6B668C6044BAFFDA2C8 /* EchoCanceller.swift */; };
+		40A3E08C193A6D5CAFFE1E46 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D082BBE2DF7492F7F0C98B /* Log.swift */; };
+		427589859870E98B20E1AFE0 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67779FA3D18AA4AD28087257 /* APIClient.swift */; };
+		43BBA014B868BD3856CC1B45 /* RealtimeBridgeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE091645D58295BC5BFE73BA /* RealtimeBridgeClient.swift */; };
+		565B167083D2FB268D0D3F9B /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E0A28A28BBF080D065BA24 /* OrbView.swift */; };
+		5E0E982CDD31B5738E1A6AFF /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4105F46289FA49530549E31A /* PlatformCompat.swift */; };
+		675373B5256AAD2C83DD4835 /* CueSounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA2E7D99E6116DFEC0AEBD2 /* CueSounds.swift */; };
+		7576862675682D343514CE01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6CF0220EC4C449A5932BB9F3 /* Assets.xcassets */; };
+		7E1C9B0C601D1C5A4D3DB599 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40C00AC0363ED8ADFC1DBF2A /* ContentView.swift */; };
+		840EDA81496A80E940AAAB41 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4FFFABAE3CB5B787EF523D /* AudioRecorder.swift */; };
+		86BFEB9964E6F404856CAB2D /* BarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A280DBE0CC2792081433B643 /* BarsView.swift */; };
+		93BD31786799C19E90536972 /* kiss_fftr.c in Sources */ = {isa = PBXBuildFile; fileRef = F36B041A87D0213ABFF23D24 /* kiss_fftr.c */; };
+		95020981A044E61A3BA0E346 /* MacAudioDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3683D6C6E826179BAE60EAA2 /* MacAudioDevices.swift */; };
+		96321997ED452527C6AEFC5B /* filterbank.c in Sources */ = {isa = PBXBuildFile; fileRef = AA27F7C1C2BF2E57A14F4BA5 /* filterbank.c */; };
+		9E1FD08DF4C03B336912199C /* AudioPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D209D7A49A46C09755E90B27 /* AudioPipeline.swift */; };
+		A4DEDF1700F43A997E415755 /* EnrollmentWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF0AA3CC6867A4101CD6530 /* EnrollmentWizardView.swift */; };
+		A5B3C45964F4DDA5B1063156 /* VPIOEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0E615F948FBD4DC3E22BF9 /* VPIOEngine.swift */; };
+		AF61588C0DCF90965E4F42CE /* fftwrap.c in Sources */ = {isa = PBXBuildFile; fileRef = 957B7F36903D87BE88F4B8B5 /* fftwrap.c */; };
+		B1B07D1038BF33CD7B273D0A /* kiss_fft.c in Sources */ = {isa = PBXBuildFile; fileRef = 5451989633B977F03D66F82D /* kiss_fft.c */; };
+		C7E317692B4ADF990534EAEA /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A869F3EC3D7E63897AC20A06 /* Settings.swift */; };
+		E9D26E86EA99E690588362EE /* OnDeviceSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3F54D6BCFA642DC6A50558 /* OnDeviceSpeech.swift */; };
+		F859CD48CB4790AE5B97BAAE /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4BE387B2802BA14C9C8D1F /* AudioPlayer.swift */; };
+		F913E1BE75AB4BC93DF0CF84 /* WakeWordDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000D30ACD06B7572786973AC /* WakeWordDetector.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		000D30ACD06B7572786973AC /* WakeWordDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeWordDetector.swift; sourceTree = "<group>"; };
+		00C8907571EB93BACBF43F21 /* EnrollmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrollmentView.swift; sourceTree = "<group>"; };
+		04832D2530670C48943E2E8A /* MateMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MateMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		07B63987D730A8DCC82C8CBF /* math_approx.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = math_approx.h; sourceTree = "<group>"; };
+		2F4BE387B2802BA14C9C8D1F /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		31A3096C04EADF95F5A2B33D /* speexdsp_types.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = speexdsp_types.h; sourceTree = "<group>"; };
+		334176A38C52C514170065ED /* resample_sse.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = resample_sse.h; sourceTree = "<group>"; };
+		3683D6C6E826179BAE60EAA2 /* MacAudioDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAudioDevices.swift; sourceTree = "<group>"; };
+		3DF430B3870CEC679972A3F0 /* preprocess.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = preprocess.c; sourceTree = "<group>"; };
+		400AEBF7CC286967BE399974 /* os_support.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = os_support.h; sourceTree = "<group>"; };
+		40C00AC0363ED8ADFC1DBF2A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4105F46289FA49530549E31A /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
+		4CEC8EA2BA14604515319CCC /* fixed_debug.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fixed_debug.h; sourceTree = "<group>"; };
+		4F4FFFABAE3CB5B787EF523D /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		5298A15F5C930095E0C21861 /* smallft.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = smallft.h; sourceTree = "<group>"; };
+		5451989633B977F03D66F82D /* kiss_fft.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kiss_fft.c; sourceTree = "<group>"; };
+		559E824AAAB63B86445B0C1A /* misc_bfin.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = misc_bfin.h; sourceTree = "<group>"; };
+		594B0C1306F2F3872051375C /* vorbis_psy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vorbis_psy.h; sourceTree = "<group>"; };
+		59C40255E861424232E9D500 /* pseudofloat.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pseudofloat.h; sourceTree = "<group>"; };
+		5A087A53C8C3DB2CF8806457 /* speex_preprocess.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = speex_preprocess.h; sourceTree = "<group>"; };
+		5EC360B59997E2FF12071217 /* fixed_bfin.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fixed_bfin.h; sourceTree = "<group>"; };
+		5F08D659368C4FD2EA35AC32 /* bfin.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bfin.h; sourceTree = "<group>"; };
+		61D082BBE2DF7492F7F0C98B /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
+		629ECCDAB8EC0F99151C0253 /* arch.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = arch.h; sourceTree = "<group>"; };
+		62C8E88EB7F7DBB678C60420 /* resample_neon.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = resample_neon.h; sourceTree = "<group>"; };
+		67779FA3D18AA4AD28087257 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		6A2A2FA46D999AC94B122778 /* fixed_arm5e.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fixed_arm5e.h; sourceTree = "<group>"; };
+		6CF0220EC4C449A5932BB9F3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6EA2E7D99E6116DFEC0AEBD2 /* CueSounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueSounds.swift; sourceTree = "<group>"; };
+		75B108735345B8376CD167E3 /* speex_echo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = speex_echo.h; sourceTree = "<group>"; };
+		7A641A85FF88121532F26A24 /* MateApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MateApp.swift; sourceTree = "<group>"; };
+		82E0A28A28BBF080D065BA24 /* OrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbView.swift; sourceTree = "<group>"; };
+		84DB34716C160701DA6EDC11 /* fftwrap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fftwrap.h; sourceTree = "<group>"; };
+		8AB1FF64B86D47EAA31D6179 /* mdf.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mdf.c; sourceTree = "<group>"; };
+		957B7F36903D87BE88F4B8B5 /* fftwrap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fftwrap.c; sourceTree = "<group>"; };
+		9C9420CFC386BD2936CD6792 /* _kiss_fft_guts.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = _kiss_fft_guts.h; sourceTree = "<group>"; };
+		A1E504C072EA6239819FC721 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
+		A280DBE0CC2792081433B643 /* BarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarsView.swift; sourceTree = "<group>"; };
+		A869F3EC3D7E63897AC20A06 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		A899F6B668C6044BAFFDA2C8 /* EchoCanceller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoCanceller.swift; sourceTree = "<group>"; };
+		AA27F7C1C2BF2E57A14F4BA5 /* filterbank.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = filterbank.c; sourceTree = "<group>"; };
+		B4C6B76FD1AE611D76D95297 /* EnrollmentRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrollmentRecorder.swift; sourceTree = "<group>"; };
+		BC3F54D6BCFA642DC6A50558 /* OnDeviceSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSpeech.swift; sourceTree = "<group>"; };
+		BF0E615F948FBD4DC3E22BF9 /* VPIOEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPIOEngine.swift; sourceTree = "<group>"; };
+		C0A33A5B314E60F66AB226E6 /* fixed_generic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fixed_generic.h; sourceTree = "<group>"; };
+		CE091645D58295BC5BFE73BA /* RealtimeBridgeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeBridgeClient.swift; sourceTree = "<group>"; };
+		D209D7A49A46C09755E90B27 /* AudioPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPipeline.swift; sourceTree = "<group>"; };
+		D384545E4357DC7008E25367 /* Mate-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Mate-Bridging-Header.h"; sourceTree = "<group>"; };
+		DB8C5F4F358F54256F774D60 /* fixed_arm4.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fixed_arm4.h; sourceTree = "<group>"; };
+		DC2AA4570D1C9C6240367BD2 /* filterbank.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = filterbank.h; sourceTree = "<group>"; };
+		DCCC3788AA170AD50B790D83 /* kiss_fft.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kiss_fft.h; sourceTree = "<group>"; };
+		DFF0AA3CC6867A4101CD6530 /* EnrollmentWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrollmentWizardView.swift; sourceTree = "<group>"; };
+		EFC42DF9AE4E1D04081255B3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F11E594D13BEC47C4E8345E7 /* config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = config.h; sourceTree = "<group>"; };
+		F36B041A87D0213ABFF23D24 /* kiss_fftr.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kiss_fftr.c; sourceTree = "<group>"; };
+		F9D6692BEA5DA0EFBF5F45AC /* kiss_fftr.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kiss_fftr.h; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		3E1B635962530ED80CCDFA50 /* speex */ = {
+			isa = PBXGroup;
+			children = (
+				75B108735345B8376CD167E3 /* speex_echo.h */,
+				5A087A53C8C3DB2CF8806457 /* speex_preprocess.h */,
+				31A3096C04EADF95F5A2B33D /* speexdsp_types.h */,
+			);
+			path = speex;
+			sourceTree = "<group>";
+		};
+		482FACCA085DFFA50A055269 /* speexdsp */ = {
+			isa = PBXGroup;
+			children = (
+				9C9420CFC386BD2936CD6792 /* _kiss_fft_guts.h */,
+				629ECCDAB8EC0F99151C0253 /* arch.h */,
+				5F08D659368C4FD2EA35AC32 /* bfin.h */,
+				F11E594D13BEC47C4E8345E7 /* config.h */,
+				957B7F36903D87BE88F4B8B5 /* fftwrap.c */,
+				84DB34716C160701DA6EDC11 /* fftwrap.h */,
+				AA27F7C1C2BF2E57A14F4BA5 /* filterbank.c */,
+				DC2AA4570D1C9C6240367BD2 /* filterbank.h */,
+				DB8C5F4F358F54256F774D60 /* fixed_arm4.h */,
+				6A2A2FA46D999AC94B122778 /* fixed_arm5e.h */,
+				5EC360B59997E2FF12071217 /* fixed_bfin.h */,
+				4CEC8EA2BA14604515319CCC /* fixed_debug.h */,
+				C0A33A5B314E60F66AB226E6 /* fixed_generic.h */,
+				5451989633B977F03D66F82D /* kiss_fft.c */,
+				DCCC3788AA170AD50B790D83 /* kiss_fft.h */,
+				F36B041A87D0213ABFF23D24 /* kiss_fftr.c */,
+				F9D6692BEA5DA0EFBF5F45AC /* kiss_fftr.h */,
+				07B63987D730A8DCC82C8CBF /* math_approx.h */,
+				8AB1FF64B86D47EAA31D6179 /* mdf.c */,
+				559E824AAAB63B86445B0C1A /* misc_bfin.h */,
+				400AEBF7CC286967BE399974 /* os_support.h */,
+				3DF430B3870CEC679972A3F0 /* preprocess.c */,
+				59C40255E861424232E9D500 /* pseudofloat.h */,
+				62C8E88EB7F7DBB678C60420 /* resample_neon.h */,
+				334176A38C52C514170065ED /* resample_sse.h */,
+				5298A15F5C930095E0C21861 /* smallft.h */,
+				594B0C1306F2F3872051375C /* vorbis_psy.h */,
+				3E1B635962530ED80CCDFA50 /* speex */,
+			);
+			path = speexdsp;
+			sourceTree = "<group>";
+		};
+		9F984FBD5C1B67FAD61F869C /* Mate */ = {
+			isa = PBXGroup;
+			children = (
+				67779FA3D18AA4AD28087257 /* APIClient.swift */,
+				6CF0220EC4C449A5932BB9F3 /* Assets.xcassets */,
+				D209D7A49A46C09755E90B27 /* AudioPipeline.swift */,
+				2F4BE387B2802BA14C9C8D1F /* AudioPlayer.swift */,
+				4F4FFFABAE3CB5B787EF523D /* AudioRecorder.swift */,
+				40C00AC0363ED8ADFC1DBF2A /* ContentView.swift */,
+				A1E504C072EA6239819FC721 /* ConversationManager.swift */,
+				6EA2E7D99E6116DFEC0AEBD2 /* CueSounds.swift */,
+				A899F6B668C6044BAFFDA2C8 /* EchoCanceller.swift */,
+				B4C6B76FD1AE611D76D95297 /* EnrollmentRecorder.swift */,
+				00C8907571EB93BACBF43F21 /* EnrollmentView.swift */,
+				DFF0AA3CC6867A4101CD6530 /* EnrollmentWizardView.swift */,
+				61D082BBE2DF7492F7F0C98B /* Log.swift */,
+				3683D6C6E826179BAE60EAA2 /* MacAudioDevices.swift */,
+				D384545E4357DC7008E25367 /* Mate-Bridging-Header.h */,
+				7A641A85FF88121532F26A24 /* MateApp.swift */,
+				BC3F54D6BCFA642DC6A50558 /* OnDeviceSpeech.swift */,
+				4105F46289FA49530549E31A /* PlatformCompat.swift */,
+				CE091645D58295BC5BFE73BA /* RealtimeBridgeClient.swift */,
+				A869F3EC3D7E63897AC20A06 /* Settings.swift */,
+				EFC42DF9AE4E1D04081255B3 /* SettingsView.swift */,
+				BF0E615F948FBD4DC3E22BF9 /* VPIOEngine.swift */,
+				000D30ACD06B7572786973AC /* WakeWordDetector.swift */,
+				482FACCA085DFFA50A055269 /* speexdsp */,
+				ABFB54D459371D4282461D21 /* Views */,
+			);
+			path = Mate;
+			sourceTree = "<group>";
+		};
+		A7651C8A7484FB6BA0519C6A = {
+			isa = PBXGroup;
+			children = (
+				9F984FBD5C1B67FAD61F869C /* Mate */,
+				C463FF31361BA6D4977DFE8C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		ABFB54D459371D4282461D21 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A280DBE0CC2792081433B643 /* BarsView.swift */,
+				82E0A28A28BBF080D065BA24 /* OrbView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		C463FF31361BA6D4977DFE8C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				04832D2530670C48943E2E8A /* MateMac.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D52D082F2A77E755CD702CA7 /* MateMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4FD528EBDEA8222075C708B2 /* Build configuration list for PBXNativeTarget "MateMac" */;
+			buildPhases = (
+				AC6798B3907FC0B475A54A3C /* Sources */,
+				310A61CE32AE7145E46C951A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MateMac;
+			packageProductDependencies = (
+			);
+			productName = MateMac;
+			productReference = 04832D2530670C48943E2E8A /* MateMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		624FC5D114A14B75F854CB8C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					D52D082F2A77E755CD702CA7 = {
+						DevelopmentTeam = 59P494J56R;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 04E7F092420CD3D54966C23C /* Build configuration list for PBXProject "MateMac" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = A7651C8A7484FB6BA0519C6A;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C463FF31361BA6D4977DFE8C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D52D082F2A77E755CD702CA7 /* MateMac */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		310A61CE32AE7145E46C951A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7576862675682D343514CE01 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AC6798B3907FC0B475A54A3C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				427589859870E98B20E1AFE0 /* APIClient.swift in Sources */,
+				9E1FD08DF4C03B336912199C /* AudioPipeline.swift in Sources */,
+				F859CD48CB4790AE5B97BAAE /* AudioPlayer.swift in Sources */,
+				840EDA81496A80E940AAAB41 /* AudioRecorder.swift in Sources */,
+				86BFEB9964E6F404856CAB2D /* BarsView.swift in Sources */,
+				7E1C9B0C601D1C5A4D3DB599 /* ContentView.swift in Sources */,
+				1C5425F49B97C6729C50F6CD /* ConversationManager.swift in Sources */,
+				675373B5256AAD2C83DD4835 /* CueSounds.swift in Sources */,
+				38C2701C62148E122350DD93 /* EchoCanceller.swift in Sources */,
+				1DC6CCE3C726585959DB8A76 /* EnrollmentRecorder.swift in Sources */,
+				2C37928FD7FC0F73F9890447 /* EnrollmentView.swift in Sources */,
+				A4DEDF1700F43A997E415755 /* EnrollmentWizardView.swift in Sources */,
+				40A3E08C193A6D5CAFFE1E46 /* Log.swift in Sources */,
+				95020981A044E61A3BA0E346 /* MacAudioDevices.swift in Sources */,
+				0ACB93A7DA7F3ABE535D4A17 /* MateApp.swift in Sources */,
+				E9D26E86EA99E690588362EE /* OnDeviceSpeech.swift in Sources */,
+				565B167083D2FB268D0D3F9B /* OrbView.swift in Sources */,
+				5E0E982CDD31B5738E1A6AFF /* PlatformCompat.swift in Sources */,
+				43BBA014B868BD3856CC1B45 /* RealtimeBridgeClient.swift in Sources */,
+				C7E317692B4ADF990534EAEA /* Settings.swift in Sources */,
+				057E6A375D824629DC3517BA /* SettingsView.swift in Sources */,
+				A5B3C45964F4DDA5B1063156 /* VPIOEngine.swift in Sources */,
+				F913E1BE75AB4BC93DF0CF84 /* WakeWordDetector.swift in Sources */,
+				AF61588C0DCF90965E4F42CE /* fftwrap.c in Sources */,
+				96321997ED452527C6AEFC5B /* filterbank.c in Sources */,
+				B1B07D1038BF33CD7B273D0A /* kiss_fft.c in Sources */,
+				93BD31786799C19E90536972 /* kiss_fftr.c in Sources */,
+				15BE5A2BCB0FAC9992BF6375 /* mdf.c in Sources */,
+				1B9ADA049340602977DB86A1 /* preprocess.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		014F55F2164FA8CAEF400DC8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C54FAA0BBA795704728A4AD5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C7AB65C22D919302847056AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 59P494J56R;
+				ENABLE_APP_SANDBOX = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"HAVE_CONFIG_H=1",
+				);
+				GCC_TREAT_WARNINGS_AS_ERRORS = NO;
+				GCC_WARN_INHIBIT_ALL_WARNINGS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/Mate/speexdsp",
+				);
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.drascom.mate-mac";
+				PRODUCT_NAME = Mate;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Mate/Mate-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		FA1C2954E622546657525FFA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 59P494J56R;
+				ENABLE_APP_SANDBOX = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"HAVE_CONFIG_H=1",
+				);
+				GCC_TREAT_WARNINGS_AS_ERRORS = NO;
+				GCC_WARN_INHIBIT_ALL_WARNINGS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/Mate/speexdsp",
+				);
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.drascom.mate-mac";
+				PRODUCT_NAME = Mate;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Mate/Mate-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		04E7F092420CD3D54966C23C /* Build configuration list for PBXProject "MateMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				014F55F2164FA8CAEF400DC8 /* Debug */,
+				C54FAA0BBA795704728A4AD5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4FD528EBDEA8222075C708B2 /* Build configuration list for PBXNativeTarget "MateMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA1C2954E622546657525FFA /* Debug */,
+				C7AB65C22D919302847056AA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 624FC5D114A14B75F854CB8C /* Project object */;
+}
