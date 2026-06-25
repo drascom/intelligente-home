@@ -124,7 +124,8 @@ struct AppView: View {
                 // İçerik katmanı ve üst düğmeler EN DIŞTA: ControlBar/input dahil her
                 // şeyin üstünü kaplar; toggle/Settings ise katmanın da üstünde kalır.
                 .overlay { contentPanel() }
-                .overlay(alignment: .topTrailing) { topButtons() }
+                // Panel açıkken üst düğmeleri gizle (kapatma panelin kendi (x)'iyle).
+                .overlay(alignment: .topTrailing) { if !showContent { topButtons() } }
                 .animation(.default, value: chat)
                 .animation(.default, value: showContent)
                 .animation(.default, value: session.isConnected)
