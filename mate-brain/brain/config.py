@@ -102,6 +102,19 @@ class Settings(BaseSettings):
     livekit_agent_enabled: bool = False
     livekit_token_ttl_seconds: int = 3600
 
+    # Smart Turn v3 — SES-tabanlı konuşma-sonu (end-of-utterance) dedektörü.
+    # Sabit sessizlik zamanlayıcısı yerine, konuşmacının GERÇEKTEN bitirip
+    # bitirmediğini utterance sesinden tahmin eder → cümle ortası duraksamada
+    # (özellikle Türkçe fiil-sonu) kullanıcıyı kesmez, tam düşüncede hemen biter.
+    # Model: pipecat-ai/smart-turn-v3 (Whisper-tiny + lineer kafa, ~8MB ONNX, CPU,
+    # BSD-2). Kapalıyken (varsayılan) eski saf-sessizlik endpointing kullanılır.
+    # Deps (brain venv): onnxruntime, transformers, huggingface_hub.
+    turn_detector_enabled: bool = False
+    turn_detector_repo: str = "pipecat-ai/smart-turn-v3"
+    turn_detector_file: str = "smart-turn-v3.2-cpu.onnx"
+    # Tahmin eşiği: p >= eşik → tur tamamlandı. Model varsayılanı 0.5.
+    turn_detector_threshold: float = 0.5
+
     def resolve_stt_engine(self, engine: str | None) -> tuple[str, str, int]:
         """(name, host, port) çöz. Bilinmeyen/eksik motor → varsayılan (whisper).
         Varsayılan motor için stt_host/stt_port'u kullanır (env override geri-uyumu)."""

@@ -21,3 +21,9 @@ python-multipart>=0.0.9
 # ayarlıysa) livekit-api'yi tembel import eder.
 livekit>=1.1.10
 livekit-api>=1.1.0
+# Smart Turn v3 ses-tabanlı EOU (opsiyonel; TURN_DETECTOR_ENABLED flag arkasında).
+# onnxruntime: ~8MB ONNX modeli çalıştırır. transformers: WhisperFeatureExtractor
+# (numpy tabanlı log-mel; torch GEREKMEZ). Model HF'den tembel indirilir
+# (pipecat-ai/smart-turn-v3). Flag kapalıyken hiçbiri import edilmez (fail-open).
+onnxruntime>=1.20
+transformers>=4.44
