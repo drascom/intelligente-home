@@ -74,6 +74,11 @@ class SmartTurnDetector:
         # Son _MAX_SECONDS saniyeye kırp (smart-turn: ses vektörün SONUNDA olmalı).
         if audio_f32.shape[0] > _MAX_SAMPLES:
             audio_f32 = audio_f32[-_MAX_SAMPLES:]
+        # do_normalize=True ŞART (smart-turn inference.py ile birebir): model
+        # zero-mean/unit-var normalize edilmiş feature'larla eğitildi. Atlanırsa
+        # (transformers varsayılanı False) cümle-ortası duraksamalar p≈0.6 ile
+        # yanlışlıkla "tamam" sayılır → kullanıcı KESİLİR. True ile aynı duraksama
+        # p≈0.27 ("devam") olur. Türkçe fiil-sonu yan cümleleri için kritik.
         feats = self._feat(
             audio_f32,
             sampling_rate=_SAMPLE_RATE,
@@ -81,6 +86,7 @@ class SmartTurnDetector:
             padding="max_length",
             max_length=_MAX_SAMPLES,
             truncation=True,
+            do_normalize=True,
         )
         input_features = feats["input_features"].squeeze(0).astype(np.float32)
         input_features = np.expand_dims(input_features, axis=0)
@@ -101,8 +107,10 @@ class SmartTurnDetector:
                 return True
             prob = await asyncio.to_thread(self._predict_sync, audio)
             complete = prob >= self.threshold
-            log.debug("smart-turn p=%.3f → %s", prob,
-                      "tamam" if complete else "devam")
+            # GEÇİCİ (doğrulama): canlı testte p= görebilmek için INFO. Eşik
+            # ayarı netleşince log.debug'a geri al.
+            log.info("smart-turn p=%.3f → %s", prob,
+                     "tamam" if complete else "devam")
             return complete
         except Exception as e:
             log.warning("smart-turn tahmini başarısız → tamam sayıldı: %r", e)
