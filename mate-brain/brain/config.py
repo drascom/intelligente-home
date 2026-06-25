@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.3
     pi_binary: str = "node_modules/.bin/pi"
     pi_model: str = "openai-codex/gpt-5.5"
+    # Pi/Codex cold-start önleme: kalıcı süreç canlı olsa bile boşta kalınca Codex
+    # backend (sunucu-tarafı model + bağlantı) soğuyup ilk turu yavaşlatıyor. Bu
+    # aralıkta (sn) son gerçek turdan beri boştaysak minik bir "ping" turu atıp
+    # sıcak tutarız. 0 = kapalı. Env: PI_WARM_PING_INTERVAL.
+    pi_warm_ping_interval: float = 90.0
 
     ha_url: str = "http://localhost:8123"
     ha_token: str = ""

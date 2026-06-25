@@ -51,6 +51,9 @@ class PiBackend:
     def __init__(self):
         self._proc: asyncio.subprocess.Process | None = None
         self._lock = asyncio.Lock()  # one turn at a time through the subprocess
+        # Son GERÇEK tur zamanı (monotonic) — warm-ping yalnız bundan sonra yeterince
+        # boşta kalındıysa atılır (aktif sohbeti bölmesin / context'i kirletmesin).
+        self._last_turn = 0.0
 
     async def _ensure_proc(self) -> asyncio.subprocess.Process:
         if self._proc and self._proc.returncode is None:
@@ -88,14 +91,40 @@ class PiBackend:
     async def keep_warm(self, interval: float = 30.0) -> None:
         """En az 1 pi instance HER AN hazır beklesin. Açılışta ön-ısıt; sonra
         periyodik kontrol — süreç ölürse (idle-exit/crash/timeout-kill) kullanıcı
-        turu beklemeden arka planda yeniden ısıt. Tek instance turları seri işler
-        (lock); eşzamanlı çok-kullanıcı için ileride havuz gerekebilir."""
+        turu beklemeden arka planda yeniden ısıt. AYRICA süreç canlı olsa bile
+        boştaysa periyodik warm-ping atıp Codex backend'i sıcak tutar (canlı-ama-
+        soğuk → ilk-tur cold-start fix). Tek instance turları seri işler (lock);
+        eşzamanlı çok-kullanıcı için ileride havuz gerekebilir."""
         await self.warmup()
+        ping_every = settings.pi_warm_ping_interval
         while True:
             await asyncio.sleep(interval)
             if self._proc is None or self._proc.returncode is not None:
                 log.info("pi backend kapandı → keep-warm yeniden ısıtıyor")
                 await self.warmup()
+            elif ping_every > 0 and time.monotonic() - self._last_turn >= ping_every:
+                # Süreç canlı ama ping_every kadar boşta → Codex'i sıcak tut.
+                await self._warm_ping()
+
+    async def _warm_ping(self) -> None:
+        """Boşta kalan kalıcı süreçte minik bir tur çevirerek Codex backend'i
+        (sunucu-tarafı model + bağlantı) sıcak tut. Lock altında → gerçek turla
+        yarışmaz; gerçek tur araya girerse _last_turn güncellenir ve sonraki
+        kontrol ping atmaz. Best-effort: hata turu bozmaz (sonraki tur ısıtır)."""
+        try:
+            async with self._lock:
+                # Lock'u beklerken gerçek tur geçtiyse artık boşta değiliz → atla.
+                if time.monotonic() - self._last_turn < settings.pi_warm_ping_interval:
+                    return
+                proc = self._proc
+                if proc is None or proc.returncode is not None:
+                    return
+                t0 = time.monotonic()
+                await asyncio.wait_for(self._turn(proc, "ping"), 60)
+                self._last_turn = time.monotonic()
+            log.info("pi warm-ping OK (%.1fs)", time.monotonic() - t0)
+        except Exception as e:
+            log.warning("pi warm-ping failed: %s", e)
 
     async def warmup(self) -> None:
         """pi subprocess'i + Codex oturumunu önceden ısıt → ilk gerçek kullanıcı turu
@@ -108,6 +137,7 @@ class PiBackend:
                 t_spawn = time.monotonic() - t0
                 t1 = time.monotonic()
                 await asyncio.wait_for(self._turn(proc, "ping"), 90)
+                self._last_turn = time.monotonic()  # idle saatini warmup'tan başlat
                 t_ping = time.monotonic() - t1
             log.info("pi backend warmup OK (spawn %.1fs + ilk-tur %.1fs)", t_spawn, t_ping)
         except Exception as e:
@@ -165,6 +195,7 @@ class PiBackend:
                 try:
                     t0 = time.monotonic()
                     reply = await asyncio.wait_for(self._turn(proc, user_text), timeout)
+                    self._last_turn = time.monotonic()  # warm-ping idle-gate'i için
                     log.info("pi turn done in %.1fs (pid=%s)", time.monotonic() - t0, proc.pid)
                     return reply
                 except asyncio.CancelledError:
