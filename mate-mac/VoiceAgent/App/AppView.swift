@@ -21,7 +21,7 @@ struct AppView: View {
 
     /// Bağlandığında + brain ayarları değiştiğinde attribute yeniden yayınlansın.
     private var attributeSnapshot: String {
-        "\(session.isConnected)|\(settings.sttEngine)|\(settings.voice)|\(settings.language)"
+        "\(session.isConnected)|\(settings.sttEngine)|\(settings.voice)|\(settings.language)|\(settings.bargeInEnabled)"
     }
 
     var body: some View {

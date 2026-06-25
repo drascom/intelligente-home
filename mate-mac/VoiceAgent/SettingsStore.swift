@@ -45,6 +45,7 @@ final class SettingsStore: ObservableObject {
             "stt_engine": sttEngine,
             "voice": voice,
             "language": language,
+            "candan.barge_in": bargeInEnabled ? "1" : "0",
         ]
     }
 }

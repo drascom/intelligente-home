@@ -149,6 +149,27 @@
         }
       }
     },
+    "settings.bargein.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Barge-in" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Araya Girme" } }
+      }
+    },
+    "settings.bargein.toggle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Allow interrupting while speaking" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Konuşurken araya girmeye izin ver" } }
+      }
+    },
+    "settings.bargein.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "When on, the agent stops and listens as soon as you start talking; when off, it finishes its sentence." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Açıkken konuşmaya başlayınca ajan susup seni dinler; kapalıyken sözünü bitirir." } }
+      }
+    },
     "settings.wake.hint" : {
       "extractionState" : "manual",
       "localizations" : {

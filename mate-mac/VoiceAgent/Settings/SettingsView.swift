@@ -24,6 +24,13 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Section("settings.bargein.section") {
+                    Toggle("settings.bargein.toggle", isOn: $settings.bargeInEnabled)
+                    Text("settings.bargein.hint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             .navigationTitle("settings.title")
