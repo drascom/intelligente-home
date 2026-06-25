@@ -1,50 +1,33 @@
-# Test sunucusu deploy (Mac dev → GitHub → otomatik deploy)
+# Deploy — iki ayrı host, iki ayrı script (karıştırma)
 
-Test sunucusu: Ubuntu 24.04 LXC (`192.168.0.25`), RTX 3090 (host'tan bind-mount).
-Yığın native + systemd: **vllm** (:8000) → **whisper** (:10300) + **vox** (:8808)
-→ **brain** (:8800). LLM backend = vLLM (Qwen2.5-7B-AWQ, paylaşımlı GPU için).
+Sistem iki sunucuya bölünmüştür. Her host kendi script'iyle deploy edilir; bir host'un
+deploy'u diğerinin servislerine **dokunmaz**.
 
-## Tek seferlik kurulum
+| Host | Adres | Servisler | Deploy script | Tetik |
+|------|-------|-----------|---------------|-------|
+| **oracle-stage** | `132.145.24.135` (public VPS) | **brain** (:8800) + **LiveKit** (:7880) | `deploy/deploy-stage.sh` | CI: main'e push → otomatik |
+| **.25** | `192.168.0.25` (ev LAN GPU box "ollama") | **STT** whisper (:10300) + **TTS** vox (:8808) + **LLM** vllm (:8000) + dashboard | `deploy/deploy-gpu.sh` | **MANUEL** |
+
+## oracle-stage (brain + LiveKit) — otomatik
+`.github/workflows/deploy.yml` `deploy-stage` job: main'e her push'ta bulut runner
+SSH ile `ubuntu@132.145.24.135` üzerinde `sudo deploy/deploy-stage.sh` çalıştırır →
+`git reset --hard origin/main` → değişen brain deps → systemd sync → (unit değişince)
+livekit restart → brain restart → `/api/health` doğrula (fail = CI kırmızı).
+`ubuntu` kullanıcısında NOPASSWD sudo var; SSH anahtarı repo secret `ORACLE_STAGE_SSH_KEY`.
+
+## .25 (STT/TTS/LLM + dashboard) — manuel
+.25 self-hosted CI runner **kaldırıldı** (2026-06-25). Ev LAN'ından elle deploy:
 ```sh
-ssh root@192.168.0.25
-bash <(curl -fsSL https://raw.githubusercontent.com/drascom/intelligente-home/main/deploy/server-bootstrap.sh)
-# /etc/intelligente-home/brain.env içindeki kalan CHANGE_ME'leri doldur
-systemctl start vllm whisper vox brain
-curl localhost:8800/api/health
+ssh root@192.168.0.25 'cd /opt/intelligente-home && sudo deploy/deploy-gpu.sh'
 ```
-
-## CI: push → otomatik deploy
-`.github/workflows/deploy.yml` main'e her push'ta **self-hosted runner** (sunucunun
-kendisi) üzerinde `deploy/server-deploy.sh` çalıştırır: `git reset --hard origin/main`
-→ değişen requirements/systemd'i senkronla → brain (+ gerekirse vox/whisper) restart
-→ `/api/health` doğrula. Bulut runner kullanılamaz (özel LAN IP); runner outbound
-bağlanır.
-
-### Runner kurulumu (tek seferlik)
-```sh
-# Mac'te registration token al:
-gh api -X POST repos/drascom/intelligente-home/actions/runners/registration-token --jq .token
-# Sunucuda:
-useradd -m -s /bin/bash actions || true
-mkdir -p /opt/actions-runner && cd /opt/actions-runner
-curl -fsSL -o r.tar.gz https://github.com/actions/runner/releases/download/v2.XXX/actions-runner-linux-x64-2.XXX.tar.gz
-tar xzf r.tar.gz && chown -R actions:actions /opt/actions-runner
-sudo -u actions ./config.sh --url https://github.com/drascom/intelligente-home --token <TOKEN> --labels self-hosted,linux --unattended
-./svc.sh install actions && ./svc.sh start
-# Deploy scriptine sudo (NOPASSWD):
-echo 'actions ALL=(root) NOPASSWD: /opt/intelligente-home/deploy/server-deploy.sh' > /etc/sudoers.d/actions-deploy
-```
+`git reset --hard origin/main` → değişen vox deps → dashboard build → systemd sync →
+değişen whisper/vox/vllm/nemotron servislerini restart. brain yok → health yok.
 
 ## Env stratejisi
-Gerçek prod değerleri repo dışında: `/etc/intelligente-home/brain.env`
-(brain.service `EnvironmentFile=`). pydantic-settings'te env-var > .env dosyası,
-yani commit'li `mate-brain/.env` (dev) override edilir; `git pull` dokunmaz.
-
-## GPU bütçesi
-Paylaşımlı 24GB (~5GB host'taki başka guest'te). vLLM 7B-AWQ @ util 0.45 (~11GB)
-+ whisper (~2GB) + vox (~5GB). 14B veya dedicated GPU'da `deploy/systemd/vllm.service`
-+ `brain.env` modelini büyüt.
+Gerçek prod değerleri repo dışında host-yerel env dosyasında (`EnvironmentFile=`).
+pydantic-settings'te env-var > .env dosyası → commit'li `mate-brain/.env` (dev)
+override edilir; `git pull` dokunmaz.
 
 ## Servisler
-`systemctl {status,restart,stop} {vllm,whisper,vox,brain}` · loglar:
-`journalctl -u brain -f`.
+- oracle-stage: `systemctl {status,restart} {brain,livekit}` · `journalctl -u brain -f`
+- .25: `systemctl {status,restart} {whisper,vox,vllm,nemotron,mate-dash}`

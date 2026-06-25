@@ -1,3 +1,4 @@
+import CoreAudio
 import LiveKit
 import SwiftUI
 
@@ -22,6 +23,34 @@ struct VoiceAgentApp: App {
     private let session: Session
     private let settings = SettingsStore()
 
+    /// Varsayılan ses ÇIKIŞ cihazı dahili (built-in hoparlör) mi? CoreAudio
+    /// transport tipine bakar. VPIO'yu yalnız built-in çıkışta açmak için kullanılır
+    /// (USB/BT kulaklıkta VPIO StartIO err 35 → reconnect loop). Belirsizlikte
+    /// `false` döner (güvenli: VPIO kapalı → bağlantı kurulur, loop olmaz).
+    private static func outputIsBuiltIn() -> Bool {
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var devAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &devAddr, 0, nil, &size, &deviceID
+        ) == noErr, deviceID != 0 else { return false }
+
+        var transport = UInt32(0)
+        var tSize = UInt32(MemoryLayout<UInt32>.size)
+        var transAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(
+            deviceID, &transAddr, 0, nil, &tSize, &transport
+        ) == noErr else { return false }
+
+        return transport == kAudioDeviceTransportTypeBuiltIn
+    }
+
     init() {
         // VPIO (voice-processing I/O / donanım AEC) AÇIK.
         //
@@ -37,12 +66,22 @@ struct VoiceAgentApp: App {
         // ⚠️ USB KULAKLIK CAVEAT: VPIO input+output'u birleştiren CoreAudio AGGREGATE
         // DEVICE kurar; USB tek-cihaz kulaklıkta bu kurulamıyor → StartIO `error 35` →
         // mic hiç başlamaz → wake duyulmaz. Dahili mic+hoparlörde sorun YOK. USB
-        // kullanılacaksa cihaz tipine göre KOŞULLU kapatılmalı (sonraki iş).
+        // kullanılacaksa cihaz tipine göre KOŞULLU kapatılmalı (BU İŞ — aşağıda).
+        //
+        // KOŞULLU VPIO (USB StartIO error 35 fix): VPIO yalnız varsayılan ÇIKIŞ
+        // cihazı DAHİLİ (built-in hoparlör) ise açılır. USB/Bluetooth/harici çıkışta
+        // (kulaklık) kapatılır: (a) VPIO aggregate-device USB tek-cihazda kurulamıyor
+        // → StartIO err 35 → mic publish "Cancelled" → DUPLICATE_IDENTITY reconnect
+        // loop; (b) kulaklıkta TTS kulağa gider, mic'e sızmaz → AEC zaten GEREKSİZ.
+        // Tespit başarısızsa GÜVENLİ tarafa (VPIO KAPALI) düş: bağlantı her hâlükârda
+        // kurulur (loop olmaz); built-in'de eko olursa kullanıcı görür, tersi (loop)
+        // daha kötü. Çıkış cihazı değişince (kulaklık tak/çıkar) app restart gerekir.
+        let builtIn = Self.outputIsBuiltIn()
         do {
-            try AudioManager.shared.setVoiceProcessingEnabled(true)
-            Log.line("[Audio] setVoiceProcessingEnabled(true) OK → isVoiceProcessingEnabled=\(AudioManager.shared.isVoiceProcessingEnabled)")
+            try AudioManager.shared.setVoiceProcessingEnabled(builtIn)
+            Log.line("[Audio] VPIO=\(builtIn) (çıkış \(builtIn ? "DAHİLİ" : "HARİCİ/USB")) → isVoiceProcessingEnabled=\(AudioManager.shared.isVoiceProcessingEnabled)")
         } catch {
-            Log.error("[Audio] setVoiceProcessingEnabled(true) THREW: \(error.localizedDescription) → VPIO açılamadı")
+            Log.error("[Audio] setVoiceProcessingEnabled(\(builtIn)) THREW: \(error.localizedDescription)")
         }
 
         // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel

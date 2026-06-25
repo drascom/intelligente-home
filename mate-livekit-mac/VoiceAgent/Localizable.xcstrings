@@ -30,16 +30,10 @@
     "Ayarlar" : {
 
     },
-    "Bağlan" : {
-
-    },
     "Bağlanılamadı" : {
 
     },
     "Bağlanılıyor…" : {
-
-    },
-    "Bağlantı kapatıldı" : {
 
     },
     "Bip sesleri" : {
@@ -204,7 +198,7 @@
     "Whisper" : {
 
     },
-    "Yeniden dene" : {
+    "Yeniden deneniyor…" : {
 
     }
   },

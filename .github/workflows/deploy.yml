@@ -1,40 +1,36 @@
 name: Deploy
 
-# Mac'te geliştir → main'e push → iki hedef paralel deploy olur:
-#  • deploy-test  : .25 LXC (ev LAN, NAT arkası) → orada KURULU self-hosted runner
-#                   server-deploy.sh'i yerel çalıştırır. STT/TTS/vox/dashboard.
-#  • deploy-stage : oracle-stage (public VPS) → brain + LiveKit agent. Public repo'da
-#                   self-hosted runner ÖNERİLMEZ (fork PR riski), bu yüzden bulut
-#                   runner SSH ile girip aynı server-deploy.sh'i çalıştırır.
-# server-deploy.sh host-bilinçli: brain sadece enabled olduğu sunucuda (stage) restart+health;
-# dashboard sadece unit'i olan sunucuda (.25) derlenir.
+# Mac'te geliştir → main'e push → oracle-stage (public VPS) otomatik deploy olur:
+#   • deploy-stage : oracle-stage → brain + LiveKit (deploy/deploy-stage.sh). Bulut
+#                    runner SSH ile girip script'i çalıştırır.
+#
+# .25 (ev LAN GPU box: STT/TTS/LLM + dashboard) ARTIK CI ile deploy OLMAZ — self-hosted
+# runner kaldırıldı (2026-06-25). .25 deploy'u MANUEL: deploy/deploy-gpu.sh
+# (ssh root@192.168.0.25 'cd /opt/intelligente-home && sudo deploy/deploy-gpu.sh').
+# İki host AYRI script ile deploy edilir; karıştırılmaz (brain deploy'u .25'e dokunmaz).
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Aynı anda tek deploy seti; yenisi gelince eskisini iptal et
+# Aynı anda tek deploy; yenisi gelince eskisini iptal et
 concurrency:
   group: deploy
   cancel-in-progress: true
 
 jobs:
-  # --- .25 LXC (ev), self-hosted runner sunucunun kendisinde ---
-  deploy-test:
-    runs-on: [self-hosted, linux]
-    steps:
-      - name: Deploy .25 (STT/TTS/vox/dashboard)
-        run: sudo /opt/intelligente-home/deploy/server-deploy.sh
-
-  # --- oracle-stage (public VPS), bulut runner SSH ile deploy eder ---
+  # --- oracle-stage (public VPS), bulut runner SSH ile brain + LiveKit deploy eder ---
   deploy-stage:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy brain to oracle-stage over SSH
+      - name: Deploy brain + LiveKit to oracle-stage over SSH
         env:
           SSH_KEY: ${{ secrets.ORACLE_STAGE_SSH_KEY }}
         run: |
           umask 077
           printf '%s\n' "$SSH_KEY" > deploy_key
+          # Inline pull bootstrap: yeni script adı sunucuda yoksa önce git ile getir,
+          # sonra çalıştır (script kendi içinde de reset --hard yapar, idempotent).
           ssh -i deploy_key -o StrictHostKeyChecking=accept-new \
-            ubuntu@132.145.24.135 'sudo /opt/intelligente-home/deploy/server-deploy.sh'
+            ubuntu@132.145.24.135 \
+            'cd /opt/intelligente-home && sudo git fetch -q origin main && sudo git reset --hard -q origin/main && sudo deploy/deploy-stage.sh'
