@@ -17,9 +17,10 @@ struct ChatInputView: View {
         .frame(minHeight: 12 * .grid)
         .frame(maxWidth: horizontalSizeClass == .regular ? 128 * .grid : 92 * .grid)
         #if !os(visionOS)
-            .background(.bg2)
-        #endif
+            .glass3(cornerRadius: 6 * .grid)
+        #else
             .clipShape(RoundedRectangle(cornerRadius: 6 * .grid))
+        #endif
             .safeAreaPadding(.horizontal, 4 * .grid)
             .safeAreaPadding(.bottom, 4 * .grid)
     }

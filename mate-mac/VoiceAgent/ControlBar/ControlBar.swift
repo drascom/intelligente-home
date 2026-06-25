@@ -42,15 +42,7 @@ struct ControlBar: View {
         .font(.system(size: 17, weight: .medium))
         .frame(height: 15 * .grid)
         #if !os(visionOS)
-            .overlay(
-                RoundedRectangle(cornerRadius: 7.5 * .grid)
-                    .stroke(.separator1, lineWidth: 1)
-            )
-            .background(
-                RoundedRectangle(cornerRadius: 7.5 * .grid)
-                    .fill(.bg1)
-                    .shadow(color: .black.opacity(0.1), radius: 10, y: 10)
-            )
+            .glass3(cornerRadius: 7.5 * .grid, strong: true)
             .safeAreaPadding(.bottom, 8 * .grid)
             .safeAreaPadding(.horizontal, 16 * .grid)
         #endif

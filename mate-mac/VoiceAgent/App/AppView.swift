@@ -15,6 +15,10 @@ struct AppView: View {
     /// Kullanıcının kendi sözünü anında gösteren optimistic lokal transkript.
     @StateObject private var echo = LocalEchoTranscriber()
 
+    /// Brain'in gönderdiği zengin içerik (`candan.content`) → sağ panel.
+    @StateObject private var contentChannel = ContentChannelReceiver()
+    @State private var showContent = false
+
     // Show the transcript/chat view by default; the user can still toggle it
     // off with the text-input button in the ControlBar.
     @State private var chat: Bool = true
@@ -48,7 +52,8 @@ struct AppView: View {
         }
         .environment(\.namespace, namespace)
         .environmentObject(echo)
-        .overlay(alignment: .topTrailing) { settingsButton() }
+        .overlay(alignment: .trailing) { contentPanel() }
+        .overlay(alignment: .topTrailing) { topButtons() }
         .overlay(alignment: .top) {
             if session.isConnected {
                 if let msg = wakeCoordinator.unavailableMessage {
@@ -66,6 +71,10 @@ struct AppView: View {
         .onChange(of: session.isConnected) { _, connected in
             wakeCoordinator.connectionChanged(connected)
             debugMonitor.connectionChanged(connected, room: session.room)
+            contentChannel.connectionChanged(connected, room: session.room)
+        }
+        .onChange(of: contentChannel.latest) { _, item in
+            if item != nil { showContent = true } // yeni içerik gelince otomatik aç
         }
         // session.start() bağlanınca mic'i otomatik publish eder; uyku modundaysak
         // WakeCoordinator istenmeden yayınlanan track'i geri bırakır.
@@ -113,8 +122,9 @@ struct AppView: View {
                 }
         #endif
                 .safeAreaInset(edge: .bottom) { debugStrip() }
-                .background(.bg1)
+                .background { GlassBackdrop() }
                 .animation(.default, value: chat)
+                .animation(.default, value: showContent)
                 .animation(.default, value: session.isConnected)
                 .animation(.default, value: session.error?.localizedDescription)
                 .animation(.default, value: session.agent.error?.localizedDescription)
@@ -140,16 +150,43 @@ struct AppView: View {
         }
     }
 
-    private func settingsButton() -> some View {
-        Button { showSettings = true } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 17))
-                .padding()
-                .contentShape(Rectangle())
+    /// Sağ üst köşedeki cam yuvarlak düğmeler: içerik panelini aç/kapa + Settings.
+    private func topButtons() -> some View {
+        HStack(spacing: 2 * .grid) {
+            circleButton("sidebar.trailing") {
+                showContent.toggle()
+            }
+            circleButton("gearshape") {
+                showSettings = true
+            }
+        }
+        .padding(3 * .grid)
+    }
+
+    private func circleButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.fg1)
+                .frame(width: 10 * .grid, height: 10 * .grid)
+                .glass3(cornerRadius: 5 * .grid)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.fg2)
-        .accessibilityLabel(Text("settings.title"))
+    }
+
+    /// Sağ açılır içerik paneli (frosted #3). Sohbeti tamamen örtmez — sağda dar bir
+    /// şerit; kullanıcı kapatabilir, yeni içerik gelince otomatik açılır. İSKELE.
+    @ViewBuilder
+    private func contentPanel() -> some View {
+        if showContent {
+            ContentPanelView(items: contentChannel.items) { showContent = false }
+                .frame(width: 76 * .grid)
+                .frame(maxHeight: .infinity)
+                .glass3(cornerRadius: 6 * .grid, strong: true)
+                .padding(3 * .grid)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
     }
 
     /// Uyku modunda (wake bekliyor) küçük durum ipucu; tetikleyici kelimeyi hatırlatır.

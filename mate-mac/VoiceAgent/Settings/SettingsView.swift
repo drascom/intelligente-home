@@ -33,6 +33,8 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background { GlassBackdrop() }
             .navigationTitle("settings.title")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

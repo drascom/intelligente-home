@@ -22,7 +22,7 @@ struct ChatView: View {
     private func provisionalBubble(_ text: String) -> some View {
         HStack {
             Spacer(minLength: 8 * .grid)
-            bubble(text, foreground: .white, background: .bgAccent)
+            accentBubble(text)
         }
         .opacity(0.5)
     }
@@ -44,26 +44,44 @@ struct ChatView: View {
     private func userTranscript(_ text: String) -> some View {
         HStack {
             Spacer(minLength: 8 * .grid)
-            bubble(text, foreground: .white, background: .bgAccent)
+            accentBubble(text)
         }
     }
 
     private func agentTranscript(_ text: String) -> some View {
         HStack {
-            bubble(text, foreground: .fg1, background: .bg2)
+            agentBubble(text)
             Spacer(minLength: 8 * .grid)
         }
     }
 
-    private func bubble(_ text: String, foreground: Color, background: Color) -> some View {
+    /// Kullanıcı balonu — accent (mavi) cam-tarzı, parlak highlight.
+    private func accentBubble(_ text: String) -> some View {
+        bubbleText(text)
+            .foregroundStyle(.white)
+            .background(
+                LinearGradient(colors: [Color(red: 0.23, green: 0.63, blue: 1), .bgAccent],
+                               startPoint: .top, endPoint: .bottom),
+                in: RoundedRectangle(cornerRadius: .cornerRadiusLarge, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: .cornerRadiusLarge, style: .continuous)
+                    .strokeBorder(.white.opacity(0.35), lineWidth: 1)
+            )
+            .shadow(color: .bgAccent.opacity(0.4), radius: 8, y: 4)
+    }
+
+    /// Agent balonu — frosted #3 cam.
+    private func agentBubble(_ text: String) -> some View {
+        bubbleText(text)
+            .foregroundStyle(.fg1)
+            .glass3(cornerRadius: .cornerRadiusLarge)
+    }
+
+    private func bubbleText(_ text: String) -> some View {
         Text(text.trimmingCharacters(in: .whitespacesAndNewlines))
             .font(.system(size: 17))
             .padding(.horizontal, 4 * .grid)
             .padding(.vertical, 2 * .grid)
-            .foregroundStyle(foreground)
-            .background(
-                RoundedRectangle(cornerRadius: .cornerRadiusLarge)
-                    .fill(background)
-            )
     }
 }
