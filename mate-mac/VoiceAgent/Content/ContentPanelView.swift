@@ -37,7 +37,9 @@ struct ContentPanelView: View {
                 }
             }
         }
-        .padding(4 * .grid)
+        .padding(.horizontal, 4 * .grid)
+        .padding(.bottom, 4 * .grid)
+        .padding(.top, 14 * .grid) // üstteki toggle/Settings düğmelerinin altında kalsın
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

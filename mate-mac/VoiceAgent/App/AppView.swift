@@ -52,8 +52,6 @@ struct AppView: View {
         }
         .environment(\.namespace, namespace)
         .environmentObject(echo)
-        .overlay(alignment: .trailing) { contentPanel() }
-        .overlay(alignment: .topTrailing) { topButtons() }
         .overlay(alignment: .top) {
             if session.isConnected {
                 if let msg = wakeCoordinator.unavailableMessage {
@@ -123,6 +121,10 @@ struct AppView: View {
         #endif
                 .safeAreaInset(edge: .bottom) { debugStrip() }
                 .background { GlassBackdrop() }
+                // İçerik katmanı ve üst düğmeler EN DIŞTA: ControlBar/input dahil her
+                // şeyin üstünü kaplar; toggle/Settings ise katmanın da üstünde kalır.
+                .overlay { contentPanel() }
+                .overlay(alignment: .topTrailing) { topButtons() }
                 .animation(.default, value: chat)
                 .animation(.default, value: showContent)
                 .animation(.default, value: session.isConnected)
@@ -175,16 +177,16 @@ struct AppView: View {
         .buttonStyle(.plain)
     }
 
-    /// Sağ açılır içerik paneli (frosted #3). Sohbeti tamamen örtmez — sağda dar bir
-    /// şerit; kullanıcı kapatabilir, yeni içerik gelince otomatik açılır. İSKELE.
+    /// Açılır-kapanır içerik katmanı (frosted #3) — TAM GENİŞLİK + TAM BOY,
+    /// sohbeti/kontrolleri kaplar. Yeni içerik gelince otomatik açılır; toggle
+    /// düğmesi veya içindeki (x) ile kapanır. İSKELE (render sonraki tur).
     @ViewBuilder
     private func contentPanel() -> some View {
         if showContent {
             ContentPanelView(items: contentChannel.items) { showContent = false }
-                .frame(width: 76 * .grid)
-                .frame(maxHeight: .infinity)
-                .glass3(cornerRadius: 6 * .grid, strong: true)
-                .padding(3 * .grid)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .glass3(cornerRadius: 0, strong: true)
+                .ignoresSafeArea()
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
