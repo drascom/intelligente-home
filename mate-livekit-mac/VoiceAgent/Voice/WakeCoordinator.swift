@@ -327,29 +327,48 @@ final class WakeCoordinator: ObservableObject {
         guard let session else { return }
         let lp = session.room.localParticipant
         Task {
-            do {
-                if enabled {
-                    // İZİN YARIŞI FIX: connectionChanged(true) → startWakeCapture →
-                    // setMicrophone, sunucunun JoinResponse'u local participant
-                    // permissions'ı doldurmadan ÖNCE ateşlenebiliyor. O an
-                    // permissions.canPublish=false (SDK default) → SDK yerel kontrolde
-                    // "does not have permission to publish" fırlatıp publish'i HİÇ
-                    // denemiyor (retry yok) → mic bir daha yayına girmiyor. İzin
-                    // gelene kadar (bağlı kaldığımız + niyet hâlâ "live" olduğu sürece)
-                    // kısa aralıklarla bekle, sonra publish et.
-                    try await waitForPublishPermission(lp)
-                    guard micShouldBeLive else { return } // bu sırada uyku/kapanma olduysa vazgeç
-                    try await lp.setMicrophone(enabled: true)
-                    Log.line("[Mic] published — brain duyar")
-                } else {
-                    // Mute değil unpublish: brain'e giden yayın/encode yolunu kapat.
-                    for pub in lp.localAudioTracks {
-                        try? await lp.unpublish(publication: pub)
-                    }
-                    Log.line("[Mic] unpublished — stray track kaldırıldı")
+            if enabled {
+                await publishMicWithRetry(lp)
+            } else {
+                // Mute değil unpublish: brain'e giden yayın/encode yolunu kapat.
+                for pub in lp.localAudioTracks {
+                    try? await lp.unpublish(publication: pub)
                 }
+                Log.line("[Mic] unpublished — stray track kaldırıldı")
+            }
+        }
+    }
+
+    /// Mic track'ini yayınla — izin yarışı + geçici "Cancelled" transient'ine dayanıklı.
+    ///
+    /// İKİ transient çözülür:
+    ///  1. İZİN YARIŞI: connectionChanged(true) → publish, sunucunun JoinResponse'u
+    ///     permissions'ı doldurmadan ateşlenebiliyor → permissions.canPublish=false
+    ///     (SDK default) → "does not have permission to publish". waitForPublishPermission
+    ///     izin gelene kadar bekler.
+    ///  2. "Cancelled" (LiveKitError Code=100): USB headset gibi cihazlarda CoreAudio
+    ///     HAL ilk açılırken (AQMEIO/-10877) bağlantı tam oturmadan publish atılıyor →
+    ///     SDK publish task'ını iptal ediyor. Bağlantı oturunca retry başarılı.
+    ///
+    /// Bağlı + niyet "live" kaldığı sürece kısa backoff'la birkaç kez dener; bağlantı
+    /// gerçekten düşerse (connected=false) vazgeçer — reconnect yolu yeniden tetikler.
+    private func publishMicWithRetry(_ lp: LocalParticipant) async {
+        let maxAttempts = 5
+        for attempt in 1 ... maxAttempts {
+            do {
+                try await waitForPublishPermission(lp)
+                guard connected, micShouldBeLive else { return } // uyku/kapanma/disconnect → vazgeç
+                try await lp.setMicrophone(enabled: true)
+                Log.line("[Mic] published — brain duyar")
+                return
             } catch {
-                Log.error("[Mic] setMicrophone(\(enabled)) HATA: \(error.localizedDescription)")
+                guard connected, micShouldBeLive else { return }
+                if attempt == maxAttempts {
+                    Log.error("[Mic] publish \(maxAttempts) denemede başarısız: \(error.localizedDescription)")
+                    return
+                }
+                Log.line("[Mic] publish geçici hata (\(error.localizedDescription)) — yeniden deniyorum (\(attempt)/\(maxAttempts))")
+                try? await Task.sleep(nanoseconds: 300_000_000) // 300ms backoff
             }
         }
     }
