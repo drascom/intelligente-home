@@ -44,6 +44,8 @@ final class WakeCoordinator: ObservableObject {
 
     private let wake = WakeWordDetector()
     private let cues = CueSounds()
+    /// Optimistic lokal transkript (yalnız awake/continuous modda aktif).
+    private weak var echo: LocalEchoTranscriber?
     /// PCM renderer — bağlantı ömrü boyunca güçlü tutulur, disconnect'te kaldırılır.
     private var wakeRenderer: WakePCMRenderer?
 
@@ -61,10 +63,11 @@ final class WakeCoordinator: ObservableObject {
     /// "Hazır" (knock-knock) cue'su bu bağlantıda çalındı mı. Disconnect'te sıfırlanır.
     private var playedReady = false
 
-    func attach(session: Session, settings: SettingsStore) {
+    func attach(session: Session, settings: SettingsStore, echo: LocalEchoTranscriber) {
         guard self.session == nil else { return }
         self.session = session
         self.settings = settings
+        self.echo = echo
         wake.onWakeDetected = { [weak self] in self?.handleWakeDetected() }
         wake.onUnavailable = { [weak self] msg in
             self?.unavailableMessage = msg
@@ -108,7 +111,12 @@ final class WakeCoordinator: ObservableObject {
     /// ayrıca PCM zaten yalnız track YAYINDAYKEN akıyor. Idempotent.
     private func startWakeCapture() {
         if wakeRenderer == nil {
-            let renderer = WakePCMRenderer { [wake] buffer in wake.appendPCM(buffer) }
+            // TEK renderer iki tüketiciye besler; aktif olmayanın request'i nil →
+            // no-op. wake=sleeping, echo=awake/continuous (asla aynı anda).
+            let renderer = WakePCMRenderer { [wake, weak echo] buffer in
+                wake.appendPCM(buffer)
+                echo?.appendPCM(buffer)
+            }
             wakeRenderer = renderer
             AudioManager.shared.add(localAudioRenderer: renderer)
         }
@@ -190,6 +198,8 @@ final class WakeCoordinator: ObservableObject {
         mode = .inactive
         setMicrophone(enabled: true)
         setAwake(continuous)
+        // Brain dinliyorsa (continuous) optimistic lokal transkript aktif; aksi halde kapalı.
+        if continuous { echo?.start(language: settings?.language ?? "tr") } else { echo?.stop() }
         if continuous { playReadyOnce() }
     }
 
@@ -208,6 +218,8 @@ final class WakeCoordinator: ObservableObject {
         // wake dinler). Uyku yalnızca SUNUCU kapısı: candan.awake=0 → brain uyku
         // sesini/transkriptini yok sayar.
         setAwake(false)
+        // Uykuda brain yok sayıyor → optimistic gösterme; SFSpeech'i wake'e bırak.
+        echo?.stop()
         if playCue, settings?.cuesEnabled == true { cues.playSleeping() }
         startWakeListening()
     }
@@ -218,6 +230,8 @@ final class WakeCoordinator: ObservableObject {
         // Tanımayı durdur (artık wake aramaya gerek yok). Renderer bağlı kalır;
         // aktif istek olmadığı için appendPCM sessiz no-op olur.
         wake.stop()
+        // Brain artık işliyor → optimistic lokal transkripti başlat.
+        echo?.start(language: settings?.language ?? "tr")
         if settings?.cuesEnabled == true { cues.playWakeDetected() }
         // Mic ZATEN sürekli yayında → publish YOK demek = setMicrophone/setAwake
         // sırasızlık yarışı YOK. Settle de YOK (ilk komut sözcükleri kesilmesin):
@@ -239,6 +253,7 @@ final class WakeCoordinator: ObservableObject {
         cancelInactivityTimer()
         unregisterCueHandler()
         wake.stop()
+        echo?.stop()
         stopWakeCapture()
         mode = .inactive
         playedReady = false

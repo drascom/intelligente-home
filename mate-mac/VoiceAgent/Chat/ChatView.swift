@@ -3,11 +3,28 @@ import SwiftUI
 
 struct ChatView: View {
     @EnvironmentObject private var session: Session
+    @EnvironmentObject private var echo: LocalEchoTranscriber
 
     var body: some View {
-        ChatScrollView(messageBuilder: message)
-            .padding(.horizontal)
-            .animation(.default, value: session.messages)
+        VStack(spacing: 2 * .grid) {
+            ChatScrollView(messageBuilder: message)
+            // Optimistic: kullanıcının kendi sözü ANINDA (soluk) — brain kesin
+            // transkripti gelince WakeCoordinator/AppView reconcile ile temizler.
+            if !echo.provisional.isEmpty {
+                provisionalBubble(echo.provisional)
+            }
+        }
+        .padding(.horizontal)
+        .animation(.default, value: session.messages)
+        .animation(.default, value: echo.provisional)
+    }
+
+    private func provisionalBubble(_ text: String) -> some View {
+        HStack {
+            Spacer(minLength: 8 * .grid)
+            bubble(text, foreground: .white, background: .bgAccent)
+        }
+        .opacity(0.5)
     }
 
     private func message(_ message: ReceivedMessage) -> some View {

@@ -12,6 +12,9 @@ struct AppView: View {
     /// Sunucunun canlı durum satırı (`candan.debug`) — en altta gösterilir.
     @StateObject private var debugMonitor = DebugStatusMonitor()
 
+    /// Kullanıcının kendi sözünü anında gösteren optimistic lokal transkript.
+    @StateObject private var echo = LocalEchoTranscriber()
+
     // Show the transcript/chat view by default; the user can still toggle it
     // off with the text-input button in the ControlBar.
     @State private var chat: Bool = true
@@ -22,6 +25,15 @@ struct AppView: View {
     /// Bağlandığında + brain ayarları değiştiğinde attribute yeniden yayınlansın.
     private var attributeSnapshot: String {
         "\(session.isConnected)|\(settings.sttEngine)|\(settings.voice)|\(settings.language)|\(settings.bargeInEnabled)"
+    }
+
+    /// Brain'den gelen kesin kullanıcı transkripti sayısı — arttığında optimistic
+    /// satırı reconcile et (temizle + taze başlat → duplicate olmaz).
+    private var brainUserTranscriptCount: Int {
+        session.messages.reduce(0) { count, message in
+            if case .userTranscript = message.content { return count + 1 }
+            return count
+        }
     }
 
     var body: some View {
@@ -35,6 +47,7 @@ struct AppView: View {
             errors()
         }
         .environment(\.namespace, namespace)
+        .environmentObject(echo)
         .overlay(alignment: .topTrailing) { settingsButton() }
         .overlay(alignment: .top) {
             if session.isConnected {
@@ -48,7 +61,8 @@ struct AppView: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         // Brain ayarları + candan.awake TEK sözlükte birlikte gider (WakeCoordinator).
         .task(id: attributeSnapshot) { wakeCoordinator.publishAttributes() }
-        .onAppear { wakeCoordinator.attach(session: session, settings: settings) }
+        .onAppear { wakeCoordinator.attach(session: session, settings: settings, echo: echo) }
+        .onChange(of: brainUserTranscriptCount) { _, _ in echo.reconcile() }
         .onChange(of: session.isConnected) { _, connected in
             wakeCoordinator.connectionChanged(connected)
             debugMonitor.connectionChanged(connected, room: session.room)
