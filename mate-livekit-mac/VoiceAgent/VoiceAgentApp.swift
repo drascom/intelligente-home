@@ -52,6 +52,11 @@ struct VoiceAgentApp: App {
     }
 
     init() {
+        // VPIO/CoreAudio stderr gürültüsünü ele (macOS 26 VPIO downlink-DSP flood;
+        // [[vpio-macos26-apple-bug]]). Audio motoru başlamadan ÖNCE kurulmalı.
+        // Bizim os_log/dosya loglarımızı ETKİLEMEZ.
+        NoiseFilter.install()
+
         // VPIO (voice-processing I/O / donanım AEC) AÇIK.
         //
         // NEDEN AÇIK: mic SÜREKLI yayında (sunucu awake kapısı) olduğundan asistanın
