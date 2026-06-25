@@ -42,6 +42,7 @@ class SmartTurnDetector:
         self._session = None        # onnxruntime.InferenceSession
         self._feat = None           # transformers.WhisperFeatureExtractor
         self._failed = False        # bir kez yükleme başarısız olursa tekrar deneme
+        self.last_prob = None       # son is_complete olasılığı (debug şeridi için)
 
     def _ensure_loaded(self) -> None:
         if self._session is not None or self._failed:
@@ -99,6 +100,7 @@ class SmartTurnDetector:
         Fail-open: model yok / yetersiz ses / hata → True (çağıran sessizlik
         zamanlayıcısına güvenir). Çıkarım ayrı thread'de (event loop'u bloklamaz)."""
         self._ensure_loaded()
+        self.last_prob = None
         if self._session is None:
             return True
         try:
@@ -106,6 +108,7 @@ class SmartTurnDetector:
             if audio.shape[0] < int(_MIN_SECONDS * _SAMPLE_RATE):
                 return True
             prob = await asyncio.to_thread(self._predict_sync, audio)
+            self.last_prob = prob
             complete = prob >= self.threshold
             # GEÇİCİ (doğrulama): canlı testte p= görebilmek için INFO. Eşik
             # ayarı netleşince log.debug'a geri al.

@@ -427,6 +427,7 @@ class LiveKitAgent:
                     # ilk karede olmalı: kısa komutlar 0.25sn eşiğine ulaşmadan bitebilir.
                     if not speech_seen:
                         self._set_agent_state("listening")
+                        self._debug("user_speech…")
                     speech_seen = True
                     silence_s = 0.0
                     last_turn_check_s = 0.0  # konuşma sürdü → re-check cadence sıfırla
@@ -460,6 +461,11 @@ class LiveKitAgent:
                 ):
                     last_turn_check_s = silence_s
                     ended = await self.turn_detector.is_complete(bytes(buf))
+                    p = self.turn_detector.last_prob
+                    self._debug(
+                        f"eou {'complete' if ended else 'incomplete'}"
+                        + (f" p={p:.2f}" if p is not None else "")
+                    )
                 else:
                     ended = False
                 if ended:
@@ -540,6 +546,7 @@ class LiveKitAgent:
             log.warning("livekit agent: STT başarısız: %s", e)
             return
         log.info("livekit agent: duyuldu %r", text)
+        self._debug(f"stt_final: {text[:40]}" if text else "stt_final: (boş)")
         # Sunucu wake gate: utterance uyku modunda BAŞLADIYSA, VEYA bu utterance
         # sırasında istemci yeni uyandıysa (wake'i tetikleyen "candan" sözü) → boş/
         # hayalet transcript gibi düşür: cevap yok, add_message yok, transcript yayını
@@ -694,12 +701,38 @@ class LiveKitAgent:
         except Exception as e:
             log.warning("livekit agent: cue gönderilemedi (%s): %r", cue, e)
 
+    def _debug(self, msg: str) -> None:
+        """Canlı debug satırını `candan.debug` text-stream topic'inde yayınla → Mac
+        app pencerenin en altında soluk tek satır gösterir (turn detection + gecikme
+        testi için). Başına ms zaman damgası ekler. Lossy/best-effort: oda yoksa /
+        hata pipeline'ı BOZMAZ; ayrı task'a zamanlanır → publish gecikmesi turn
+        akışını bloklamaz. `lk.transcription` ile karışmaz (ayrı topic)."""
+        room = self._room
+        if room is None:
+            return
+        import time
+
+        ms = int((time.time() % 1) * 1000)
+        line = f"{time.strftime('%H:%M:%S')}.{ms:03d} {msg}"
+
+        async def _send() -> None:
+            try:
+                await room.local_participant.send_text(line, topic="candan.debug")
+            except Exception:
+                pass
+
+        try:
+            asyncio.create_task(_send())
+        except RuntimeError:
+            pass  # çalışan event loop yok (beklenmez) → sessizce atla
+
     def _set_agent_state(self, state: str) -> None:
         """`lk.agent.state` attribute'unu güncelle (initializing/listening/thinking/
         speaking/idle). İstemci agentState'i bununla sürer → wake re-arm + UI.
         BLOKLAMAZ: set_attributes'i ayrı task'a zamanlar → cancel/finally yollarında
         (barge-in) bile güvenle çağrılır. set_attributes sunucuda merge'lenir (diğer
         attribute'ları silmez). Best-effort: oda yoksa/sürüm farkı/hata turn'ü bozmaz."""
+        self._debug(f"agent: {state}")
         room = self._room
         if room is None:
             return
@@ -799,6 +832,7 @@ class LiveKitAgent:
                     fmt = value
                     # Ses başladı → istemci "speaking" görür (TTS sesi ile senkron).
                     self._set_agent_state("speaking")
+                    self._debug("tts_start")
                     log.info("livekit agent: TTS başladı (fmt rate=%s ch=%s)",
                              getattr(fmt, "rate", "?"), getattr(fmt, "channels", "?"))
                 elif kind == "chunk" and fmt is not None:
@@ -809,6 +843,7 @@ class LiveKitAgent:
                     )
             log.info("livekit agent: TTS bitti — %d giriş baytı, %d kare yayınlandı",
                      bytes_in, frames_pub)
+            self._debug("tts_end")
         except asyncio.CancelledError:
             # Barge-in = kullanıcı KONUŞMAYA başladı (TTS'i kesen tek şey
             # _consume_track'teki speech-start). Doğru durum "listening" (idle DEĞİL):

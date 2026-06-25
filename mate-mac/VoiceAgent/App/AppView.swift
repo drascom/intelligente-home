@@ -9,6 +9,9 @@ struct AppView: View {
     /// Wake-word kapısı + geçiş sesleri + `candan.awake` attribute yayını.
     @StateObject private var wakeCoordinator = WakeCoordinator()
 
+    /// Sunucunun canlı durum satırı (`candan.debug`) — en altta gösterilir.
+    @StateObject private var debugMonitor = DebugStatusMonitor()
+
     // Show the transcript/chat view by default; the user can still toggle it
     // off with the text-input button in the ControlBar.
     @State private var chat: Bool = true
@@ -48,6 +51,7 @@ struct AppView: View {
         .onAppear { wakeCoordinator.attach(session: session, settings: settings) }
         .onChange(of: session.isConnected) { _, connected in
             wakeCoordinator.connectionChanged(connected)
+            debugMonitor.connectionChanged(connected, room: session.room)
         }
         // session.start() bağlanınca mic'i otomatik publish eder; uyku modundaysak
         // WakeCoordinator istenmeden yayınlanan track'i geri bırakır.
@@ -94,6 +98,7 @@ struct AppView: View {
                     }
                 }
         #endif
+                .safeAreaInset(edge: .bottom) { debugStrip() }
                 .background(.bg1)
                 .animation(.default, value: chat)
                 .animation(.default, value: session.isConnected)
@@ -180,6 +185,22 @@ struct AppView: View {
         .padding(.horizontal)
         .padding(.top, 2 * .grid)
         .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    /// Sunucunun canlı durum satırı — en altta soluk, monospace, tek satır.
+    /// Boşken hiç yer kaplamaz.
+    @ViewBuilder
+    private func debugStrip() -> some View {
+        if !debugMonitor.lastLine.isEmpty {
+            Text(debugMonitor.lastLine)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 2 * .grid)
+                .padding(.vertical, .grid)
+        }
     }
 
     private func connecting() -> some View {
