@@ -112,6 +112,14 @@ class LiveKitAgent:
         # wake gate no-op + ayarlar etkisiz olurdu. Event her değişimde TAM/fresh
         # geldiği için _attrs() bunu canlı view'ın üstüne bindirir.
         self._attr_cache: dict[str, dict] = {}
+        # Wake-word sızıntı kilidi: istemci uyandığında (candan.awake 0→1) wake'i
+        # TETİKLEYEN söz ("candan") server'a kaçıp kullanıcı mesajı olmasın diye, o
+        # 0→1 geçişini gören event bu bayrağı set eder; o anda işlenen/biten ilk
+        # utterance (wake sözünün kendisi) tamamen atılır. NEDEN bayrak gerekli:
+        # ses jitter-buffer'ı yüzünden audio brain'e GEÇ ulaşır, awake='1' event'i
+        # data-channel'dan HIZLI gelir → utterance başında awake okunduğunda cache
+        # zaten '1' olur ve start-gate (awake=0) tek başına "candan"ı yakalayamaz.
+        self._wake_pending = False
         # Smart Turn v3 (ses-tabanlı EOU): açıksa _consume_track endpointing kararını
         # sabit sessizlik zamanlayıcısı yerine modele bağlar. Kapalıysa None →
         # eski saf-sessizlik davranışı (SILENCE_AFTER_S).
@@ -233,9 +241,14 @@ class LiveKitAgent:
             if not ident or ident == "assistant":
                 return
             try:
-                self._attr_cache.setdefault(ident, {}).update(
-                    dict(changed_attributes or {})
-                )
+                changed = dict(changed_attributes or {})
+                # Wake sızıntı kilidi: uykudan uyanış (candan.awake 0→1) → wake'i
+                # tetikleyen söz atılsın. Sadece GERÇEK 0→1 geçişinde (önceki cache
+                # '0'), bağlantı anındaki ilk '1' yayınında değil.
+                prev = self._attr_cache.get(ident, {}).get("candan.awake")
+                if changed.get("candan.awake") == "1" and prev == "0":
+                    self._wake_pending = True
+                self._attr_cache.setdefault(ident, {}).update(changed)
             except Exception:
                 pass
             log.info("livekit agent: attrs değişti (%s): %r", ident, changed_attributes)
@@ -527,11 +540,16 @@ class LiveKitAgent:
             log.warning("livekit agent: STT başarısız: %s", e)
             return
         log.info("livekit agent: duyuldu %r", text)
-        # Sunucu wake gate: utterance uyku modunda BAŞLADIYSA boş/hayalet transcript
-        # gibi düşür — cevap yok, add_message yok, transcript yayını yok. İstemci
-        # mute'u sesi durdurmuyor; "candan" sızıntısı burada engellenir.
-        if not awake:
-            log.info("livekit agent: uyku modunda söz, atlandı: %r", text[:60])
+        # Sunucu wake gate: utterance uyku modunda BAŞLADIYSA, VEYA bu utterance
+        # sırasında istemci yeni uyandıysa (wake'i tetikleyen "candan" sözü) → boş/
+        # hayalet transcript gibi düşür: cevap yok, add_message yok, transcript yayını
+        # yok. İstemci mute'u sesi durdurmuyor; "candan" sızıntısı burada engellenir.
+        # _wake_pending: start-gate awake'i '0' yakalayamadığı race'i (audio jitter-
+        # buffer geç, awake='1' event'i hızlı) kapatır; tek seferlik tüketilir.
+        wake_pending = self._wake_pending
+        self._wake_pending = False
+        if not awake or wake_pending:
+            log.info("livekit agent: uyku/uyanış sözü, atlandı: %r", text[:60])
             self._set_agent_state("idle")
             return
         if text and looks_hallucinated(text):
