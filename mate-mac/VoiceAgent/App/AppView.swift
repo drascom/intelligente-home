@@ -22,6 +22,8 @@ struct AppView: View {
     // Show the transcript/chat view by default; the user can still toggle it
     // off with the text-input button in the ControlBar.
     @State private var chat: Bool = true
+    /// Mesaj yazma alanı varsayılan GİZLİ; ControlBar'daki text düğmesiyle açılır.
+    @State private var showInput = false
     @State private var showSettings = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
@@ -89,7 +91,7 @@ struct AppView: View {
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {
                 if session.isConnected {
-                    ControlBar(chat: $chat)
+                    ControlBar(chat: $chat, showInput: $showInput)
                         .glassBackgroundEffect()
                 }
             }
@@ -111,7 +113,7 @@ struct AppView: View {
         #else
             .safeAreaInset(edge: .bottom) {
                     if session.isConnected, !keyboardFocus {
-                        ControlBar(chat: $chat)
+                        ControlBar(chat: $chat, showInput: $showInput)
                             .transition(.asymmetric(
                                 insertion: .move(edge: .bottom).combined(with: .opacity),
                                 removal: .opacity
@@ -270,7 +272,7 @@ struct AppView: View {
     @ViewBuilder
     private func interactions() -> some View {
         if chat {
-            TextInteractionView(keyboardFocus: $keyboardFocus)
+            TextInteractionView(keyboardFocus: $keyboardFocus, showInput: $showInput)
         } else {
             VoiceInteractionView()
                 .overlay(alignment: .bottom) {

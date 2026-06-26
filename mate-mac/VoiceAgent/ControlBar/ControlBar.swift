@@ -8,6 +8,7 @@ struct ControlBar: View {
     @EnvironmentObject private var localMedia: LocalMedia
 
     @Binding var chat: Bool
+    @Binding var showInput: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.voiceEnabled) private var voiceEnabled
     @Environment(\.textEnabled) private var textEnabled
@@ -29,6 +30,8 @@ struct ControlBar: View {
                     .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
                 flexibleSpacer()
             #endif
+            textInputToggle()
+            flexibleSpacer()
             reconnectButton()
             biggerSpacer()
         }
@@ -88,6 +91,25 @@ struct ControlBar: View {
             Spacer()
         }
         .frame(width: Constants.buttonWidth)
+    }
+
+    /// Mesaj yazma alanını aç/kapa (input varsayılan gizli; sürekli gerekmiyor).
+    private func textInputToggle() -> some View {
+        Button {
+            showInput.toggle()
+        } label: {
+            Image(systemName: "text.bubble.fill")
+                .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(
+            ControlBarButtonStyle(
+                isToggled: showInput,
+                foregroundColor: .fg1,
+                backgroundColor: .bg2,
+                borderColor: .separator1
+            )
+        )
     }
 
     /// Reconnect / refresh button.

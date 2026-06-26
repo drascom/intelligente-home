@@ -1,5 +1,26 @@
+import LiveKit
 import LiveKitComponents
 import SwiftUI
+
+/// Agent "düşünüyor" göstergesi: yumuşak yanıp sönen 3 nokta.
+private struct TypingDots: View {
+    @State private var animating = false
+    var body: some View {
+        HStack(spacing: 1.5 * .grid) {
+            ForEach(0 ..< 3, id: \.self) { i in
+                Circle()
+                    .frame(width: 1.75 * .grid, height: 1.75 * .grid)
+                    .foregroundStyle(.fg1)
+                    .opacity(animating ? 1 : 0.3)
+                    .animation(
+                        .easeInOut(duration: 0.6).repeatForever().delay(Double(i) * 0.2),
+                        value: animating
+                    )
+            }
+        }
+        .onAppear { animating = true }
+    }
+}
 
 struct ChatView: View {
     @EnvironmentObject private var session: Session
@@ -13,10 +34,26 @@ struct ChatView: View {
             if !echo.provisional.isEmpty {
                 provisionalBubble(echo.provisional)
             }
+            // Agent "düşünüyor" → sol agent balonu içinde yazıyor göstergesi.
+            // Yanıt gelmeye başlayınca state thinking'den çıkar → balon kaybolur.
+            if session.agent.agentState == .thinking {
+                thinkingBubble()
+            }
         }
         .padding(.horizontal)
         .animation(.default, value: session.messages)
         .animation(.default, value: echo.provisional)
+        .animation(.default, value: session.agent.agentState)
+    }
+
+    private func thinkingBubble() -> some View {
+        HStack {
+            TypingDots()
+                .padding(.horizontal, 4 * .grid)
+                .padding(.vertical, 3 * .grid)
+                .glass3(cornerRadius: .cornerRadiusLarge)
+            Spacer(minLength: 8 * .grid)
+        }
     }
 
     private func provisionalBubble(_ text: String) -> some View {

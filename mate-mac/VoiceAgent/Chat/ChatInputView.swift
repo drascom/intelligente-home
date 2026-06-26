@@ -8,6 +8,8 @@ struct ChatInputView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @FocusState.Binding var keyboardFocus: Bool
     @State private var messageText = ""
+    /// Gönderdikten sonra çağrılır (input'u tekrar gizlemek için).
+    var onSubmitted: () -> Void = {}
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
@@ -84,5 +86,6 @@ struct ChatInputView: View {
         messageText = ""
         keyboardFocus = false
         await session.send(text: text)
+        onSubmitted() // gönderdikten sonra input'u gizle
     }
 }

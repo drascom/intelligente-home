@@ -8,6 +8,8 @@ struct TextInteractionView: View {
     @EnvironmentObject private var session: Session
 
     @FocusState.Binding var keyboardFocus: Bool
+    /// Mesaj yazma alanı görünür mü (varsayılan gizli; ControlBar text düğmesi açar).
+    @Binding var showInput: Bool
 
     var body: some View {
         VStack {
@@ -25,8 +27,12 @@ struct TextInteractionView: View {
                 keyboardFocus = false
             }
             #endif
-            ChatInputView(keyboardFocus: _keyboardFocus)
+            if showInput {
+                ChatInputView(keyboardFocus: _keyboardFocus) { showInput = false }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.default, value: showInput)
     }
 
     private func participants() -> some View {
