@@ -65,7 +65,7 @@ struct AppView: View {
         // Brain ayarları + candan.awake TEK sözlükte birlikte gider (WakeCoordinator).
         .task(id: attributeSnapshot) { wakeCoordinator.publishAttributes() }
         .onAppear { wakeCoordinator.attach(session: session, settings: settings, echo: echo) }
-        .onChange(of: brainUserTranscriptCount) { _, _ in echo.reconcile() }
+        .onChange(of: brainUserTranscriptCount) { _, _ in echo.commitCurrent() }
         .onChange(of: session.isConnected) { _, connected in
             wakeCoordinator.connectionChanged(connected)
             debugMonitor.connectionChanged(connected, room: session.room)

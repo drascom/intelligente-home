@@ -23,6 +23,13 @@ final class LocalEchoTranscriber: NSObject, ObservableObject {
     private var rotationTimer: DispatchSourceTimer?
     private var running = false
 
+    /// Aktif tanıma isteğinin o anki tam metni ve brain'in "kesinleştirdiği"
+    /// karakter sayısı. provisional = full metnin bu offset'ten SONRASI. Brain
+    /// kesin satırı gelince offset ilerletilir (tanıma YENİDEN BAŞLATILMAZ →
+    /// sürekli temiz akış korunur, balon gidip gelmez).
+    private var fullText = ""
+    private var committedLength = 0
+
     private nonisolated(unsafe) var request: SFSpeechAudioBufferRecognitionRequest?
     private nonisolated let requestLock = NSLock()
 
@@ -56,16 +63,17 @@ final class LocalEchoTranscriber: NSObject, ObservableObject {
         rotationTimer?.cancel(); rotationTimer = nil
         endRecognition()
         running = false
+        fullText = ""
+        committedLength = 0
         provisional = ""
     }
 
-    /// Brain kesin transkripti geldi → optimistic satırı temizle ve tanımayı taze
-    /// başlat (biriken ses bir sonraki cümleye sızmasın). Çalışmıyorsa sadece temizle.
-    func reconcile() {
+    /// Brain o ana kadarki sözü kesinleştirdi (kalıcı balonu o gösterecek):
+    /// optimistic satırı TEK SEFER gizle. Tanımayı YENİDEN BAŞLATMA — sadece
+    /// offset'i ilerlet; akış kesilmez, sonraki cümle yerinde görünmeye devam eder.
+    func commitCurrent() {
+        committedLength = fullText.count
         provisional = ""
-        guard running else { return }
-        endRecognition()
-        startRecognition()
     }
 
     private func startRecognition() {
@@ -75,13 +83,30 @@ final class LocalEchoTranscriber: NSObject, ObservableObject {
             req.requiresOnDeviceRecognition = true
         }
         requestLock.lock(); request = req; requestLock.unlock()
+        // Yeni istek → bestTranscription sıfırdan; offset takibini de sıfırla.
+        fullText = ""
+        committedLength = 0
 
         let handler: @Sendable (SFSpeechRecognitionResult?, Error?) -> Void = { [weak self] result, _ in
             guard let result else { return }
             let text = result.bestTranscription.formattedString
-            Task { @MainActor in self?.provisional = text }
+            Task { @MainActor in self?.update(fullText: text) }
         }
         task = recognizer?.recognitionTask(with: req, resultHandler: handler)
+    }
+
+    /// Tam metni güncelle; provisional = brain'in kesinleştirdiği offset'ten sonrası.
+    /// Böylece aynı balon YERİNDE büyür; kesinleşen kısım tekrar görünmez (flicker yok).
+    private func update(fullText text: String) {
+        fullText = text
+        if text.count > committedLength {
+            let idx = text.index(text.startIndex, offsetBy: committedLength)
+            provisional = String(text[idx...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            // Tanıma metni geriye gitti (yeni istek / düzeltme) → committed'i geri çek.
+            committedLength = text.count
+            provisional = ""
+        }
     }
 
     private func endRecognition() {
