@@ -61,8 +61,10 @@ struct MateTokenSource: TokenSourceFixed {
             else {
                 return fallback("JSON/participantToken yok")
             }
-            let server = (obj["serverUrl"] as? String).flatMap { URL(string: $0) }
-                ?? URL(string: livekitURL) ?? URL(string: secretsURL)!
+            // Yanıttaki serverUrl KULLANILMAZ: brain'in iç adresi (ws://127.0.0.1:7880)
+            // olabilir → Mac bağlanamaz (Connection refused 61, sonsuz reconnect).
+            // Bağlantı HER ZAMAN Settings/Secrets LiveKit URL'ine yapılır.
+            let server = URL(string: livekitURL) ?? URL(string: secretsURL)!
             let room = obj["roomName"] as? String ?? "mate-demo"
             let name = obj["participantName"] as? String ?? "mac-client"
             Log.line("[Token] taze token alındı (room=\(room) name=\(name))")
