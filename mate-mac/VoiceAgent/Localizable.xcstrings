@@ -216,8 +216,8 @@
     "settings.server.braintoken" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token" } },
-        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token (optional — only if auto-register fails)" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token (opsiyonel — oto-kayıt başarısızsa)" } }
       }
     },
     "settings.server.hint" : {

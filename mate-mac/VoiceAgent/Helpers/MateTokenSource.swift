@@ -27,7 +27,20 @@ struct MateTokenSource: TokenSourceFixed {
                                        participantName: "mac-client", roomName: "mate-demo")
         }
 
-        guard !brainToken.isEmpty else { return fallback("brainToken boş") }
+        // Bearer zinciri: ÖNCE oto-kayıt client token'ı (Keychain), yoksa Settings
+        // manuel Brain Token, o da yoksa statik Secrets'e düş.
+        let deviceToken = await DeviceRegistration.clientToken(brainURL: brainURL)
+        let bearer: String
+        let source: String
+        if let dt = deviceToken, !dt.isEmpty {
+            bearer = dt; source = "device"
+        } else if !brainToken.isEmpty {
+            bearer = brainToken; source = "manuel"
+        } else {
+            return fallback("bearer yok (oto-kayıt başarısız + manuel boş)")
+        }
+        Log.line("[Token] bearer kaynağı=\(source)")
+
         let base = brainURL.hasSuffix("/") ? String(brainURL.dropLast()) : brainURL
         guard let endpoint = URL(string: base + "/api/livekit-token") else {
             return fallback("brainURL geçersiz")
@@ -35,7 +48,7 @@ struct MateTokenSource: TokenSourceFixed {
 
         var req = URLRequest(url: endpoint, timeoutInterval: 8)
         req.httpMethod = "POST"
-        req.setValue("Bearer \(brainToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         do {

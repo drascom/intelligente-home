@@ -336,6 +336,29 @@ async def set_fcm(
     return {"ok": True}
 
 
+# ---- device auto-registration (cihaz oto-kaydı) ----
+
+class DeviceRegister(BaseModel):
+    deviceId: str
+    name: str | None = None
+
+
+@router.post("/device/register")
+async def device_register(body: DeviceRegister, request: Request):
+    """Cihaz oto-kaydı: app ilk açılışta device UUID ile kaydolur, client bearer
+    token alır (Keychain'de saklar). IDEMPOTENT: aynı deviceId → aynı client + aynı
+    token. Sonra app bu token ile /api/livekit-token'dan taze LiveKit JWT çeker.
+
+    GÜVENLİK: Bilerek AUTH YOK — bu endpoint yalnızca özel NetBird mesh içinden
+    erişilebilir varsayılır (brain dışarıya açık değil). Mesh dışına açılırsa
+    burada bir kayıt-sırrı/oran-sınırı şart olur."""
+    device_id = (body.deviceId or "").strip()
+    if not device_id:
+        raise HTTPException(400, "deviceId boş")
+    rec = await request.app.state.db.register_device(device_id, body.name)
+    return {"token": rec["token"], "clientId": rec["id"], "name": rec["name"]}
+
+
 # ---- LiveKit (deneysel; flag arkasında bir agent ile birlikte) ----
 
 def _mint_livekit_token(identity: str, name: str) -> str:

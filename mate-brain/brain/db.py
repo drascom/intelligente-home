@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS clients (
     token TEXT NOT NULL UNIQUE,
     fcm_token TEXT,
     created_at REAL NOT NULL,
-    last_seen REAL
+    last_seen REAL,
+    device_id TEXT          -- cihaz oto-kaydı (UUID); benzersizlik partial index ile
 );
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY,
@@ -141,6 +142,9 @@ MIGRATIONS = [
     "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminder'",
     # Konu thread'leri (topic-threaded memory): tasks → topics bağlantısı.
     "ALTER TABLE tasks ADD COLUMN topic_id INTEGER",
+    # Cihaz oto-kaydı: client'a device UUID bağla (ALTER UNIQUE eklenemez → partial
+    # unique index POST_MIGRATION_INDEXES'te).
+    "ALTER TABLE clients ADD COLUMN device_id TEXT",
 ]
 
 # Migration'lardan SONRA kurulacak index'ler (yeni eklenen sütunlara bağlı olanlar;
@@ -148,6 +152,9 @@ MIGRATIONS = [
 POST_MIGRATION_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_topics_scope ON topics(scope_key, status, updated_at)",
+    # device_id benzersiz (NULL'lar hariç → token-only eski client'lar etkilenmez).
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_device ON clients(device_id)"
+    " WHERE device_id IS NOT NULL",
 ]
 
 # Oturum okuma sütunları — centroid BLOB HARİÇ (binary float32, JSON serileştirilemez).
@@ -195,6 +202,33 @@ class Database:
         cur = await self._db.execute("SELECT * FROM clients WHERE token = ?", (token,))
         row = await cur.fetchone()
         return dict(row) if row else None
+
+    async def get_client_by_device_id(self, device_id: str) -> dict | None:
+        cur = await self._db.execute(
+            "SELECT * FROM clients WHERE device_id = ?", (device_id,)
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def register_device(self, device_id: str, name: str | None = None) -> dict:
+        """Cihaz oto-kaydı (IDEMPOTENT): device_id daha önce kaydolduysa AYNI client +
+        AYNI token döner (yeni kayıt/token üretilmez). Yoksa yeni client oluşturulur,
+        device_id yazılır ve taze token üretilir. {id, name, token} döner."""
+        existing = await self.get_client_by_device_id(device_id)
+        if existing:
+            return {
+                "id": existing["id"],
+                "name": existing["name"],
+                "token": existing["token"],
+            }
+        token = secrets.token_urlsafe(32)
+        client_name = name or f"device-{device_id[:8]}"
+        cur = await self._db.execute(
+            "INSERT INTO clients (name, token, created_at, device_id) VALUES (?, ?, ?, ?)",
+            (client_name, token, time.time(), device_id),
+        )
+        await self._db.commit()
+        return {"id": cur.lastrowid, "name": client_name, "token": token}
 
     async def touch_client(self, client_id: int) -> None:
         await self._db.execute(
