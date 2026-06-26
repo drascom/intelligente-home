@@ -43,10 +43,9 @@ import SwiftUI
                     }
                 }
             } label: {
-                // Dropdown tetikleyici: cihaz adı yerine sade bir mikrofon ikonu.
-                // (Soldaki mic-seviye göstergesi "microphone.fill" kullanıyor; bu
-                // farklı bir glyph — "mic.fill" — karışmasın diye.)
-                Image(systemName: "mic.fill")
+                // Dropdown tetikleyici: cihaz adı yerine sade bir hoparlör ikonu
+                // (ses çıkış cihazı seçimi). Soldaki mic-seviye göstergesinden ayrı.
+                Image(systemName: "speaker.wave.2.fill")
                     .font(.system(size: 17, weight: .medium))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())

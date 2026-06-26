@@ -63,6 +63,9 @@ struct VoiceAgentApp: App {
                 .environmentObject(settings)
                 .environment(\.voiceEnabled, true)
                 .environment(\.textEnabled, true)
+                // Cam/koyu tema: tüm semantik renkler (fg1/fg2/secondary…) açık
+                // (beyaz/açık-gri) varyantına çözülsün → koyu zeminde okunur.
+                .preferredColorScheme(.dark)
                 .task { deviceStore.start(localMedia: localMedia) }
         }
         #if os(macOS)
