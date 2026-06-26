@@ -31,6 +31,30 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Section("settings.server.section") {
+                    TextField("settings.server.livekit", text: $settings.livekitURL)
+                        .textFieldStyle(.roundedBorder)
+                        #if !os(macOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #endif
+                    TextField("settings.server.brain", text: $settings.brainURL)
+                        .textFieldStyle(.roundedBorder)
+                        #if !os(macOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #endif
+                    TextField("settings.server.braintoken", text: $settings.brainToken)
+                        .textFieldStyle(.roundedBorder)
+                        #if !os(macOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #endif
+                    Text("settings.server.hint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)

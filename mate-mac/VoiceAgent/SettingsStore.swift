@@ -28,6 +28,39 @@ final class SettingsStore: ObservableObject {
     @Published var cuesEnabled: Bool { didSet { defaults.set(cuesEnabled, forKey: "cuesEnabled") } }
     @Published var bargeInEnabled: Bool { didSet { defaults.set(bargeInEnabled, forKey: "bargeInEnabled") } }
 
+    // MARK: - Sunucu / bağlantı URL'leri (kullanıcı değiştirebilir)
+
+    /// LiveKit sunucu URL'i. Boşsa default'a (Secrets) düşülür → bkz. resolvedLivekitURL.
+    @Published var livekitURL: String { didSet { defaults.set(livekitURL, forKey: Self.livekitURLKey) } }
+    /// Brain URL'i — `{brainURL}/api/livekit-token` ile TAZE LiveKit token çekilir.
+    @Published var brainURL: String { didSet { defaults.set(brainURL, forKey: Self.brainURLKey) } }
+    /// Brain API token'ı (Bearer). Boşsa → statik Secrets token'a düşülür.
+    @Published var brainToken: String { didSet { defaults.set(brainToken, forKey: Self.brainTokenKey) } }
+
+    static let livekitURLKey = "livekitURL"
+    static let brainURLKey = "brainURL"
+    static let brainTokenKey = "brainToken"
+    static let defaultLivekitURL = Secrets.livekitServerURL
+    static let defaultBrainURL = "https://mate-brain.drascom.uk"
+
+    /// Bağlantı için kullanılacak LiveKit URL'i — boşsa default. (TokenSource bunu
+    /// her bağlanışta UserDefaults'tan okur; @MainActor store gerekmeden.)
+    static var resolvedLivekitURL: String {
+        let v = (UserDefaults.standard.string(forKey: livekitURLKey) ?? "").trimmingCharacters(in: .whitespaces)
+        return v.isEmpty ? defaultLivekitURL : v
+    }
+
+    /// Token çekmek için brain URL'i — boşsa default.
+    static var resolvedBrainURL: String {
+        let v = (UserDefaults.standard.string(forKey: brainURLKey) ?? "").trimmingCharacters(in: .whitespaces)
+        return v.isEmpty ? defaultBrainURL : v
+    }
+
+    /// Brain API token'ı — boş olabilir (o zaman statik token'a düşülür).
+    static var resolvedBrainToken: String {
+        (UserDefaults.standard.string(forKey: brainTokenKey) ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
     init() {
         language = defaults.string(forKey: "language") ?? "tr"
         voice = defaults.string(forKey: "voice") ?? "nese"
@@ -36,6 +69,9 @@ final class SettingsStore: ObservableObject {
         wakeWord = defaults.string(forKey: "wakeWord") ?? "candan"
         cuesEnabled = defaults.object(forKey: "cuesEnabled") as? Bool ?? true
         bargeInEnabled = defaults.object(forKey: "bargeInEnabled") as? Bool ?? true
+        livekitURL = defaults.string(forKey: Self.livekitURLKey) ?? Self.defaultLivekitURL
+        brainURL = defaults.string(forKey: Self.brainURLKey) ?? Self.defaultBrainURL
+        brainToken = defaults.string(forKey: Self.brainTokenKey) ?? ""
     }
 
     /// Brain'in beklediği participant attribute sözlüğü.

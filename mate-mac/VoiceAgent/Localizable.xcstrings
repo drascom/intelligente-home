@@ -192,6 +192,41 @@
         }
       }
     },
+    "settings.server.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Server / Connection" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Sunucu / Bağlantı" } }
+      }
+    },
+    "settings.server.livekit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "LiveKit URL" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "LiveKit URL" } }
+      }
+    },
+    "settings.server.brain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Brain URL" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Brain URL" } }
+      }
+    },
+    "settings.server.braintoken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token" } }
+      }
+    },
+    "settings.server.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Applies on next connect/refresh. Empty = default. Token stays the same — if you change the URL, make sure the token matches that server." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Bir sonraki bağlan/refresh'te geçerli olur. Boş = varsayılan. Token aynı kalır — URL değişirse token'ın o sunucuyla uyumu sizin sorumluluğunuzdadır." } }
+      }
+    },
     "settings.title" : {
       "extractionState" : "manual",
       "localizations" : {

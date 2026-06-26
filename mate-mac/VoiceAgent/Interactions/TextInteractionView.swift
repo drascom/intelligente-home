@@ -15,11 +15,17 @@ struct TextInteractionView: View {
         VStack {
             VStack {
                 participants()
-                ChatView()
-                #if os(macOS)
-                    .frame(maxWidth: 128 * .grid)
-                #endif
-                    .blurredTop()
+                // Sohbet alanı en fazla pencere yüksekliğinin %60'ı; en yeni mesaj
+                // (alt) net, yukarı doğru üst kenarda yumuşak fade (blurredTop mask).
+                GeometryReader { geo in
+                    ChatView()
+                    #if os(macOS)
+                        .frame(maxWidth: 128 * .grid)
+                    #endif
+                        .frame(maxWidth: .infinity, maxHeight: geo.size.height * 0.6, alignment: .bottom)
+                        .blurredTop()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
             }
             #if os(iOS)
             .contentShape(Rectangle())

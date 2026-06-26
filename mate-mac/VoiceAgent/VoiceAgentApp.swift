@@ -40,13 +40,9 @@ struct VoiceAgentApp: App {
         // Varsayılan transcription receiver'ı bizimkiyle DEĞİŞTİRİYORUZ (aynı topic'e
         // iki kayıt çakışır). Metin gönderme (senders) varsayılan kalır.
         let room = Room()
+        // URL'i her bağlanışta Settings'ten (UserDefaults) taze okuyan token kaynağı.
         let session = Session(
-            tokenSource: LiteralTokenSource(
-                serverURL: URL(string: Secrets.livekitServerURL)!,
-                participantToken: Secrets.livekitToken,
-                participantName: "mac-client",
-                roomName: "mate-demo"
-            ),
+            tokenSource: MateTokenSource(),
             options: SessionOptions(room: room),
             receivers: [CandanTranscriptionReceiver(room: room)]
         )
