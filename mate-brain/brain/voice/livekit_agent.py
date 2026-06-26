@@ -25,6 +25,7 @@ Audio plane:
 
 import asyncio
 import logging
+import time
 from array import array
 
 from wyoming.event import Event as WyomingEvent
@@ -59,6 +60,13 @@ MAX_UTTERANCE_S = 12.0     # utterance başına sert tavan
 # süresi. Tek bir gürültü/eko karesi cevabı kesmesin diye eşik (özellikle uzun
 # cevaplarda gürültülü ortamda kesilme oluyordu). VPIO eko'yu zaten bastırır; bu da
 # kısa dış-gürültü blip'lerini eler, gerçek (sürekli) konuşma yine barge-in yapar.
+# Wake gate propagation toleransı: awake='1' attribute'u brain'e GECİKMELİ ulaşır
+# (data-channel + jitter). Brain'in gördüğü geçiş anından (wake_at) bu kadar ÖNCE
+# başlayan utterance'ı "wake kelimesi" (düşür), sonrasını "komut" (işle) say. Tolerans
+# komutu korur: kullanıcı gerçek uyanıştan hemen sonra konuşup event geç gelse bile
+# komut 'wake'ten önce başladı sanılıp düşmesin.
+WAKE_PROPAGATION_TOLERANCE_S = 0.4
+
 BARGE_IN_MIN_S = 0.25  # gerçek barge-in: ~0.25sn sürekli konuşma asistanı keser
 
 # Yayınladığımız AudioSource'un tampon boyutu (ms). SDK varsayılanı 1000ms = TTS
@@ -118,7 +126,12 @@ class LiveKitAgent:
         # ses jitter-buffer'ı yüzünden audio brain'e GEÇ ulaşır, awake='1' event'i
         # data-channel'dan HIZLI gelir → utterance başında awake okunduğunda cache
         # zaten '1' olur ve start-gate (awake=0) tek başına "candan"ı yakalayamaz.
-        self._wake_pending = False
+        # Wake sızıntı kilidi (ZAMAN-BAZLI): brain'in `candan.awake` 0→1 geçişini
+        # gördüğü monotonic an. Bir utterance'ın AUDIO'su bu andan (tolerans kadar)
+        # ÖNCE başladıysa o "candan" wake kelimesidir → düşürülür; SONRA başlayan ilk
+        # gerçek komut ASLA düşmez. 0 = yakın zamanda wake yok. Uykuya dönünce (1→0)
+        # sıfırlanır ki eski wake yeni utterance'ları etkilemesin.
+        self._wake_at = 0.0
         # Barge-in (araya girme) izni: agent konuşurken kullanıcı sesi TTS'i kessin mi.
         # İstemci `candan.barge_in` attribute'u ile canlı kontrol eder ('0'=KAPALI →
         # kesme yok, '1'/yok=AÇIK). _on_attrs_changed event'i ile güncellenir.
@@ -249,8 +262,15 @@ class LiveKitAgent:
                 # tetikleyen söz atılsın. Sadece GERÇEK 0→1 geçişinde (önceki cache
                 # '0'), bağlantı anındaki ilk '1' yayınında değil.
                 prev = self._attr_cache.get(ident, {}).get("candan.awake")
-                if changed.get("candan.awake") == "1" and prev == "0":
-                    self._wake_pending = True
+                new_awake = changed.get("candan.awake")
+                if new_awake == "1" and prev == "0":
+                    # Uykudan uyanış: bu anı kaydet → bu andan ÖNCE başlayan utterance
+                    # (wake kelimesi "candan") düşer, sonraki ilk komut işlenir.
+                    self._wake_at = time.monotonic()
+                elif new_awake == "0":
+                    # Uykuya dönüş: eski wake anını temizle → genuine-asleep utterance'lar
+                    # yanlışlıkla "uyandıktan sonra" sayılıp işlenmesin.
+                    self._wake_at = 0.0
                 # Barge-in izni: '0' → agent konuşurken kesme YOK; '1'/yok → AÇIK.
                 if "candan.barge_in" in changed:
                     self._barge_in_enabled = changed["candan.barge_in"] != "0"
@@ -263,6 +283,7 @@ class LiveKitAgent:
         # Barge-in iznini de varsayılana (AÇIK) al; istemci connect'te yeniden yayınlar.
         self._attr_cache = {}
         self._barge_in_enabled = True
+        self._wake_at = 0.0
         # Aktif AudioStream — kopunca _on_disconnected aclose etsin diye tutulur.
         self._active_stream = None
 
@@ -368,6 +389,7 @@ class LiveKitAgent:
         utterance_s = 0.0
         last_turn_check_s = 0.0     # son smart-turn kontrolündeki silence_s (re-check cadence)
         utterance_awake = True      # bu utterance BAŞINDA istemci uyanık mıydı (wake gate)
+        utterance_start_at = 0.0    # ilk gerçek konuşma karesinin monotonic anı (wake gate)
         try:
             async for event in stream:
                 frame = event.frame  # rtc.AudioFrame
@@ -409,6 +431,7 @@ class LiveKitAgent:
                     silence_s = 0.0
                     utterance_s = 0.0
                     last_turn_check_s = 0.0
+                    utterance_start_at = 0.0
 
                 await stt.feed(
                     WyomingEvent(
@@ -436,6 +459,8 @@ class LiveKitAgent:
                     if not speech_seen:
                         self._set_agent_state("listening")
                         self._debug("user_speech…")
+                        # Bu utterance'ın AUDIO-başlangıç anı (wake gate karşılaştırması).
+                        utterance_start_at = time.monotonic()
                     speech_seen = True
                     silence_s = 0.0
                     last_turn_check_s = 0.0  # konuşma sürdü → re-check cadence sıfırla
@@ -486,7 +511,8 @@ class LiveKitAgent:
                     try:
                         await asyncio.wait_for(
                             self._handle_utterance(
-                                session, bytes(buf), participant, track, utterance_awake
+                                session, bytes(buf), participant, track,
+                                utterance_awake, utterance_start_at,
                             ),
                             timeout=60.0,
                         )
@@ -542,7 +568,7 @@ class LiveKitAgent:
 
     async def _handle_utterance(
         self, stt: WhisperSession, pcm: bytes = b"", participant=None, track=None,
-        awake: bool = True,
+        awake: bool = True, utterance_start_at: float = 0.0,
     ) -> None:
         """DUPLICATE turn-logic (satellite.py / api/voice.py ile aynı sıra):
         transcript → resolve-session → presence → deliveries → agent.respond →
@@ -558,16 +584,23 @@ class LiveKitAgent:
             return
         log.info("livekit agent: duyuldu %r", text)
         self._debug(f"stt_final: {text[:40]}" if text else "stt_final: (boş)")
-        # Sunucu wake gate: utterance uyku modunda BAŞLADIYSA, VEYA bu utterance
-        # sırasında istemci yeni uyandıysa (wake'i tetikleyen "candan" sözü) → boş/
-        # hayalet transcript gibi düşür: cevap yok, add_message yok, transcript yayını
-        # yok. İstemci mute'u sesi durdurmuyor; "candan" sızıntısı burada engellenir.
-        # _wake_pending: start-gate awake'i '0' yakalayamadığı race'i (audio jitter-
-        # buffer geç, awake='1' event'i hızlı) kapatır; tek seferlik tüketilir.
-        wake_pending = self._wake_pending
-        self._wake_pending = False
-        if not awake or wake_pending:
-            log.info("livekit agent: uyku/uyanış sözü, atlandı: %r", text[:60])
+        # Sunucu wake gate (ZAMAN-BAZLI): SADECE wake kelimesi ("candan") düşsün, ilk
+        # gerçek komut ASLA düşmesin. wake_at = brain'in awake 0→1 geçişini gördüğü an.
+        #  • is_wake_word: utterance AUDIO'su geçişten (tolerans kadar) ÖNCE başladı →
+        #    bu "candan"dır → düşür (cevap/add_message/transcript yok).
+        #  • woke: geçişten sonra (tolerans dahilinde) başladı → kullanıcı uyanmış say;
+        #    start-gate cache'i propagation lag yüzünden '0' okusa BİLE komutu işle.
+        #  • wake_at=0 (yakın wake yok) → saf start-gate'e düş: genuine-asleep söz düşer.
+        wake_at = self._wake_at
+        is_wake_word = bool(wake_at) and (
+            utterance_start_at < wake_at - WAKE_PROPAGATION_TOLERANCE_S
+        )
+        woke = bool(wake_at) and (
+            utterance_start_at >= wake_at - WAKE_PROPAGATION_TOLERANCE_S
+        )
+        if is_wake_word or not (awake or woke):
+            reason = "wake kelimesi" if is_wake_word else "uyku modunda söz"
+            log.info("livekit agent: %s, atlandı: %r", reason, text[:60])
             self._set_agent_state("idle")
             return
         if text and looks_hallucinated(text):
