@@ -609,16 +609,6 @@ class LiveKitAgent:
         if not text:
             return
 
-        # AKICILIK: kullanıcı transcript'ini HEMEN yayınla — LLM'i BEKLEME. Bütün
-        # utterance turn detection ile hizalı TEK tutarlı final (parça parça değil);
-        # asistan satırı respond bitince ayrı yayınlanır. Böylece kullanıcının sözü,
-        # agent düşünürken anında ve tek parça görünür; cevabın arkasında geç kalmaz
-        # → istemcinin akıcı lokal partial akışıyla örtüşür.
-        human_track_sid = getattr(track, "sid", None)
-        asyncio.create_task(
-            self._publish_text(text, track_sid=human_track_sid, role="user")
-        )
-
         speaker = await self._identify(pcm)
         speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
 
@@ -664,12 +654,14 @@ class LiveKitAgent:
         emit_turn(self.bus, scope_key, None, text, answer, speaker=speaker)
         log.info("livekit agent: yanıt %r", (answer or "")[:160])
 
-        # Asistan cevabını yayınla (kullanıcı satırı yukarıda STT biter bitmez
-        # yayınlandı). Best-effort + ayrı task → turn'ü/TTS'i bloklamaz, hata turn'ü
-        # bozmaz. Sıra korunur: kullanıcı (önce) → asistan (sonra).
-        asyncio.create_task(
-            self._publish_text(answer, track_sid=self._pub_track_sid, role="assistant")
-        )
+        # Transcript'leri SIRALI/EŞLİ yayınla: kullanıcı satırı cevabın hemen ÖNCESİNDE,
+        # ardından asistan satırı → ekranda her zaman Q,A,Q,A. (User'ı STT biter bitmez
+        # erken yayınlamak, kullanıcı cevap gelmeden 2. soruyu sorunca Q1,Q2,A1,Q3,A2…
+        # sıra kaymasına yol açıyordu.) Anlık his için app'te zaten LOCAL echo var, bu
+        # yüzden user'ı cevapla birlikte yayınlamak gecikme hissi yaratmaz, sırayı düzeltir.
+        # Best-effort + ayrı task → turn'ü/TTS'i bloklamaz, hata turn'ü bozmaz.
+        human_track_sid = getattr(track, "sid", None)
+        asyncio.create_task(self._publish_transcripts(text, answer, human_track_sid))
 
         if answer:
             # İstemcinin seçtiği TTS sesi (attribute), yoksa varsayılan.

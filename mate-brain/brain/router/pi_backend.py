@@ -103,26 +103,23 @@ class PiBackend:
                 log.info("pi backend kapandı → keep-warm yeniden ısıtıyor")
                 await self.warmup()
             elif ping_every > 0 and time.monotonic() - self._last_turn >= ping_every:
-                # Süreç canlı ama ping_every kadar boşta → Codex'i sıcak tut.
+                # Süreç canlı ama ping_every kadar boşta → Codex'i sıcak tut (yan kanal,
+                # context kirletmez).
                 await self._warm_ping()
 
     async def _warm_ping(self) -> None:
-        """Boşta kalan kalıcı süreçte minik bir tur çevirerek Codex backend'i
-        (sunucu-tarafı model + bağlantı) sıcak tut. Lock altında → gerçek turla
-        yarışmaz; gerçek tur araya girerse _last_turn güncellenir ve sonraki
-        kontrol ping atmaz. Best-effort: hata turu bozmaz (sonraki tur ısıtır)."""
+        """Codex backend'i (sunucu-tarafı model + auth) boşta sıcak tut — TAMAMEN
+        YAN KANAL. KALICI conversational süreci/context'i KULLANMAZ: ping/pong sohbet
+        bağlamına EKLENMEZ (kirletmez) ve transcript'e/respond yoluna HİÇ değmez.
+        Atılık (ephemeral) süreçte tek round-trip; sonuç atılır. Aynı Codex
+        hesabı/OAuth olduğu için sunucu-tarafı model sıcak kalır (kalıcı sürecin ilk
+        turu da hızlanır). Best-effort: hata turu bozmaz. NOT: kalıcı süreç idle-exit
+        ederse onu keep_warm'ın yeniden-ısıtması canlandırır; bu ping onu kirletmez."""
+        t0 = time.monotonic()
         try:
-            async with self._lock:
-                # Lock'u beklerken gerçek tur geçtiyse artık boşta değiliz → atla.
-                if time.monotonic() - self._last_turn < settings.pi_warm_ping_interval:
-                    return
-                proc = self._proc
-                if proc is None or proc.returncode is not None:
-                    return
-                t0 = time.monotonic()
-                await asyncio.wait_for(self._turn(proc, "ping"), 60)
-                self._last_turn = time.monotonic()
-            log.info("pi warm-ping OK (%.1fs)", time.monotonic() - t0)
+            await self.complete_once("ping", timeout=60)
+            self._last_turn = time.monotonic()  # idle ping saatini ileri al
+            log.info("pi warm-ping OK (ephemeral yan kanal, %.1fs)", time.monotonic() - t0)
         except Exception as e:
             log.warning("pi warm-ping failed: %s", e)
 
