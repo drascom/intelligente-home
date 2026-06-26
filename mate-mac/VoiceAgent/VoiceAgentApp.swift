@@ -43,7 +43,13 @@ struct VoiceAgentApp: App {
         // URL'i her bağlanışta Settings'ten (UserDefaults) taze okuyan token kaynağı.
         let session = Session(
             tokenSource: MateTokenSource(),
-            options: SessionOptions(room: room),
+            // preConnectAudio KAPALI: açıkken Session bağlanmadan ÖNCE mic'i açıp bir
+            // preconnect track yayınlar; WakeCoordinator'ın setMicrophone + reaktif
+            // microphoneStateChanged guard'ı bununla çakışır → İKİ mic track + sürekli
+            // publish/unpublish churn → macOS 26 VPIO/CoreAudio overload → ilk
+            // bağlantı 2-3 kez kopup yeniden bağlanır. Kapalı = tek deterministik
+            // track (WakeCoordinator yönetir) → tek, stabil bağlantı.
+            options: SessionOptions(room: room, preConnectAudio: false),
             receivers: [CandanTranscriptionReceiver(room: room)]
         )
         self.session = session
