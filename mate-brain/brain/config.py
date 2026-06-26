@@ -48,8 +48,10 @@ class Settings(BaseSettings):
     satellites: str = ""
 
     # Speaker-ID (voice-ID): sherpa-onnx CAM++ embedding. Kapalı = kişi tanıma yok.
-    # Model: models/campplus.onnx (mate-brain/models/README.md'den indir).
-    speaker_id_enabled: bool = False
+    # Model: models/campplus.onnx (mate-brain/models/README.md'den indir). AÇIK:
+    # her turda konuşanı tanı → kişisel oturum + isimle hitap + bilinmeyene oto-enroll.
+    # Model yoksa build_speaker_id None döner (graceful: guest moda düşer).
+    speaker_id_enabled: bool = True
     speaker_model_path: str = "models/campplus.onnx"
     speaker_model_id: str = "campplus_zh_en_advanced_v1"  # tutarlılık kilidi etiketi
     # Kosinüs eşiği. Gerçek ev kayıtlarıyla kalibre (2026-06-16): doğru kişi

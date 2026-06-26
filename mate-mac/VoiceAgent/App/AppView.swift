@@ -19,6 +19,9 @@ struct AppView: View {
     @StateObject private var contentChannel = ContentChannelReceiver()
     @State private var showContent = false
 
+    /// O an tanınan/aktif konuşmacı (`candan.speaker`) → üstte küçük gösterge.
+    @StateObject private var speaker = SpeakerReceiver()
+
     // Show the transcript/chat view by default; the user can still toggle it
     // off with the text-input button in the ControlBar.
     @State private var chat: Bool = true
@@ -72,6 +75,7 @@ struct AppView: View {
             wakeCoordinator.connectionChanged(connected)
             debugMonitor.connectionChanged(connected, room: session.room)
             contentChannel.connectionChanged(connected, room: session.room)
+            speaker.connectionChanged(connected, room: session.room)
         }
         .onChange(of: contentChannel.latest) { _, item in
             if item != nil { showContent = true } // yeni içerik gelince otomatik aç
@@ -128,6 +132,9 @@ struct AppView: View {
                 .overlay { contentPanel() }
                 // Panel açıkken üst düğmeleri gizle (kapatma panelin kendi (x)'iyle).
                 .overlay(alignment: .topTrailing) { if !showContent { topButtons() } }
+                .overlay(alignment: .topLeading) {
+                    if !showContent, let name = speaker.current?.label { speakerBadge(name) }
+                }
                 .animation(.default, value: chat)
                 .animation(.default, value: showContent)
                 .animation(.default, value: session.isConnected)
@@ -166,6 +173,23 @@ struct AppView: View {
             }
         }
         .padding(3 * .grid)
+    }
+
+    /// Üst solda o anki konuşmacı göstergesi (sade glass3 kapsül).
+    private func speakerBadge(_ name: String) -> some View {
+        HStack(spacing: 1.5 * .grid) {
+            Image(systemName: "person.fill")
+                .font(.system(size: 12))
+            Text(name)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.fg1)
+        .padding(.horizontal, 3 * .grid)
+        .padding(.vertical, 2 * .grid)
+        .glass3(cornerRadius: 5 * .grid)
+        .padding(3 * .grid)
+        .transition(.opacity)
     }
 
     private func circleButton(_ systemName: String, action: @escaping () -> Void) -> some View {

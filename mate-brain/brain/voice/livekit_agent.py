@@ -136,6 +136,11 @@ class LiveKitAgent:
         # İstemci `candan.barge_in` attribute'u ile canlı kontrol eder ('0'=KAPALI →
         # kesme yok, '1'/yok=AÇIK). _on_attrs_changed event'i ile güncellenir.
         self._barge_in_enabled = True
+        # Oto-enrollment (recognize-first) geçici durumu: bilinmeyen ses asistana
+        # hitap edince orijinal istek BEKLETİLİR (pending_enroll={text,emb}), asistan
+        # ismi sorar; sonraki utterance isim olur, enroll edilir, bekletilen istek
+        # tanınan kullanıcı olarak işlenir. None = enrollment akışında değiliz.
+        self._pending_enroll: dict | None = None
         # Smart Turn v3 (ses-tabanlı EOU): açıksa _consume_track endpointing kararını
         # sabit sessizlik zamanlayıcısı yerine modele bağlar. Kapalıysa None →
         # eski saf-sessizlik davranışı (SILENCE_AFTER_S).
@@ -549,22 +554,24 @@ class LiveKitAgent:
         mean_abs = sum(abs(s) for s in samples) / len(samples)
         return mean_abs < SILENCE_RMS
 
-    async def _identify(self, pcm: bytes) -> str | None:
-        """Biriken utterance PCM'inden kişiyi tanı (voice-ID). s16le 16k mono."""
+    async def _identify(self, pcm: bytes):
+        """Biriken utterance PCM'inden kişiyi tanı (voice-ID). s16le 16k mono.
+        (name, emb) döner: name=tanınan isim|None (unknown), emb=ham embedding|None
+        (oto-enroll için gerekli). Kısa ses / speaker kapalı / hata → (None, None)."""
         sp = self.speaker
         if sp is None or not pcm:
-            return None
+            return None, None
         n_samples = len(pcm) // 2
         if n_samples < int(self.settings.speaker_min_seconds * STT_RATE):
-            return None
+            return None, None
         try:
             emb = await asyncio.to_thread(sp.embed_pcm, pcm, STT_RATE, 2, 1)
             name, score = sp.identify(emb)
             log.info("livekit agent: speaker-ID %s (%.3f)", name or "unknown", score)
-            return name
+            return name, emb
         except Exception as e:
             log.warning("livekit agent: speaker-ID failed: %s", e)
-            return None
+            return None, None
 
     async def _handle_utterance(
         self, stt: WhisperSession, pcm: bytes = b"", participant=None, track=None,
@@ -609,10 +616,33 @@ class LiveKitAgent:
         if not text:
             return
 
-        speaker = await self._identify(pcm)
+        speaker, emb = await self._identify(pcm)
         speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
 
-        # Tanınan kişi → kullanıcı-kapsamlı oturum; yoksa oda-kapsamı.
+        # --- Recognize-first oto-enrollment alt-akışı (speaker-ID açıkken) ---
+        if self.speaker is not None:
+            if self._pending_enroll is not None:
+                # 2. TUR: bu utterance = isim → enroll et + bekletilen isteği işle.
+                await self._complete_enrollment(text, emb, participant, track)
+                return
+            if speaker is None and emb is not None:
+                # Bilinmeyen ses + asistana hitap (zaten wake-gated) → ÖNCE tanı:
+                # isteği beklet, ismi sor. emb yoksa (kısa ses) enroll deneme → guest.
+                await self._begin_enrollment(text, emb, participant, track)
+                return
+
+        await self._process_turn(text, speaker, speaker_id, participant, track)
+
+    async def _process_turn(
+        self, text, speaker, speaker_id, participant=None, track=None,
+    ) -> None:
+        """Tanınmış/guest bir turu işle: scope→session→presence→deliveries→respond→
+        save→emit→transcript→TTS. Normal _handle_utterance ve enrollment sonrası
+        BEKLETİLEN istek tek yol olarak buraya düşer. speaker_id None → guest
+        (user_id NULL, kişisel bellek yok)."""
+        # FAZ 1.5: aktif konuşmacıyı app'e bildir (her tur).
+        self._publish_speaker(speaker, speaker_id, guest=(speaker_id is None))
+        # Tanınan kişi → kullanıcı-kapsamlı oturum; yoksa oda-kapsamı (guest).
         scope_key, user_id = (
             (f"user-{speaker_id}", speaker_id) if speaker_id else (self.conversation_id, None)
         )
@@ -655,23 +685,124 @@ class LiveKitAgent:
         log.info("livekit agent: yanıt %r", (answer or "")[:160])
 
         # Transcript'leri SIRALI/EŞLİ yayınla: kullanıcı satırı cevabın hemen ÖNCESİNDE,
-        # ardından asistan satırı → ekranda her zaman Q,A,Q,A. (User'ı STT biter bitmez
-        # erken yayınlamak, kullanıcı cevap gelmeden 2. soruyu sorunca Q1,Q2,A1,Q3,A2…
-        # sıra kaymasına yol açıyordu.) Anlık his için app'te zaten LOCAL echo var, bu
-        # yüzden user'ı cevapla birlikte yayınlamak gecikme hissi yaratmaz, sırayı düzeltir.
-        # Best-effort + ayrı task → turn'ü/TTS'i bloklamaz, hata turn'ü bozmaz.
+        # ardından asistan satırı → ekranda her zaman Q,A,Q,A. Anlık his için app'te
+        # zaten LOCAL echo var. Best-effort + ayrı task → turn'ü/TTS'i bloklamaz.
         human_track_sid = getattr(track, "sid", None)
         asyncio.create_task(self._publish_transcripts(text, answer, human_track_sid))
 
         if answer:
-            # İstemcinin seçtiği TTS sesi (attribute), yoksa varsayılan.
             voice = self._attrs(participant).get("voice") or None
             # TTS'i ayrı task'ta çal → bir sonraki utterance barge-in ile iptal edebilsin.
-            # _speak başında "speaking", bitince "idle" durumunu yayar.
             self._tts_task = asyncio.create_task(self._speak(answer, voice))
         else:
-            # Yanıt yok → REST'e dön (aksi halde "thinking"de takılı kalır).
             self._set_agent_state("idle")
+
+    # ---- Oto-enrollment (recognize-first) ----
+
+    @staticmethod
+    def _is_en(language) -> bool:
+        return (language or "").lower().startswith("en")
+
+    @staticmethod
+    def _parse_name(text: str) -> str | None:
+        """Kısa isim çıkar: 'Ben Ali', 'Adım Ali', 'Benim adım Ali Veli', 'My name
+        is Ali', 'Ali'. İlk 1-2 kelimeyi isim say; dolgu önekleri at. Harf yoksa None."""
+        import re
+
+        t = (text or "").strip().strip(".!?,").strip()
+        low = t.lower()
+        for p in ("benim adım", "adım", "ben ", "my name is", "i am ", "i'm ",
+                  "it's ", "it is ", "im "):
+            if low.startswith(p):
+                t = t[len(p):].strip()
+                break
+        words = [w for w in re.split(r"\s+", t) if w][:2]
+        name = " ".join(words).strip(".!?,")
+        if not name or not any(c.isalpha() for c in name):
+            return None
+        return name[:40].title()
+
+    def _publish_speaker(self, name, speaker_id, guest: bool) -> None:
+        """FAZ 1.5: aktif/ tanınan konuşmacıyı app'e bildir → text-stream topic
+        `candan.speaker`, JSON {name, speakerId, guest}. Best-effort, ayrı task."""
+        room = self._room
+        if room is None:
+            return
+        import json
+
+        payload = json.dumps(
+            {"name": name, "speakerId": speaker_id, "guest": bool(guest)},
+            ensure_ascii=False,
+        )
+
+        async def _send() -> None:
+            try:
+                await room.local_participant.send_text(payload, topic="candan.speaker")
+            except Exception:
+                pass
+
+        try:
+            asyncio.create_task(_send())
+        except RuntimeError:
+            pass
+
+    async def _enroll_say(self, text: str, participant=None) -> None:
+        """Enrollment alt-akışı için asistan satırı: transcript yayını + TTS, AMA
+        sohbet history'sine YAZMAZ (meta). TTS'i await eder ki sıralı aksın."""
+        asyncio.create_task(
+            self._publish_text(text, track_sid=self._pub_track_sid, role="assistant")
+        )
+        await self._speak(text, self._attrs(participant).get("voice") or None)
+
+    async def _begin_enrollment(self, text, emb, participant, track) -> None:
+        """1. TUR: bilinmeyen ses → orijinal isteği BEKLET, ismi sor (TR; EN fallback)."""
+        self._pending_enroll = {"text": text, "emb": emb}
+        en = self._is_en(self._attrs(participant).get("language"))
+        ask = "I don't recognize you. What's your name?" if en else "Seni tanımıyorum, adın ne?"
+        log.info("enrollment: bilinmeyen ses → isim soruluyor (held=%r)", text[:40])
+        self._publish_speaker(None, None, guest=True)
+        await self._enroll_say(ask, participant)
+
+    async def _complete_enrollment(self, name_text, name_emb, participant, track) -> None:
+        """2. TUR: isim utterance'ı → kişi oluştur + örnek(ler) ekle + reload, sonra
+        'Memnun oldum {name}' + BEKLETİLEN isteği tanınan kullanıcı olarak işle.
+        Fail-open: isim ayrıştırılamaz / DB hatası → guest olarak bekletilen isteğe dön."""
+        pend = self._pending_enroll or {"text": "", "emb": None}
+        self._pending_enroll = None
+        en = self._is_en(self._attrs(participant).get("language"))
+        name = self._parse_name(name_text)
+        if not name:
+            log.info("enrollment: isim ayrıştırılamadı (%r) → guest fail-open", name_text[:40])
+            await self._process_turn(pend["text"], None, None, participant, track)
+            return
+        try:
+            from brain.voice.speaker import emb_to_bytes
+
+            rec = await self.db.create_speaker(name)
+            sid = rec["id"]
+            mid, dim = self.speaker.model_id, self.speaker.dim
+            # 1. adımda saklanan istek embedding'i + (varsa) isim turu embedding'i.
+            if pend.get("emb") is not None:
+                await self.db.add_speaker_sample(
+                    sid, emb_to_bytes(pend["emb"]), dim, mid, source="auto-enroll"
+                )
+            if name_emb is not None:
+                await self.db.add_speaker_sample(
+                    sid, emb_to_bytes(name_emb), dim, mid, source="auto-enroll"
+                )
+            self.speaker.reload(await self.db.all_speaker_embeddings())
+            log.info("enrollment: %r kaydedildi (id=%s)", name, sid)
+        except Exception as e:
+            log.warning("enrollment başarısız (%s) → guest fail-open", e)
+            await self._process_turn(pend["text"], None, None, participant, track)
+            return
+        greet = f"Nice to meet you, {name}." if en else f"Memnun oldum {name}."
+        self._publish_speaker(name, sid, guest=False)
+        await self._enroll_say(greet, participant)
+        # BEKLETİLEN orijinal isteği şimdi tanınan kullanıcı olarak İŞLE (kullanıcı
+        # tekrar etmek zorunda kalmasın). Held boşsa sadece selam yeter.
+        if pend.get("text"):
+            await self._process_turn(pend["text"], name, sid, participant, track)
 
     async def _poll_deliveries(self) -> None:
         """Arka plan döngüsü: vakti gelip chime çalınmış (notified) ama henüz
