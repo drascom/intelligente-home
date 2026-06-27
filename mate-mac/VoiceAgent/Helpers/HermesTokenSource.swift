@@ -92,23 +92,12 @@ struct HermesTokenSource: TokenSourceFixed {
     }
 }
 
-/// Bağlantı modu dağıtıcısı — `Session`'a verilen TEK token kaynağı. Her bağlanışta
-/// Settings'ten modu okur: `hermes` → `HermesTokenSource`, `brain` → `MateTokenSource`.
-/// Hermes modunda endpoint/key yoksa veya istek hata verirse NAZİKÇE brain/Secrets
-/// yoluna düşülür (app kırılmaz; sebep loglanır).
+/// `Session`'a verilen TEK token kaynağı. **HERMES-ONLY**: brain tamamen devre dışı
+/// (sunucuda da kapatıldı). Token yalnız `HermesTokenSource` (candan_voice endpoint)
+/// üzerinden çekilir. Endpoint/key eksikse veya istek hata verirse hata YUKARI
+/// FIRLATILIR → ekrana (ErrorView) düşer. FALLBACK YOK.
 struct CandanTokenSource: TokenSourceFixed {
     func fetch() async throws -> TokenSourceResponse {
-        let mode = await MainActor.run { SettingsStore.resolvedConnectionMode }
-        if mode == "brain" {
-            Log.line("[Token] mod=brain → MateTokenSource")
-            return try await MateTokenSource().fetch()
-        }
-        // mod=hermes (varsayılan)
-        do {
-            return try await HermesTokenSource().fetch()
-        } catch {
-            Log.line("[Token] hermes başarısız (\(error.localizedDescription)) → brain/Secrets'e düşüldü")
-            return try await MateTokenSource().fetch()
-        }
+        try await HermesTokenSource().fetch()
     }
 }

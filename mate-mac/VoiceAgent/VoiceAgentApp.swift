@@ -43,8 +43,8 @@ struct VoiceAgentApp: App {
         // URL'i her bağlanışta Settings'ten (UserDefaults) taze okuyan token kaynağı.
         let session = Session(
             // Bağlantı modu dağıtıcısı: Settings'ten hermes|brain seçer (her bağlanışta
-            // taze okur). Varsayılan hermes (candan_voice plugin); konfigüre değilse
-            // nazikçe brain/Secrets'e düşer.
+            // taze okur). Varsayılan hermes (candan_voice plugin). FALLBACK YOK: hata
+            // olursa ekrana düşer (brain'e sessiz düşüş yok); brain istiyorsan modu seç.
             tokenSource: CandanTokenSource(),
             // preConnectAudio KAPALI: açıkken Session bağlanmadan ÖNCE mic'i açıp bir
             // preconnect track yayınlar; WakeCoordinator'ın setMicrophone + reaktif

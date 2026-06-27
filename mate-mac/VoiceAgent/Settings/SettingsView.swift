@@ -32,34 +32,28 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Section("Connection") {
-                    Picker("Mode", selection: $settings.connectionMode) {
-                        Text("Hermes (candan_voice)").tag("hermes")
-                        Text("Brain (device-register)").tag("brain")
-                    }
-                    if settings.connectionMode == "hermes" {
-                        TextField("Token endpoint URL", text: $settings.tokenEndpointURL)
-                            .textFieldStyle(.roundedBorder)
-                            #if !os(macOS)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            #endif
-                        TextField("Client key (X-Candan-Key)", text: $settings.clientKey)
-                            .textFieldStyle(.roundedBorder)
-                            #if !os(macOS)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            #endif
-                        TextField("Room (optional)", text: $settings.room)
-                            .textFieldStyle(.roundedBorder)
-                            #if !os(macOS)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            #endif
-                        Text("GET {url}/candan/token?identity=…&room=… · header X-Candan-Key. Boşsa brain/Secrets'e düşülür.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                Section("Hermes bağlantısı") {
+                    TextField("Token endpoint URL", text: $settings.tokenEndpointURL)
+                        .textFieldStyle(.roundedBorder)
+                        #if !os(macOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #endif
+                    TextField("Client key (X-Candan-Key)", text: $settings.clientKey)
+                        .textFieldStyle(.roundedBorder)
+                        #if !os(macOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #endif
+                    TextField("Room (optional)", text: $settings.room)
+                        .textFieldStyle(.roundedBorder)
+                        #if !os(macOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #endif
+                    Text("candan_voice token endpoint: GET {url}/candan/token?identity=…&room=… · header X-Candan-Key. Boşsa bağlantı hata verir (ekrana düşer).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("settings.server.section") {
@@ -69,19 +63,7 @@ struct SettingsView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         #endif
-                    TextField("settings.server.brain", text: $settings.brainURL)
-                        .textFieldStyle(.roundedBorder)
-                        #if !os(macOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        #endif
-                    TextField("settings.server.braintoken", text: $settings.brainToken)
-                        .textFieldStyle(.roundedBorder)
-                        #if !os(macOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        #endif
-                    Text("settings.server.hint")
+                    Text("LiveKit URL — boşsa token endpoint'in döndürdüğü URL (wss://mate-livekit.drascom.uk) kullanılır.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -18,6 +18,12 @@
     "Bağlanıyor…" : {
 
     },
+    "Brain (device-register)" : {
+
+    },
+    "Client key (X-Candan-Key)" : {
+
+    },
     "connect.connecting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -62,6 +68,9 @@
         }
       }
     },
+    "Connection" : {
+
+    },
     "control.reconnect" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -99,7 +108,13 @@
         }
       }
     },
+    "GET {url}/candan/token?identity=…&room=… · header X-Candan-Key. Boşsa brain/Secrets'e düşülür." : {
+
+    },
     "Henüz içerik yok" : {
+
+    },
+    "Hermes (candan_voice)" : {
 
     },
     "İçerik" : {
@@ -115,7 +130,13 @@
         }
       }
     },
+    "Mode" : {
+
+    },
     "render yakında" : {
+
+    },
+    "Room (optional)" : {
 
     },
     "Ses cihazı (mikrofon + hoparlör)" : {
@@ -192,39 +213,89 @@
         }
       }
     },
-    "settings.server.section" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Server / Connection" } },
-        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Sunucu / Bağlantı" } }
-      }
-    },
-    "settings.server.livekit" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "LiveKit URL" } },
-        "tr" : { "stringUnit" : { "state" : "translated", "value" : "LiveKit URL" } }
-      }
-    },
     "settings.server.brain" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Brain URL" } },
-        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Brain URL" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brain URL"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brain URL"
+          }
+        }
       }
     },
     "settings.server.braintoken" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token (optional — only if auto-register fails)" } },
-        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Brain Token (opsiyonel — oto-kayıt başarısızsa)" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brain Token (optional — only if auto-register fails)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brain Token (opsiyonel — oto-kayıt başarısızsa)"
+          }
+        }
       }
     },
     "settings.server.hint" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Applies on next connect/refresh. Empty = default. Token stays the same — if you change the URL, make sure the token matches that server." } },
-        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Bir sonraki bağlan/refresh'te geçerli olur. Boş = varsayılan. Token aynı kalır — URL değişirse token'ın o sunucuyla uyumu sizin sorumluluğunuzdadır." } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies on next connect/refresh. Empty = default. Token stays the same — if you change the URL, make sure the token matches that server."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir sonraki bağlan/refresh'te geçerli olur. Boş = varsayılan. Token aynı kalır — URL değişirse token'ın o sunucuyla uyumu sizin sorumluluğunuzdadır."
+          }
+        }
+      }
+    },
+    "settings.server.livekit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LiveKit URL"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LiveKit URL"
+          }
+        }
+      }
+    },
+    "settings.server.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server / Connection"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sunucu / Bağlantı"
+          }
+        }
       }
     },
     "settings.title" : {
@@ -311,6 +382,9 @@
           }
         }
       }
+    },
+    "Token endpoint URL" : {
+
     },
     "Wake word başlatılamadı — mikrofon sürekli açık" : {
 
