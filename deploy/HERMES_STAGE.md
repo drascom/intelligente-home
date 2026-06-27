@@ -100,6 +100,16 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
   (cihaz-kapsamlı; None DEĞİL) → authz guard'ı geçer, `CANDAN_VOICE_ALLOW_ALL_USERS=true`
   ile yetkilenir. Speaker-ID açılınca (Faz 2) tanınan kişi override eder.
 
+### Token endpoint (2026-06-27, A2)
+- Plugin'e gömülü aiohttp sunucu: `GET /candan/token` (`X-Candan-Key` ile room-scoped
+  join token mint) + `GET /candan/health`. LiveKit secret sunucuda kalır.
+- env (`~/.hermes/.env` candan bloğu): `CANDAN_VOICE_CLIENT_KEY` (openssl rand),
+  `CANDAN_VOICE_TOKEN_PORT=8830`, `CANDAN_PUBLIC_LIVEKIT_URL=wss://mate-livekit.drascom.uk`.
+- Bind `0.0.0.0:8830` (henüz public DEĞİL → SSH tüneli ile eriş; public için Traefik route).
+- Doğrulandı: health/200, token/200 (geçerli jwt), yanlış-key/401, identity-yok/400;
+  endpoint token'ı ile sim e2e PASS (`[assistant] "3 kere 3, 9 eder."` + reply.wav).
+  Sözleşme: `hermes-plugins/candan_voice/CLIENT_INTEGRATION.md`.
+
 ### Faz 2 notları
 - **Per-user Hermes hafıza scope:** speaker-ID identify kodu bağlı ama Hermes
   tarafında brain-DB yok → enrolled embedding yok → herkes guest (cihaz-kapsamı).

@@ -92,6 +92,10 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         self._want_connected = False
         self._reconnecting = False
         self._reconnect_task: Optional[asyncio.Task] = None
+        # Token endpoint (aiohttp): clients fetch room-scoped join tokens with a
+        # shared key; LiveKit secret stays server-side. Started once in connect(),
+        # independent of room reconnects, stopped in disconnect().
+        self._token_runner = None
 
         # Smart-turn EOU (lazy, fail-open).
         self.turn_detector = None
@@ -154,6 +158,104 @@ class CandanVoiceAdapter(BasePlatformAdapter):
             pass
         return at.to_jwt()
 
+    def _mint_client_token(self, identity: str, room: str) -> str:
+        """Room-scoped JOIN token for a CLIENT participant (publish+subscribe+
+        canUpdateOwnMetadata). NOT kind=agent — a normal participant."""
+        from datetime import timedelta
+
+        from livekit import api
+
+        grants = api.VideoGrants(
+            room_join=True, room=room,
+            can_publish=True, can_subscribe=True, can_update_own_metadata=True,
+        )
+        at = (
+            api.AccessToken(self.settings.livekit_api_key, self.settings.livekit_api_secret)
+            .with_identity(identity)
+            .with_name(identity)
+            .with_ttl(timedelta(seconds=self.settings.client_token_ttl_seconds))
+            .with_grants(grants)
+        )
+        return at.to_jwt()
+
+    # ── Token endpoint (aiohttp) ──────────────────────────────────────────
+
+    async def _start_token_server(self) -> None:
+        """Embedded HTTP server: clients fetch room-scoped join tokens with a
+        shared key (LiveKit secret never leaves the server). Disabled (not
+        started) when CANDAN_VOICE_CLIENT_KEY is empty. Idempotent."""
+        if self._token_runner is not None:
+            return
+        if not self.settings.client_key:
+            log.warning("candan_voice: token endpoint KAPALI (CANDAN_VOICE_CLIENT_KEY boş)")
+            return
+        try:
+            from aiohttp import web
+        except Exception as e:
+            log.warning("candan_voice: aiohttp yok, token endpoint atlandı: %r", e)
+            return
+
+        app = web.Application()
+        app.router.add_get("/candan/health", self._handle_health)
+        app.router.add_get("/candan/token", self._handle_token)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, self.settings.token_bind, self.settings.token_port)
+        try:
+            await site.start()
+        except Exception as e:
+            log.warning("candan_voice: token endpoint başlatılamadı (%s:%s): %r",
+                        self.settings.token_bind, self.settings.token_port, e)
+            try:
+                await runner.cleanup()
+            except Exception:
+                pass
+            return
+        self._token_runner = runner
+        log.info("candan_voice: token endpoint AÇIK http://%s:%s/candan/token",
+                 self.settings.token_bind, self.settings.token_port)
+
+    async def _stop_token_server(self) -> None:
+        runner, self._token_runner = self._token_runner, None
+        if runner is not None:
+            try:
+                await runner.cleanup()
+            except Exception:
+                pass
+
+    async def _handle_health(self, request):
+        from aiohttp import web
+        return web.json_response({
+            "status": "ok",
+            "room": self.room_name,
+            "connected": bool(self._connected),
+            "url": self.settings.public_livekit_url,
+        })
+
+    async def _handle_token(self, request):
+        from aiohttp import web
+        import hmac
+
+        key = request.headers.get("X-Candan-Key", "")
+        if not (self.settings.client_key and hmac.compare_digest(key, self.settings.client_key)):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        identity = (request.query.get("identity") or "").strip()
+        if not identity:
+            return web.json_response({"error": "identity required"}, status=400)
+        room = (request.query.get("room") or "").strip() or self.room_name
+        try:
+            token = self._mint_client_token(identity, room)
+        except Exception as e:
+            log.warning("candan_voice: token mint hatası: %r", e)
+            return web.json_response({"error": "mint failed"}, status=500)
+        log.info("candan_voice: token verildi identity=%s room=%s", identity, room)
+        return web.json_response({
+            "url": self.settings.public_livekit_url,
+            "room": room,
+            "token": token,
+            "identity": identity,
+        })
+
     # ── Connection lifecycle ──────────────────────────────────────────────
 
     async def connect(self, *, is_reconnect: bool = False) -> bool:
@@ -165,6 +267,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
             self._set_fatal_error("config_missing", "LIVEKIT_API_SECRET missing", retryable=False)
             return False
         self._want_connected = True
+        await self._start_token_server()  # bağımsız; oda reconnect'lerinden etkilenmez
         await self._ensure_room()
         return await self._open_room()
 
@@ -297,9 +400,10 @@ class CandanVoiceAdapter(BasePlatformAdapter):
             self._reconnecting = False
 
     async def disconnect(self) -> None:
-        """Cancel consume/TTS tasks, stop reconnect, leave the room."""
+        """Cancel consume/TTS tasks, stop reconnect + token server, leave room."""
         self._want_connected = False
         self._connected = False
+        await self._stop_token_server()
         if self._reconnect_task:
             self._reconnect_task.cancel()
             self._reconnect_task = None

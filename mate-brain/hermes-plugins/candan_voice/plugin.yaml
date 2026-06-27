@@ -40,7 +40,19 @@ requires_env:
     description: "vox TTS port (default 8808)"
     prompt: "vox port"
     password: false
+  - name: CANDAN_VOICE_CLIENT_KEY
+    description: "Shared key clients send as X-Candan-Key to fetch a join token. Empty = token endpoint disabled."
+    prompt: "Client shared key"
+    password: true
 optional_env:
+  - name: CANDAN_VOICE_TOKEN_PORT
+    description: "Port for the embedded token endpoint (default 8830)."
+    prompt: "Token endpoint port"
+    password: false
+  - name: CANDAN_PUBLIC_LIVEKIT_URL
+    description: "Public LiveKit wss URL handed to clients (e.g. wss://mate-livekit.drascom.uk). Falls back to LIVEKIT_URL."
+    prompt: "Public LiveKit URL"
+    password: false
   - name: CANDAN_LIVEKIT_ROOM
     description: "Room the agent joins (default: mate-hermes-test — separate from brain's mate-demo)"
     prompt: "LiveKit room"

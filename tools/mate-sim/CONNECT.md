@@ -11,23 +11,25 @@
   (kind=agent) olarak bağlı. (brain'in `mate-demo`'su AYRI; karıştırma.)
 - **Identity:** `sim-client` (agent kimliği `assistant` ile çakışmaz).
 
-## Token
-- **Hazır token:** `tools/mate-sim/token.txt` (gitignored) — identity `sim-client`,
-  oda `mate-hermes-test`, publish+subscribe+canUpdateOwnMetadata, **7 gün** geçerli.
-  sim.py bunu otomatik okur. (Süresi dolarsa aşağıdan yeniden mint et.)
-- **Taze mint (stage'de, secret'ı brain.env/.env'den okur):**
+## Token — TERCİH: plugin token endpoint
+Plugin artık paylaşılan-anahtarlı bir token endpoint sunar (LiveKit secret sunucuda kalır).
+Tam sözleşme: `mate-brain/hermes-plugins/candan_voice/CLIENT_INTEGRATION.md`.
+
+- `GET /candan/token?identity=<id>&room=<ops>` + header `X-Candan-Key: <CANDAN_VOICE_CLIENT_KEY>`
+  → `{url, room, token, identity}`. Health: `GET /candan/health`. Hata: 401/400.
+- Endpoint stage'de `oracle-stage:8830` (henüz public değil → SSH tüneli ile eriş):
   ```
-  ssh oracle-stage 'cd /home/ubuntu/.hermes/hermes-agent && venv/bin/python - <<PY
-  import os; from datetime import timedelta; from livekit import api
-  from gateway.run import load_hermes_dotenv; from pathlib import Path
-  load_hermes_dotenv(hermes_home=Path("/home/ubuntu/.hermes"))
-  at=(api.AccessToken(os.getenv("LIVEKIT_API_KEY"),os.getenv("LIVEKIT_API_SECRET"))
-      .with_identity("sim-client").with_ttl(timedelta(days=7))
-      .with_grants(api.VideoGrants(room_join=True,room="mate-hermes-test",
-       can_publish=True,can_subscribe=True,can_update_own_metadata=True)))
-  print(at.to_jwt())
-  PY' > tools/mate-sim/token.txt
+  ssh -fN -L 8830:localhost:8830 oracle-stage   # tünel aç
+  KEY=$(ssh oracle-stage 'sed -n "s/^CANDAN_VOICE_CLIENT_KEY=//p" ~/.hermes/.env')
+  RESP=$(curl -s -H "X-Candan-Key: $KEY" "http://localhost:8830/candan/token?identity=sim-client")
+  export MATE_LK_URL=$(echo "$RESP" | python3 -c 'import sys,json;print(json.load(sys.stdin)["url"])')
+  export MATE_LK_TOKEN=$(echo "$RESP" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+  export MATE_LK_ROOM=mate-hermes-test
+  python sim.py --text "Candan, üç kere üç kaç eder?" --wait 35
   ```
+  (`--token-url` desteği eklenirse: `python sim.py --token-url http://localhost:8830/candan/token --key $KEY`.)
+- **Fallback hazır token:** `tools/mate-sim/token.txt` (gitignored) — identity `sim-client`,
+  oda `mate-hermes-test`, 7 gün. sim.py bunu otomatik okur.
 
 ## Sim'e geçirme
 ```
