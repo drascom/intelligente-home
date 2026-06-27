@@ -91,9 +91,18 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
 - ⏳ Uçtan uca tur (sim → STT → beyin → TTS) = **B worker** (`tools/mate-sim`,
   oda `mate-hermes-test`, hazır token `tools/mate-sim/token.txt`).
 
-### BLOCKER / Faz 2 notları
+### Authz fix (2026-06-27, B testi blocker'ıydı)
+- **Bulgu:** Hermes `gateway/authz_mixin.py` → `if not user_id: return False`,
+  allow-all bayraklarından ÖNCE. Guest (user_id=None) mesajı **sessizce düşer**
+  (brain hiç çalışmaz, log/hata yok). İlk B turu'nda STT doğru transcript verdi
+  (`'Candan, 2 artı 2 kaç eder?'`) ama cevap üretilmedi — kök neden buydu.
+- **Çözüm:** adapter guest'e `user_id="voice:<participant_identity>"` verir
+  (cihaz-kapsamlı; None DEĞİL) → authz guard'ı geçer, `CANDAN_VOICE_ALLOW_ALL_USERS=true`
+  ile yetkilenir. Speaker-ID açılınca (Faz 2) tanınan kişi override eder.
+
+### Faz 2 notları
 - **Per-user Hermes hafıza scope:** speaker-ID identify kodu bağlı ama Hermes
-  tarafında brain-DB yok → enrolled embedding yok → herkes guest (oda-kapsamı).
+  tarafında brain-DB yok → enrolled embedding yok → herkes guest (cihaz-kapsamı).
   Tanınan-kullanıcı→kişisel Hermes hafıza + oto-enrollment kalıcılığı = Faz 2.
 - **Streaming TTS:** `send()` tam metni alır; cümle-cümle TTS istenirse kendi
   segmentasyonumuz veya Hermes streaming-reply hook'u gerekir (şimdilik tek atış).

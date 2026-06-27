@@ -523,11 +523,18 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         human_track_sid = getattr(track, "sid", None)
         asyncio.create_task(self._publish_text(text, track_sid=human_track_sid, role="user"))
 
-        # speaker-ID → session scope. Recognized → per-user; guest → room scope.
+        # speaker-ID → session scope. Recognized → per-user; guest → DEVICE
+        # scope (LiveKit participant identity). NOT None: Hermes authz
+        # (authz_mixin `if not user_id: return False`) reddeder ve allow-all
+        # bayrağına BİLE ulaşamaz → user_id'siz turn sessizce düşer (brain hiç
+        # çalışmaz). Katılımcı kimliği (ör. "sim-client"/"mac-client") stabil bir
+        # cihaz-kullanıcısı verir; CANDAN_VOICE_ALLOW_ALL_USERS=true ile yetkilenir.
+        # Speaker-ID açılınca (Faz 2) tanınan kişi user_id'yi override eder.
         if speaker_id:
             user_id, user_name = str(speaker_id), speaker
         else:
-            user_id, user_name = None, None
+            pid = getattr(participant, "identity", None) or "guest"
+            user_id, user_name = f"voice:{pid}", pid
         source = self.build_source(
             chat_id=self.room_name,
             chat_name=self.room_name,
