@@ -1,0 +1,79 @@
+name: candan_voice
+label: Candan Voice
+kind: platform
+version: 0.1.0
+description: >
+  LiveKit voice platform adapter for Hermes Agent. Carries the Candan voice
+  stack (RMS endpointing, smart-turn v3 EOU, barge-in, wake-word gate,
+  speaker-ID, live transcript) as a single BasePlatformAdapter plugin. STT
+  (whisper) + TTS (vox) run as network services reached over host:port (same as
+  the brain uses) — they are not separate Hermes services and are not pushed to
+  the client. The mate-mac LiveKit client is unchanged. Inbound STT-final →
+  MessageEvent → Hermes brain; brain reply → send() → vox TTS published back.
+author: candan
+requires_env:
+  - name: LIVEKIT_URL
+    description: "LiveKit server URL the agent connects to (e.g. ws://127.0.0.1:7880)"
+    prompt: "LiveKit URL"
+    password: false
+  - name: LIVEKIT_API_KEY
+    description: "LiveKit API key for server-side JWT minting"
+    prompt: "LiveKit API key"
+    password: false
+  - name: LIVEKIT_API_SECRET
+    description: "LiveKit API secret for server-side JWT minting. Empty = adapter disabled."
+    prompt: "LiveKit API secret"
+    password: true
+  - name: STT_HOST
+    description: "Whisper STT host (Wyoming). e.g. 192.168.0.25"
+    prompt: "STT host"
+    password: false
+  - name: STT_PORT
+    description: "Whisper STT port (default 10300)"
+    prompt: "STT port"
+    password: false
+  - name: VOX_HOST
+    description: "vox TTS host. e.g. 192.168.0.25"
+    prompt: "vox host"
+    password: false
+  - name: VOX_PORT
+    description: "vox TTS port (default 8808)"
+    prompt: "vox port"
+    password: false
+optional_env:
+  - name: CANDAN_LIVEKIT_ROOM
+    description: "Room the agent joins (default: mate-hermes-test — separate from brain's mate-demo)"
+    prompt: "LiveKit room"
+    password: false
+  - name: STT_LANGUAGE
+    description: "Forced STT language (tr/en). Empty = per-client attribute / auto."
+    prompt: "STT language (tr/en or empty)"
+    password: false
+  - name: TTS_ENGINE
+    description: "TTS engine: vox (default) or piper"
+    prompt: "TTS engine"
+    password: false
+  - name: VOX_API_KEY
+    description: "vox bridge token (optional)"
+    prompt: "vox API key (optional)"
+    password: true
+  - name: TURN_DETECTOR_ENABLED
+    description: "Enable smart-turn v3 audio EOU (1/true; default on)."
+    prompt: "Smart-turn EOU? (true/false)"
+    password: false
+  - name: SPEAKER_ID_ENABLED
+    description: "Enable CAM++ speaker-ID (default off on Hermes; no enrollment DB yet)."
+    prompt: "Speaker-ID? (true/false)"
+    password: false
+  - name: SPEAKER_MODEL_PATH
+    description: "Path to campplus.onnx (required if SPEAKER_ID_ENABLED)."
+    prompt: "Speaker model path"
+    password: false
+  - name: CANDAN_HOME_CHANNEL
+    description: "Room for cron / proactive delivery (defaults to the joined room)."
+    prompt: "Home channel (or empty)"
+    password: false
+  - name: CANDAN_VOICE_ALLOW_ALL_USERS
+    description: "Allow any room participant to talk to the agent (dev/test)."
+    prompt: "Allow all users? (true/false)"
+    password: false
