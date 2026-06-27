@@ -85,6 +85,13 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         self._wake_at = 0.0
         self._barge_in_enabled = True
         self._connected = False
+        # Reconnect: LiveKit boş odayı empty_timeout ile kapatır (reason 10 =
+        # ROOM_CLOSED) → ajan düşer. _want_connected True iken (kasıtlı disconnect
+        # değil) kopuşta _reconnect_loop otomatik yeniden bağlanır. B (insan)
+        # katılınca oda boş kalmaz → kapanmaz → kalıcı stabil.
+        self._want_connected = False
+        self._reconnecting = False
+        self._reconnect_task: Optional[asyncio.Task] = None
 
         # Smart-turn EOU (lazy, fail-open).
         self.turn_detector = None
@@ -150,14 +157,46 @@ class CandanVoiceAdapter(BasePlatformAdapter):
     # ── Connection lifecycle ──────────────────────────────────────────────
 
     async def connect(self, *, is_reconnect: bool = False) -> bool:
-        """Join the LiveKit room, publish a TTS track, subscribe to human mic
-        tracks (task-per-participant). Returns True once joined + publishing.
-        Hermes owns the reconnect cadence (it calls connect again)."""
+        """Public entry: ensure the room exists with a long empty_timeout, then
+        join + publish. Marks _want_connected so an unexpected drop triggers
+        _reconnect_loop (durable presence; B'nin testi için ajan odada kalır)."""
         if not self.settings.livekit_api_secret:
             log.error("candan_voice: LIVEKIT_API_SECRET boş — bağlanılamaz")
             self._set_fatal_error("config_missing", "LIVEKIT_API_SECRET missing", retryable=False)
             return False
+        self._want_connected = True
+        await self._ensure_room()
+        return await self._open_room()
 
+    async def _ensure_room(self) -> None:
+        """Pre-create the room with a long empty_timeout so LiveKit doesn't close
+        it while empty (the reason-10 ROOM_CLOSED drop). Idempotent-ish: if the
+        room already exists this is a no-op on the server side. Best-effort."""
+        from livekit import api
+
+        http_url = (self.settings.livekit_url
+                    .replace("wss://", "https://").replace("ws://", "http://"))
+        lk = api.LiveKitAPI(http_url, self.settings.livekit_api_key,
+                            self.settings.livekit_api_secret)
+        try:
+            await lk.room.create_room(api.CreateRoomRequest(
+                name=self.room_name,
+                empty_timeout=86400,       # 24h — boş odayı kapatma
+                departure_timeout=86400,
+            ))
+            log.info("candan_voice: oda hazır (empty_timeout=24h): %s", self.room_name)
+        except Exception as e:
+            log.warning("candan_voice: create_room atlandı (%r)", e)
+        finally:
+            try:
+                await lk.aclose()
+            except Exception:
+                pass
+
+    async def _open_room(self) -> bool:
+        """Join the LiveKit room, publish a TTS track, subscribe to human mic
+        tracks (task-per-participant). Returns True once joined + publishing.
+        Called by connect() and by _reconnect_loop()."""
         from livekit import rtc
 
         room = rtc.Room()
@@ -193,6 +232,12 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         def _on_disconnected(reason):
             log.warning("candan_voice: odadan koptu (%s)", reason)
             self._connected = False
+            # Kasıtlı kapatma (disconnect()) değilse otomatik yeniden bağlan.
+            if self._want_connected and not self._reconnecting:
+                try:
+                    self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+                except RuntimeError:
+                    pass
 
         self._attr_cache = {}
         self._barge_in_enabled = True
@@ -226,9 +271,38 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
         return True
 
+    async def _reconnect_loop(self) -> None:
+        """Re-open the room after an unexpected drop (e.g. ROOM_CLOSED). Backs
+        off on failure; stops once reconnected or disconnect() clears the want
+        flag. Once a human (B) is in the room it won't go empty → stays stable."""
+        if self._reconnecting:
+            return
+        self._reconnecting = True
+        delay = 2.0
+        try:
+            while self._want_connected and not self._connected:
+                await asyncio.sleep(delay)
+                if not self._want_connected:
+                    break
+                try:
+                    self._consume_tasks.clear()  # eski track'ler ölü
+                    await self._ensure_room()     # uzun empty_timeout'u garanti et
+                    if await self._open_room():
+                        log.info("candan_voice: yeniden bağlandı")
+                        break
+                except Exception as e:
+                    log.warning("candan_voice: reconnect denemesi başarısız: %r", e)
+                delay = min(delay * 1.5, 15.0)
+        finally:
+            self._reconnecting = False
+
     async def disconnect(self) -> None:
-        """Cancel consume/TTS tasks, leave the room."""
+        """Cancel consume/TTS tasks, stop reconnect, leave the room."""
+        self._want_connected = False
         self._connected = False
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
         for t in list(self._consume_tasks.values()):
             t.cancel()
         self._consume_tasks.clear()

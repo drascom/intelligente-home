@@ -97,5 +97,8 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
   Tanınan-kullanıcı→kişisel Hermes hafıza + oto-enrollment kalıcılığı = Faz 2.
 - **Streaming TTS:** `send()` tam metni alır; cümle-cümle TTS istenirse kendi
   segmentasyonumuz veya Hermes streaming-reply hook'u gerekir (şimdilik tek atış).
-- **Reconnect:** connect() True döner, Hermes yeniden bağlama kadansını yönetir;
-  oda kopuşunda otomatik yeniden-bağlanma sertleştirmesi Faz 2.
+- **Reconnect + empty_timeout (YAPILDI 2026-06-27):** adapter `_ensure_room`
+  ile odayı `empty_timeout=86400` (24h) ile önceden oluşturur → boş oda KAPANMAZ
+  (eski reason-10 ROOM_CLOSED düşüşü biter). Ek backstop: `_reconnect_loop`
+  beklenmedik kopuşta backoff ile yeniden bağlanır. Doğrulandı: restart sonrası
+  ajan 100sn+ boş odada KALICI bağlı (`list_participants → assistant`), churn yok.
