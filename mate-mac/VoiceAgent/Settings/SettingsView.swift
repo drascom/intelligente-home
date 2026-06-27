@@ -32,6 +32,36 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Connection") {
+                    Picker("Mode", selection: $settings.connectionMode) {
+                        Text("Hermes (candan_voice)").tag("hermes")
+                        Text("Brain (device-register)").tag("brain")
+                    }
+                    if settings.connectionMode == "hermes" {
+                        TextField("Token endpoint URL", text: $settings.tokenEndpointURL)
+                            .textFieldStyle(.roundedBorder)
+                            #if !os(macOS)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            #endif
+                        TextField("Client key (X-Candan-Key)", text: $settings.clientKey)
+                            .textFieldStyle(.roundedBorder)
+                            #if !os(macOS)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            #endif
+                        TextField("Room (optional)", text: $settings.room)
+                            .textFieldStyle(.roundedBorder)
+                            #if !os(macOS)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            #endif
+                        Text("GET {url}/candan/token?identity=…&room=… · header X-Candan-Key. Boşsa brain/Secrets'e düşülür.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("settings.server.section") {
                     TextField("settings.server.livekit", text: $settings.livekitURL)
                         .textFieldStyle(.roundedBorder)

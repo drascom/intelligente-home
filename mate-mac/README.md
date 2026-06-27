@@ -67,6 +67,26 @@ If your agent publishes a [virtual avatar](https://docs.livekit.io/agents/integr
 
 In production, you'll need to develop a solution to [generate tokens for your users](https://docs.livekit.io/home/server/generating-tokens/) that integrates with your authentication system. You should replace your `SandboxTokenSource` with an `EndpointTokenSource` or your own `TokenSourceFixed` or `TokenSourceConfigurable` implementation. Additionally, you can use the `.cached()` extension to cache valid tokens and avoid unnecessary token requests.
 
+## Connection modes (Hermes candan_voice vs Brain)
+
+The app connects through a configurable token source (`CandanTokenSource`), selected in
+**Settings → Connection → Mode**. No URLs/keys are hardcoded, so you can point the app at
+your own Hermes `candan_voice` deployment:
+
+- **Hermes (default):** `HermesTokenSource` calls
+  `GET {Token endpoint URL}/candan/token?identity=<device-id>&room=<optional>` with header
+  `X-Candan-Key: <Client key>` and expects `{ "url", "room", "token", "identity" }`.
+  Set **Token endpoint URL** + **Client key** (and optional **Room**) in Settings. If the
+  response `url` is internal (`127.0.0.1`/`localhost`) it is ignored in favour of the
+  Settings LiveKit URL. If these fields are empty or the request fails, the app gracefully
+  falls back to Brain/Secrets (logged).
+- **Brain:** `MateTokenSource` — the original device-register / `POST {brainURL}/api/livekit-token`
+  flow, kept as an option.
+
+In both modes the client publishes the mic track plus participant attributes
+(`candan.awake` / `stt_engine` / `voice` / `language` / `candan.barge_in`) and consumes the
+agent TTS track + `lk.transcription` (`candan.role`) — see `CandanTranscriptionReceiver`.
+
 ## Running on Simulator
 
 To use this template with video (or screen sharing) input, you need to run the app on a physical device. Testing on the Simulator will still support voice and text modes, as well as virtual avatars.

@@ -37,9 +37,27 @@ final class SettingsStore: ObservableObject {
     /// Brain API token'ı (Bearer). Boşsa → statik Secrets token'a düşülür.
     @Published var brainToken: String { didSet { defaults.set(brainToken, forKey: Self.brainTokenKey) } }
 
+    // MARK: - Bağlantı modu + Hermes candan_voice token endpoint'i (modüler)
+
+    /// Bağlantı modu: `"hermes"` (candan_voice plugin token endpoint) veya
+    /// `"brain"` (eski device-register/brain endpoint). Başkaları kendi Hermes
+    /// deploy'larına bağlanabilsin diye endpoint+key Settings'ten gelir (hardcode YOK).
+    @Published var connectionMode: String { didSet { defaults.set(connectionMode, forKey: Self.connectionModeKey) } }
+    /// Hermes candan_voice token endpoint TABAN URL'i (örn. `https://mate-hermes.drascom.uk`).
+    /// İstek: `GET {url}/candan/token?identity=<id>&room=<opsiyonel>` + `X-Candan-Key`.
+    @Published var tokenEndpointURL: String { didSet { defaults.set(tokenEndpointURL, forKey: Self.tokenEndpointURLKey) } }
+    /// Hermes endpoint'i için istemci anahtarı → `X-Candan-Key` header.
+    @Published var clientKey: String { didSet { defaults.set(clientKey, forKey: Self.clientKeyKey) } }
+    /// Opsiyonel oda adı override'ı (boşsa endpoint'in döndürdüğü oda kullanılır).
+    @Published var room: String { didSet { defaults.set(room, forKey: Self.roomKey) } }
+
     static let livekitURLKey = "livekitURL"
     static let brainURLKey = "brainURL"
     static let brainTokenKey = "brainToken"
+    static let connectionModeKey = "connectionMode"
+    static let tokenEndpointURLKey = "tokenEndpointURL"
+    static let clientKeyKey = "clientKey"
+    static let roomKey = "candanRoom"
     static let defaultLivekitURL = Secrets.livekitServerURL
     static let defaultBrainURL = "https://mate-brain.drascom.uk"
 
@@ -61,6 +79,29 @@ final class SettingsStore: ObservableObject {
         (UserDefaults.standard.string(forKey: brainTokenKey) ?? "").trimmingCharacters(in: .whitespaces)
     }
 
+    /// Bağlantı modu — boşsa varsayılan `hermes` (candan_voice plugin).
+    static var resolvedConnectionMode: String {
+        let v = (UserDefaults.standard.string(forKey: connectionModeKey) ?? "").trimmingCharacters(in: .whitespaces)
+        return v.isEmpty ? "hermes" : v
+    }
+
+    /// Hermes token endpoint taban URL'i (trailing slash temizlenir). Boş olabilir.
+    static var resolvedTokenEndpointURL: String {
+        var v = (UserDefaults.standard.string(forKey: tokenEndpointURLKey) ?? "").trimmingCharacters(in: .whitespaces)
+        while v.hasSuffix("/") { v.removeLast() }
+        return v
+    }
+
+    /// Hermes istemci anahtarı (`X-Candan-Key`). Boş olabilir.
+    static var resolvedClientKey: String {
+        (UserDefaults.standard.string(forKey: clientKeyKey) ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Opsiyonel oda override'ı. Boş olabilir.
+    static var resolvedRoom: String {
+        (UserDefaults.standard.string(forKey: roomKey) ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
     init() {
         language = defaults.string(forKey: "language") ?? "tr"
         voice = defaults.string(forKey: "voice") ?? "nese"
@@ -72,6 +113,10 @@ final class SettingsStore: ObservableObject {
         livekitURL = defaults.string(forKey: Self.livekitURLKey) ?? Self.defaultLivekitURL
         brainURL = defaults.string(forKey: Self.brainURLKey) ?? Self.defaultBrainURL
         brainToken = defaults.string(forKey: Self.brainTokenKey) ?? ""
+        connectionMode = defaults.string(forKey: Self.connectionModeKey) ?? "hermes"
+        tokenEndpointURL = defaults.string(forKey: Self.tokenEndpointURLKey) ?? ""
+        clientKey = defaults.string(forKey: Self.clientKeyKey) ?? ""
+        room = defaults.string(forKey: Self.roomKey) ?? ""
     }
 
     /// Brain'in beklediği participant attribute sözlüğü.
