@@ -115,6 +115,7 @@ async def main():
     tts_ch = 1
 
     room = rtc.Room()
+    agent_track_ready = asyncio.Event()  # media-hazır sinyali (agent track subscribe)
 
     # --- Agent TTS ses track'ine abone ol → reply.wav ---
     async def drain_audio(track):
@@ -132,6 +133,7 @@ async def main():
     def _on_track(track, pub, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO:
             log(f"agent ses track'i geldi ← {participant.identity}")
+            agent_track_ready.set()
             asyncio.create_task(drain_audio(track))
 
     @room.on("participant_connected")
@@ -174,7 +176,30 @@ async def main():
     await room.local_participant.publish_track(
         track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
     results["published"] = True
-    log("mic track publish ✓ — WAV akıtılıyor...")
+    log("mic track publish ✓")
+
+    # --- Media-hazır retry: pc-connected + agent track subscribe olana kadar
+    #     bekle (kısa backoff). Aksi halde ilk frame'ler ICE/DTLS otururken düşer
+    #     → STT konuşmanın başını kaçırır. Hazır olmazsa fail-open (yine de akıt). ---
+    async def wait_media_ready(timeout=20.0):
+        delay = 0.5
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            connected = room.connection_state == rtc.ConnectionState.CONN_CONNECTED
+            if connected and agent_track_ready.is_set():
+                return True
+            log(f"media-hazır bekleniyor (connected={connected} "
+                f"agent_track={agent_track_ready.is_set()})...")
+            await asyncio.sleep(delay)
+            delay = min(delay * 1.6, 3.0)
+        return room.connection_state == rtc.ConnectionState.CONN_CONNECTED
+
+    ready = await wait_media_ready()
+    if ready:
+        log("media hazır ✓ — WAV akıtılıyor...")
+    else:
+        log("⚠ media hazır değil (timeout) — yine de akıtılıyor (fail-open)")
+    await asyncio.sleep(0.3)  # ICE/DTLS otursun
 
     samples_10ms = sr // 100  # 10ms frame
     bytes_per_frame = samples_10ms * ch * 2
@@ -194,17 +219,28 @@ async def main():
             await asyncio.sleep(dt)
     log(f"WAV akıtıldı ✓ ({sent} frame, ~{sent/100:.1f}s)")
 
+    # Konuşma sonu sessizliği: turn-detector kapalı → endpointing saf-sessizlik
+    # (1.0s). Frame'i kesmek yerine ~2s sessizlik akıt ki adapter "söz bitti"yi
+    # algılayıp STT'yi finalize etsin (yoksa cevap hiç tetiklenmez).
+    silence = b"\x00" * bytes_per_frame
+    sil_frames = int(2.0 * 100)
+    for _ in range(sil_frames):
+        await source.capture_frame(rtc.AudioFrame(silence, sr, ch, samples_10ms))
+        sent += 1
+        target = t0 + sent * 0.01
+        dt = target - time.monotonic()
+        if dt > 0:
+            await asyncio.sleep(dt)
+    log(f"sessizlik akıtıldı ✓ ({sil_frames} frame, ~2.0s) — endpoint tetik")
+
     # --- Cevap bekle ---
     wait = 4.0 if args.connect_only else args.wait
     log(f"cevap bekleniyor ({wait:.0f}s)...")
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
-        if transcripts:
-            results["transcript"] = True
-        if tts_bytes > 0:
-            results["tts"] = True
-        # connect-only değilse her ikisi gelince erken çık
-        if not args.connect_only and results["transcript"] and results["tts"]:
+        have_assistant = any(w == "assistant" for w, _ in transcripts)
+        # tam tur = asistan transkripti + TTS sesi (user satırı tek başına yetmez).
+        if not args.connect_only and have_assistant and tts_bytes > 0:
             await asyncio.sleep(2.0)  # son chunk'lar gelsin
             break
         await asyncio.sleep(0.5)
