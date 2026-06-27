@@ -95,6 +95,8 @@ async def main():
                     help="Yayından sonra cevap için bekleme (sn)")
     ap.add_argument("--connect-only", action="store_true",
                     help="Yalnız bağlan+publish doğrula, cevap bekleme kısa")
+    ap.add_argument("--full", action="store_true",
+                    help="Erken çıkma; tüm --wait penceresini dinle (çok satırlı cevap)")
     args = ap.parse_args()
 
     url = os.environ.get("MATE_LK_URL", DEFAULT_URL)
@@ -240,7 +242,7 @@ async def main():
     while time.monotonic() < deadline:
         have_assistant = any(w == "assistant" for w, _ in transcripts)
         # tam tur = asistan transkripti + TTS sesi (user satırı tek başına yetmez).
-        if not args.connect_only and have_assistant and tts_bytes > 0:
+        if not args.connect_only and not args.full and have_assistant and tts_bytes > 0:
             await asyncio.sleep(2.0)  # son chunk'lar gelsin
             break
         await asyncio.sleep(0.5)
