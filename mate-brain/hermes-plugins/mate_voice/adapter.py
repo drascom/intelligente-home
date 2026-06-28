@@ -83,6 +83,11 @@ class MateVoiceAdapter(BasePlatformAdapter):
         self._tts_task: Optional[asyncio.Task] = None  # in-flight TTS (barge-in cancels)
         self._consume_tasks: Dict[str, asyncio.Task] = {}  # per-participant track consumers
         self._attr_cache: Dict[str, dict] = {}
+        # Recognize-first oto-enrollment durumu: bilinmeyen ses asistana hitap
+        # edince ORİJİNAL istek BEKLETİLİR ({text, emb}), isim sorulur; sonraki
+        # utterance isim olur → enroll + bekletilen istek tanınan kullanıcı olarak
+        # işlenir. None = enrollment akışında değiliz.
+        self._pending_enroll: Optional[dict] = None
         self._wake_at = 0.0
         self._barge_in_enabled = True
         self._connected = False
@@ -682,10 +687,24 @@ class MateVoiceAdapter(BasePlatformAdapter):
         if not text:
             return
 
-        speaker, _emb = await self._identify(pcm)
+        speaker, emb = await self._identify(pcm)
         speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
 
-        # Active-speaker UI + user transcript line (assistant line is in send()).
+        # Recognize-first oto-enrollment: speaker-ID + store AÇIK ve ses TANINMADI.
+        # Bilinmeyen ses → isim sor (1. tur), isim utterance'ı → enroll + bekletilen
+        # isteği işle (2. tur). Tanınan ses bu daldan geçmez → normal dispatch.
+        if self.speaker is not None and self.speaker_store is not None and speaker_id is None:
+            if self._pending_enroll is not None:
+                await self._complete_enrollment(text, emb, participant, track)
+            else:
+                await self._begin_enrollment(text, emb, participant)
+            return
+
+        await self._dispatch_turn(text, speaker, speaker_id, participant, track)
+
+    async def _dispatch_turn(self, text, speaker, speaker_id, participant, track) -> None:
+        """Bir turu Hermes'e ver: aktif-konuşmacı UI + kullanıcı transkripti +
+        MessageEvent → handle_message. (Asistan satırı send()'te yayınlanır.)"""
         self._publish_speaker(speaker, speaker_id, guest=(speaker_id is None))
         human_track_sid = getattr(track, "sid", None)
         asyncio.create_task(self._publish_text(text, track_sid=human_track_sid, role="user"))
@@ -693,10 +712,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
         # speaker-ID → session scope. Recognized → per-user; guest → DEVICE
         # scope (LiveKit participant identity). NOT None: Hermes authz
         # (authz_mixin `if not user_id: return False`) reddeder ve allow-all
-        # bayrağına BİLE ulaşamaz → user_id'siz turn sessizce düşer (brain hiç
-        # çalışmaz). Katılımcı kimliği (ör. "sim-client"/"mac-client") stabil bir
-        # cihaz-kullanıcısı verir; MATE_VOICE_ALLOW_ALL_USERS=true ile yetkilenir.
-        # Speaker-ID açılınca (Faz 2) tanınan kişi user_id'yi override eder.
+        # bayrağına BİLE ulaşamaz → user_id'siz turn sessizce düşer. Katılımcı
+        # kimliği stabil cihaz-kullanıcısı verir; MATE_VOICE_ALLOW_ALL_USERS=true
+        # ile yetkilenir. Tanınan kişi user_id'yi override eder.
         if speaker_id:
             user_id, user_name = str(speaker_id), speaker
         else:
@@ -714,6 +732,90 @@ class MateVoiceAdapter(BasePlatformAdapter):
             text=text, message_type=MessageType.TEXT, source=source,
             message_id=str(int(time.time() * 1000)),
         ))
+
+    # ── Recognize-first oto-enrollment ─────────────────────────────────────
+
+    @staticmethod
+    def _is_en(language) -> bool:
+        return (language or "").lower().startswith("en")
+
+    @staticmethod
+    def _parse_name(text: str) -> Optional[str]:
+        """Kısa isim çıkar: 'Ben Ali', 'Adım Ali', 'My name is Ali', 'Ali'. İlk 1-2
+        kelimeyi isim say; dolgu öneklerini at. Harf yoksa None."""
+        import re
+
+        t = (text or "").strip().strip(".!?,").strip()
+        low = t.lower()
+        for p in ("benim adım", "adım", "ben ", "my name is", "i am ", "i'm ",
+                  "it's ", "it is ", "im "):
+            if low.startswith(p):
+                t = t[len(p):].strip()
+                break
+        words = [w for w in re.split(r"\s+", t) if w][:2]
+        name = " ".join(words).strip(".!?,")
+        if not name or not any(c.isalpha() for c in name):
+            return None
+        return name[:40].title()
+
+    async def _enroll_say(self, text: str, participant=None) -> None:
+        """Enrollment alt-akışı asistan satırı: transcript + TTS (await → sıralı).
+        Sohbet history'sine YAZMAZ (Hermes'e gitmez; meta konuşma)."""
+        asyncio.create_task(
+            self._publish_text(text, track_sid=self._pub_track_sid, role="assistant")
+        )
+        await self._speak(text, self._attrs(participant).get("voice") or None)
+
+    async def _begin_enrollment(self, text, emb, participant) -> None:
+        """1. TUR: bilinmeyen ses → orijinal isteği BEKLET, ismi sor (TR; EN fallback)."""
+        self._pending_enroll = {"text": text, "emb": emb}
+        en = self._is_en(self._attrs(participant).get("language"))
+        ask = "I don't recognize you. What's your name?" if en else "Seni tanımıyorum, adın ne?"
+        log.info("mate_voice: enrollment — bilinmeyen ses, isim soruluyor (held=%r)", text[:40])
+        self._publish_speaker(None, None, guest=True)
+        await self._enroll_say(ask, participant)
+
+    async def _complete_enrollment(self, name_text, name_emb, participant, track) -> None:
+        """2. TUR: isim utterance'ı → kişi oluştur + örnek(ler) ekle + reload, sonra
+        'Memnun oldum {name}' + BEKLETİLEN isteği tanınan kullanıcı olarak işle.
+        Fail-open: isim ayrıştırılamaz / DB hatası → guest olarak bekletilen isteğe dön."""
+        pend = self._pending_enroll or {"text": "", "emb": None}
+        self._pending_enroll = None
+        en = self._is_en(self._attrs(participant).get("language"))
+        name = self._parse_name(name_text)
+        if not name:
+            log.info("mate_voice: enrollment — isim ayrıştırılamadı (%r) → guest", name_text[:40])
+            if pend.get("text"):
+                await self._dispatch_turn(pend["text"], None, None, participant, track)
+            return
+        try:
+            from .voice.speaker import emb_to_bytes
+
+            rec = await self.speaker_store.create_speaker(name)
+            sid = rec["id"]
+            mid, dim = self.speaker.model_id, self.speaker.dim
+            if pend.get("emb") is not None:
+                await self.speaker_store.add_speaker_sample(
+                    sid, emb_to_bytes(pend["emb"]), dim, mid, source="auto-enroll"
+                )
+            if name_emb is not None:
+                await self.speaker_store.add_speaker_sample(
+                    sid, emb_to_bytes(name_emb), dim, mid, source="auto-enroll"
+                )
+            await self._load_speakers()
+            log.info("mate_voice: enrollment — %r kaydedildi (id=%s)", name, sid)
+        except Exception as e:
+            log.warning("mate_voice: enrollment başarısız (%s) → guest fail-open", e)
+            if pend.get("text"):
+                await self._dispatch_turn(pend["text"], None, None, participant, track)
+            return
+        greet = f"Nice to meet you, {name}." if en else f"Memnun oldum {name}."
+        self._publish_speaker(name, sid, guest=False)
+        await self._enroll_say(greet, participant)
+        # Bekletilen orijinal isteği şimdi TANINAN kullanıcı olarak işle (kullanıcı
+        # tekrar etmek zorunda kalmasın). Held boşsa sadece selam yeter.
+        if pend.get("text"):
+            await self._dispatch_turn(pend["text"], name, sid, participant, track)
 
     # ── Outbound: Hermes reply → vox TTS → room ───────────────────────────
 
