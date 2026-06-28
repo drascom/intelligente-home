@@ -98,6 +98,19 @@ class MateVoiceAdapter(BasePlatformAdapter):
         # independent of room reconnects, stopped in disconnect().
         self._token_runner = None
 
+        # Eksik Python deps'i (onnxruntime/transformers/sherpa-onnx…) gateway
+        # venv'ine kendi kur — Hermes installer deps kurmaz. Sadece ETKİN
+        # özellikler için, fail-open (bkz. voice/_deps.py).
+        try:
+            from .voice._deps import ensure_deps
+
+            ensure_deps(
+                turn_detector=settings.turn_detector_enabled,
+                speaker_id=settings.speaker_id_enabled,
+            )
+        except Exception as e:
+            log.warning("mate_voice: deps ensure atlandı: %r", e)
+
         # Smart-turn EOU (lazy, fail-open).
         self.turn_detector = None
         if settings.turn_detector_enabled:

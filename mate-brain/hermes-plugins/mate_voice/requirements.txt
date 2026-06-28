@@ -1,0 +1,19 @@
+# mate_voice plugin — Python bağımlılıkları.
+#
+# Hermes'in native plugin installer'ı bunları OTOMATİK KURMAZ (sadece git clone +
+# .example + requires_env + after-install.md). Bu yüzden plugin yüklenirken
+# `voice/_deps.py::ensure_deps()` eksik olanları Hermes gateway venv'ine kendi
+# kurar (fail-open, sadece ilgili özellik açıkken). Manuel kurulum istenirse:
+#   <hermes-venv>/bin/python -m pip install -r requirements.txt
+#
+# Çekirdek (plugin'in çalışması için; genelde gateway'de zaten var):
+livekit
+wyoming
+aiohttp
+numpy
+# Smart-turn v3 EOU (TURN_DETECTOR_ENABLED):
+onnxruntime
+transformers
+huggingface_hub
+# Speaker-ID / enrollment (SPEAKER_ID_ENABLED):
+sherpa-onnx
