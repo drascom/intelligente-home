@@ -427,13 +427,23 @@ final class WakeCoordinator: ObservableObject {
         var attrs = settings?.brainAttributes ?? [:]
         attrs["mate.awake"] = isAwake ? "1" : "0"
         Log.line("[Attr] → mate.awake=\(isAwake ? "1" : "0") attrs=\(attrs)")
+        // RETRY: session.isConnected, gerçek oda bağlanmadan ÖNCE true olabiliyor →
+        // ilk set() "connectionState is .disconnected" ile patlıyor ve isConnected
+        // bir daha değişmediği için snapshot-republish tetiklenmiyordu → sunucu
+        // mate.awake'i HİÇ almıyor → wake-gate devre dışı (her sözü işliyor). Oda
+        // oturana kadar birkaç kez dene; biri başarınca dur.
         Task {
-            do {
-                try await session.room.localParticipant.set(attributes: attrs)
-                Log.line("[Attr] set OK")
-            } catch {
-                Log.error("[Attr] set FAILED (canUpdateOwnMetadata izni yok?): \(error.localizedDescription)")
+            for attempt in 1 ... 6 {
+                do {
+                    try await session.room.localParticipant.set(attributes: attrs)
+                    Log.line("[Attr] set OK (deneme \(attempt))")
+                    return
+                } catch {
+                    Log.error("[Attr] set FAILED (deneme \(attempt)/6): \(error.localizedDescription)")
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
             }
+            Log.error("[Attr] set 6 denemede başarısız — sunucu mate.awake'i almadı (wake-gate çalışmaz)")
         }
     }
 }
