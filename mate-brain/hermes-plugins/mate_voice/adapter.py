@@ -287,16 +287,19 @@ class MateVoiceAdapter(BasePlatformAdapter):
 
     async def _handle_demo_token(self, request):
         """AÇIK (key'siz) onboarding token'ı: sihirbazın sıfır-konfig demo bağlantısı.
-        Kısa ömürlü, guest identity, onboarding odası. Anahtar GEREKMEZ — bu yüzden
-        yalnız onboarding odasına ve kısa TTL'e scope'lanır. Kapatmak için
-        MATE_VOICE_DEMO_TOKEN_ENABLED=0."""
+        Onboarding odası, kısa TTL. Anahtar GEREKMEZ → yalnız onboarding odasına ve
+        kısa TTL'e scope'lanır. Kapatmak için MATE_VOICE_DEMO_TOKEN_ENABLED=0.
+
+        Opsiyonel `identity` query'si: istemci kendi STABİL cihaz-kimliğini geçerse
+        onu kullanırız (speaker-ID + kişiye-özel oturum reconnect'ler arası tutarlı
+        kalsın → sihirbaz sonrası key'siz kalıcı bağlantı). Yoksa rastgele guest."""
         from aiohttp import web
         import uuid
 
         if not self.settings.demo_token_enabled:
             return web.json_response({"error": "demo token disabled"}, status=403)
         room = self.settings.onboarding_room
-        identity = "onboard-" + uuid.uuid4().hex[:10]
+        identity = (request.query.get("identity") or "").strip() or ("onboard-" + uuid.uuid4().hex[:10])
         try:
             token = self._mint_client_token(
                 identity, room, ttl_seconds=self.settings.demo_token_ttl_seconds
