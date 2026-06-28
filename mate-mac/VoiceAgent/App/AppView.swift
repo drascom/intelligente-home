@@ -6,20 +6,20 @@ struct AppView: View {
     @EnvironmentObject private var localMedia: LocalMedia
     @EnvironmentObject private var settings: SettingsStore
 
-    /// Wake-word kapısı + geçiş sesleri + `candan.awake` attribute yayını.
+    /// Wake-word kapısı + geçiş sesleri + `mate.awake` attribute yayını.
     @StateObject private var wakeCoordinator = WakeCoordinator()
 
-    /// Sunucunun canlı durum satırı (`candan.debug`) — en altta gösterilir.
+    /// Sunucunun canlı durum satırı (`mate.debug`) — en altta gösterilir.
     @StateObject private var debugMonitor = DebugStatusMonitor()
 
     /// Kullanıcının kendi sözünü anında gösteren optimistic lokal transkript.
     @StateObject private var echo = LocalEchoTranscriber()
 
-    /// Brain'in gönderdiği zengin içerik (`candan.content`) → sağ panel.
+    /// Brain'in gönderdiği zengin içerik (`mate.content`) → sağ panel.
     @StateObject private var contentChannel = ContentChannelReceiver()
     @State private var showContent = false
 
-    /// O an tanınan/aktif konuşmacı (`candan.speaker`) → üstte küçük gösterge.
+    /// O an tanınan/aktif konuşmacı (`mate.speaker`) → üstte küçük gösterge.
     @StateObject private var speaker = SpeakerReceiver()
 
     // Show the transcript/chat view by default; the user can still toggle it
@@ -67,7 +67,7 @@ struct AppView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
-        // Brain ayarları + candan.awake TEK sözlükte birlikte gider (WakeCoordinator).
+        // Brain ayarları + mate.awake TEK sözlükte birlikte gider (WakeCoordinator).
         .task(id: attributeSnapshot) { wakeCoordinator.publishAttributes() }
         .onAppear { wakeCoordinator.attach(session: session, settings: settings, echo: echo) }
         .onChange(of: brainUserTranscriptCount) { _, _ in echo.commitCurrent() }

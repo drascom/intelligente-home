@@ -10,11 +10,11 @@ struct ContentItem: Identifiable, Equatable {
     let title: String
 }
 
-/// `candan.content` text-stream topic'ini dinler; brain JSON payload yollar:
+/// `mate.content` text-stream topic'ini dinler; brain JSON payload yollar:
 /// `{ "type": "youtube"|"image"|"pdf"|"web", "url": "...", "id": "...", "title": "..." }`.
 /// Parse edip @Published listede tutar; sağ içerik paneli bunu gösterir.
 ///
-/// Ayrı topic — `lk.transcription` (CandanTranscriptionReceiver) ve `candan.debug`
+/// Ayrı topic — `lk.transcription` (MateTranscriptionReceiver) ve `mate.debug`
 /// akışlarına dokunmaz. Best-effort: hatalı/boş payload sessiz atlanır.
 @MainActor
 final class ContentChannelReceiver: ObservableObject {
@@ -22,7 +22,7 @@ final class ContentChannelReceiver: ObservableObject {
     /// En son eklenen öğe — yeni içerik gelince paneli otomatik açmak için.
     @Published private(set) var latest: ContentItem?
 
-    private static let topic = "candan.content"
+    private static let topic = "mate.content"
     private var registered = false
 
     func connectionChanged(_ connected: Bool, room: Room) {

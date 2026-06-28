@@ -18,7 +18,7 @@
     "Bağlanıyor…" : {
 
     },
-    "Client key (X-Candan-Key)" : {
+    "Client key (X-Mate-Key)" : {
 
     },
     "connect.connecting" : {
@@ -105,13 +105,13 @@
         }
       }
     },
-    "GET {url}/candan/token?identity=…&room=… · header X-Candan-Key. Boşsa bağlantı hata verir." : {
+    "GET {url}/mate/token?identity=…&room=… · header X-Mate-Key. Boşsa bağlantı hata verir." : {
 
     },
     "Henüz içerik yok" : {
 
     },
-    "Hermes (candan_voice)" : {
+    "Hermes (mate_voice)" : {
 
     },
     "İçerik" : {

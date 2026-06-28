@@ -1,7 +1,7 @@
-"""Candan Voice — Hermes gateway platform adapter (real implementation).
+"""Mate Voice — Hermes gateway platform adapter (real implementation).
 
 Ports `mate-brain/brain/voice/livekit_agent.py::LiveKitAgent` onto the Hermes
-`BasePlatformAdapter` contract. The Candan voice stack (RMS endpointing,
+`BasePlatformAdapter` contract. The Mate voice stack (RMS endpointing,
 smart-turn v3 EOU, barge-in, wake gate, speaker-ID, live transcript + TTS
 publish) lives INSIDE this adapter. STT (whisper) and TTS (vox) stay as network
 services (.25 GPU) — reached over the same host:port the brain uses; they are
@@ -48,7 +48,7 @@ from .voice.tts import synthesize_stream, to_s16le
 logger = logging.getLogger(__name__)
 log = logger  # parity with ported code
 
-PLATFORM_NAME = "candan_voice"
+PLATFORM_NAME = "mate_voice"
 
 # --- Endpointing / audio constants (1:1 with livekit_agent.py) ---
 SILENCE_RMS = 700
@@ -64,7 +64,7 @@ PUB_RATE = 48000
 PUB_CHANNELS = 1
 
 
-class CandanVoiceAdapter(BasePlatformAdapter):
+class MateVoiceAdapter(BasePlatformAdapter):
     """LiveKit voice adapter. Instantiated by the adapter_factory in register()."""
 
     supports_async_delivery: bool = True
@@ -108,9 +108,9 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                     settings.turn_detector_file,
                     settings.turn_detector_threshold,
                 )
-                log.info("candan_voice: smart-turn EOU aktif")
+                log.info("mate_voice: smart-turn EOU aktif")
             except Exception as e:
-                log.warning("candan_voice: smart-turn kurulamadı: %r", e)
+                log.warning("mate_voice: smart-turn kurulamadı: %r", e)
 
         # Speaker-ID (identify-only; no enrollment store on Hermes side).
         self.speaker = None
@@ -120,11 +120,11 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
                 self.speaker = build_speaker_id(settings)
             except Exception as e:
-                log.warning("candan_voice: speaker-ID kurulamadı: %r", e)
+                log.warning("mate_voice: speaker-ID kurulamadı: %r", e)
 
     @property
     def name(self) -> str:
-        return "Candan Voice"
+        return "Mate Voice"
 
     # ── Token ─────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         at = (
             api.AccessToken(self.settings.livekit_api_key, self.settings.livekit_api_secret)
             .with_identity("assistant")
-            .with_name("Candan")
+            .with_name("Mate")
             .with_ttl(timedelta(seconds=self.settings.livekit_token_ttl_seconds))
             .with_grants(grants)
         )
@@ -183,28 +183,28 @@ class CandanVoiceAdapter(BasePlatformAdapter):
     async def _start_token_server(self) -> None:
         """Embedded HTTP server: clients fetch room-scoped join tokens with a
         shared key (LiveKit secret never leaves the server). Disabled (not
-        started) when CANDAN_VOICE_CLIENT_KEY is empty. Idempotent."""
+        started) when MATE_VOICE_CLIENT_KEY is empty. Idempotent."""
         if self._token_runner is not None:
             return
         if not self.settings.client_key:
-            log.warning("candan_voice: token endpoint KAPALI (CANDAN_VOICE_CLIENT_KEY boş)")
+            log.warning("mate_voice: token endpoint KAPALI (MATE_VOICE_CLIENT_KEY boş)")
             return
         try:
             from aiohttp import web
         except Exception as e:
-            log.warning("candan_voice: aiohttp yok, token endpoint atlandı: %r", e)
+            log.warning("mate_voice: aiohttp yok, token endpoint atlandı: %r", e)
             return
 
         app = web.Application()
-        app.router.add_get("/candan/health", self._handle_health)
-        app.router.add_get("/candan/token", self._handle_token)
+        app.router.add_get("/mate/health", self._handle_health)
+        app.router.add_get("/mate/token", self._handle_token)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, self.settings.token_bind, self.settings.token_port)
         try:
             await site.start()
         except Exception as e:
-            log.warning("candan_voice: token endpoint başlatılamadı (%s:%s): %r",
+            log.warning("mate_voice: token endpoint başlatılamadı (%s:%s): %r",
                         self.settings.token_bind, self.settings.token_port, e)
             try:
                 await runner.cleanup()
@@ -212,7 +212,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                 pass
             return
         self._token_runner = runner
-        log.info("candan_voice: token endpoint AÇIK http://%s:%s/candan/token",
+        log.info("mate_voice: token endpoint AÇIK http://%s:%s/mate/token",
                  self.settings.token_bind, self.settings.token_port)
 
     async def _stop_token_server(self) -> None:
@@ -236,7 +236,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         from aiohttp import web
         import hmac
 
-        key = request.headers.get("X-Candan-Key", "")
+        key = request.headers.get("X-Mate-Key", "")
         if not (self.settings.client_key and hmac.compare_digest(key, self.settings.client_key)):
             return web.json_response({"error": "unauthorized"}, status=401)
         identity = (request.query.get("identity") or "").strip()
@@ -246,9 +246,9 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         try:
             token = self._mint_client_token(identity, room)
         except Exception as e:
-            log.warning("candan_voice: token mint hatası: %r", e)
+            log.warning("mate_voice: token mint hatası: %r", e)
             return web.json_response({"error": "mint failed"}, status=500)
-        log.info("candan_voice: token verildi identity=%s room=%s", identity, room)
+        log.info("mate_voice: token verildi identity=%s room=%s", identity, room)
         return web.json_response({
             "url": self.settings.public_livekit_url,
             "room": room,
@@ -263,7 +263,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         join + publish. Marks _want_connected so an unexpected drop triggers
         _reconnect_loop (durable presence; B'nin testi için ajan odada kalır)."""
         if not self.settings.livekit_api_secret:
-            log.error("candan_voice: LIVEKIT_API_SECRET boş — bağlanılamaz")
+            log.error("mate_voice: LIVEKIT_API_SECRET boş — bağlanılamaz")
             self._set_fatal_error("config_missing", "LIVEKIT_API_SECRET missing", retryable=False)
             return False
         self._want_connected = True
@@ -287,9 +287,9 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                 empty_timeout=86400,       # 24h — boş odayı kapatma
                 departure_timeout=86400,
             ))
-            log.info("candan_voice: oda hazır (empty_timeout=24h): %s", self.room_name)
+            log.info("mate_voice: oda hazır (empty_timeout=24h): %s", self.room_name)
         except Exception as e:
-            log.warning("candan_voice: create_room atlandı (%r)", e)
+            log.warning("mate_voice: create_room atlandı (%r)", e)
         finally:
             try:
                 await lk.aclose()
@@ -308,7 +308,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         @room.on("track_subscribed")
         def _on_track_subscribed(track, publication, participant):
             if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "assistant":
-                log.info("candan_voice: ses track'i abone (%s)", participant.identity)
+                log.info("mate_voice: ses track'i abone (%s)", participant.identity)
                 self._start_consume(rtc, track, participant)
 
         @room.on("participant_attributes_changed")
@@ -318,22 +318,22 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                 return
             try:
                 changed = dict(changed_attributes or {})
-                prev = self._attr_cache.get(ident, {}).get("candan.awake")
-                new_awake = changed.get("candan.awake")
+                prev = self._attr_cache.get(ident, {}).get("mate.awake")
+                new_awake = changed.get("mate.awake")
                 if new_awake == "1" and prev == "0":
                     self._wake_at = time.monotonic()
                 elif new_awake == "0":
                     self._wake_at = 0.0
-                if "candan.barge_in" in changed:
-                    self._barge_in_enabled = changed["candan.barge_in"] != "0"
+                if "mate.barge_in" in changed:
+                    self._barge_in_enabled = changed["mate.barge_in"] != "0"
                 self._attr_cache.setdefault(ident, {}).update(changed)
             except Exception:
                 pass
-            log.info("candan_voice: attrs değişti (%s): %r", ident, changed_attributes)
+            log.info("mate_voice: attrs değişti (%s): %r", ident, changed_attributes)
 
         @room.on("disconnected")
         def _on_disconnected(reason):
-            log.warning("candan_voice: odadan koptu (%s)", reason)
+            log.warning("mate_voice: odadan koptu (%s)", reason)
             self._connected = False
             # Kasıtlı kapatma (disconnect()) değilse otomatik yeniden bağlan.
             if self._want_connected and not self._reconnecting:
@@ -348,7 +348,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
         token = self._mint_token()
         await room.connect(self.settings.livekit_url, token)
-        log.info("candan_voice: '%s' odasına bağlandı (%s)",
+        log.info("mate_voice: '%s' odasına bağlandı (%s)",
                  self.room_name, self.settings.livekit_url)
 
         # Publish one audio source/track for TTS replies.
@@ -391,10 +391,10 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                     self._consume_tasks.clear()  # eski track'ler ölü
                     await self._ensure_room()     # uzun empty_timeout'u garanti et
                     if await self._open_room():
-                        log.info("candan_voice: yeniden bağlandı")
+                        log.info("mate_voice: yeniden bağlandı")
                         break
                 except Exception as e:
-                    log.warning("candan_voice: reconnect denemesi başarısız: %r", e)
+                    log.warning("mate_voice: reconnect denemesi başarısız: %r", e)
                 delay = min(delay * 1.5, 15.0)
         finally:
             self._reconnecting = False
@@ -457,18 +457,18 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
                 if stt is None:
                     attrs = self._attrs(participant)
-                    utterance_awake = attrs.get("candan.awake", "1") != "0"
+                    utterance_awake = attrs.get("mate.awake", "1") != "0"
                     engine_name, stt_host, stt_port = self.settings.resolve_stt_engine(
                         attrs.get("stt_engine")
                     )
                     language = attrs.get("language") or self.settings.stt_language
                     stt = WhisperSession(stt_host, stt_port, language)
-                    log.info("candan_voice: STT=%s (%s:%s) dil=%s",
+                    log.info("mate_voice: STT=%s (%s:%s) dil=%s",
                              engine_name, stt_host, stt_port, language or "(auto)")
                     try:
                         await stt.start(rate=STT_RATE, width=STT_WIDTH, channels=STT_CHANNELS)
                     except (ConnectionError, OSError) as e:
-                        log.warning("candan_voice: STT erişilemiyor: %s", e)
+                        log.warning("mate_voice: STT erişilemiyor: %s", e)
                         stt = None
                         continue
                     buf = bytearray()
@@ -541,11 +541,11 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                             timeout=60.0,
                         )
                     except asyncio.TimeoutError:
-                        log.warning("candan_voice: utterance işleme 60sn aştı, atlandı")
+                        log.warning("mate_voice: utterance işleme 60sn aştı, atlandı")
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.warning("candan_voice: track tüketimi bitti (%s)", e)
+            log.warning("mate_voice: track tüketimi bitti (%s)", e)
         finally:
             if stt is not None:
                 try:
@@ -580,10 +580,10 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         try:
             emb = await asyncio.to_thread(sp.embed_pcm, pcm, STT_RATE, 2, 1)
             name, score = sp.identify(emb)
-            log.info("candan_voice: speaker-ID %s (%.3f)", name or "unknown", score)
+            log.info("mate_voice: speaker-ID %s (%.3f)", name or "unknown", score)
             return name, emb
         except Exception as e:
-            log.warning("candan_voice: speaker-ID failed: %s", e)
+            log.warning("mate_voice: speaker-ID failed: %s", e)
             return None, None
 
     async def _handle_utterance(
@@ -596,9 +596,9 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         try:
             text = (await stt.finish()).strip()
         except (ConnectionError, OSError, asyncio.TimeoutError) as e:
-            log.warning("candan_voice: STT başarısız: %s", e)
+            log.warning("mate_voice: STT başarısız: %s", e)
             return
-        log.info("candan_voice: duyuldu %r", text)
+        log.info("mate_voice: duyuldu %r", text)
         self._debug(f"stt_final: {text[:40]}" if text else "stt_final: (boş)")
 
         wake_at = self._wake_at
@@ -610,11 +610,11 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         )
         if is_wake_word or not (awake or woke):
             reason = "wake kelimesi" if is_wake_word else "uyku modunda söz"
-            log.info("candan_voice: %s, atlandı: %r", reason, text[:60])
+            log.info("mate_voice: %s, atlandı: %r", reason, text[:60])
             self._set_agent_state("idle")
             return
         if text and looks_hallucinated(text):
-            log.info("candan_voice: transcript hayalet, atlanıyor: %r", text[:80])
+            log.info("mate_voice: transcript hayalet, atlanıyor: %r", text[:80])
             text = ""
         if not text:
             return
@@ -632,7 +632,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         # (authz_mixin `if not user_id: return False`) reddeder ve allow-all
         # bayrağına BİLE ulaşamaz → user_id'siz turn sessizce düşer (brain hiç
         # çalışmaz). Katılımcı kimliği (ör. "sim-client"/"mac-client") stabil bir
-        # cihaz-kullanıcısı verir; CANDAN_VOICE_ALLOW_ALL_USERS=true ile yetkilenir.
+        # cihaz-kullanıcısı verir; MATE_VOICE_ALLOW_ALL_USERS=true ile yetkilenir.
         # Speaker-ID açılınca (Faz 2) tanınan kişi user_id'yi override eder.
         if speaker_id:
             user_id, user_name = str(speaker_id), speaker
@@ -678,7 +678,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         except asyncio.CancelledError:
             return SendResult(success=True, message_id="barge_in")
         except Exception as e:
-            log.warning("candan_voice: send/TTS hatası: %r", e)
+            log.warning("mate_voice: send/TTS hatası: %r", e)
             return SendResult(success=False, error=str(e))
         return SendResult(success=True, message_id=str(int(time.time() * 1000)))
 
@@ -687,7 +687,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
         source = self._source
         if source is None:
-            log.warning("candan_voice: TTS atlandı — yayın kaynağı yok")
+            log.warning("mate_voice: TTS atlandı — yayın kaynağı yok")
             self._set_agent_state("idle")
             return
         fmt = None
@@ -705,7 +705,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                     )
             self._debug("tts_end")
         except asyncio.CancelledError:
-            log.info("candan_voice: TTS iptal (barge-in)")
+            log.info("mate_voice: TTS iptal (barge-in)")
             try:
                 source.clear_queue()
             except Exception:
@@ -713,7 +713,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
             self._set_agent_state("listening")
             raise
         except Exception as e:
-            log.warning("candan_voice: TTS başarısız: %r", e)
+            log.warning("mate_voice: TTS başarısız: %r", e)
         self._set_agent_state("idle")
 
     async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
@@ -756,7 +756,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         if track_sid:
             attrs["lk.transcribed_track_id"] = track_sid
         if role:
-            attrs["candan.role"] = role
+            attrs["mate.role"] = role
         try:
             lp = room.local_participant
             try:
@@ -767,7 +767,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
                 except TypeError:
                     await lp.send_text(text)
         except Exception as e:
-            log.warning("candan_voice: transcript yayınlanamadı (%s): %r", role, e)
+            log.warning("mate_voice: transcript yayınlanamadı (%s): %r", role, e)
 
     def _publish_speaker(self, name, speaker_id, guest: bool) -> None:
         room = self._room
@@ -782,7 +782,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
         async def _send() -> None:
             try:
-                await room.local_participant.send_text(payload, topic="candan.speaker")
+                await room.local_participant.send_text(payload, topic="mate.speaker")
             except Exception:
                 pass
 
@@ -800,7 +800,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
 
         async def _send() -> None:
             try:
-                await room.local_participant.send_text(line, topic="candan.debug")
+                await room.local_participant.send_text(line, topic="mate.debug")
             except Exception:
                 pass
 
@@ -819,7 +819,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
             try:
                 await room.local_participant.set_attributes({"lk.agent.state": state})
             except Exception as e:
-                log.warning("candan_voice: agent-state ayarlanamadı (%s): %r", state, e)
+                log.warning("mate_voice: agent-state ayarlanamadı (%s): %r", state, e)
 
         try:
             asyncio.create_task(_apply())
@@ -848,7 +848,7 @@ class CandanVoiceAdapter(BasePlatformAdapter):
         self, chat_id: str, image_url: str, caption: Optional[str] = None,
         reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        return SendResult(success=False, error="candan_voice: image delivery unsupported")
+        return SendResult(success=False, error="mate_voice: image delivery unsupported")
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         return {"name": self.room_name, "type": "dm", "chat_id": chat_id}
@@ -865,7 +865,7 @@ def check_requirements() -> bool:
         import livekit  # noqa: F401
         return True
     except Exception:
-        logger.warning("candan_voice: livekit not importable — connect() will fail")
+        logger.warning("mate_voice: livekit not importable — connect() will fail")
         return True
 
 
@@ -893,16 +893,16 @@ def register(ctx) -> None:
     """Plugin entry point: called by the Hermes plugin system."""
     ctx.register_platform(
         name=PLATFORM_NAME,
-        label="Candan Voice",
-        adapter_factory=lambda cfg: CandanVoiceAdapter(cfg),
+        label="Mate Voice",
+        adapter_factory=lambda cfg: MateVoiceAdapter(cfg),
         check_fn=check_requirements,
         validate_config=validate_config,
         is_connected=is_connected,
         required_env=["LIVEKIT_URL", "LIVEKIT_API_SECRET"],
         install_hint="Needs livekit + numpy + onnxruntime + sherpa_onnx + transformers + wyoming",
         env_enablement_fn=_env_enablement,
-        cron_deliver_env_var="CANDAN_HOME_CHANNEL",
-        allow_all_env="CANDAN_VOICE_ALLOW_ALL_USERS",
+        cron_deliver_env_var="MATE_HOME_CHANNEL",
+        allow_all_env="MATE_VOICE_ALLOW_ALL_USERS",
         emoji="🎙️",
         pii_safe=False,
         platform_hint=(

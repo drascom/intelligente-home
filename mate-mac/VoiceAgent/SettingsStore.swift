@@ -33,12 +33,12 @@ final class SettingsStore: ObservableObject {
     /// LiveKit sunucu URL'i. Boşsa default'a (Secrets) düşülür → bkz. resolvedLivekitURL.
     @Published var livekitURL: String { didSet { defaults.set(livekitURL, forKey: Self.livekitURLKey) } }
 
-    // MARK: - Hermes candan_voice token endpoint'i (modüler)
+    // MARK: - Hermes mate_voice token endpoint'i (modüler)
 
-    /// Hermes candan_voice token endpoint TABAN URL'i (örn. `https://mate-hermes.drascom.uk`).
-    /// İstek: `GET {url}/candan/token?identity=<id>&room=<opsiyonel>` + `X-Candan-Key`.
+    /// Hermes mate_voice token endpoint TABAN URL'i (örn. `https://mate-hermes.drascom.uk`).
+    /// İstek: `GET {url}/mate/token?identity=<id>&room=<opsiyonel>` + `X-Mate-Key`.
     @Published var tokenEndpointURL: String { didSet { defaults.set(tokenEndpointURL, forKey: Self.tokenEndpointURLKey) } }
-    /// Hermes endpoint'i için istemci anahtarı → `X-Candan-Key` header.
+    /// Hermes endpoint'i için istemci anahtarı → `X-Mate-Key` header.
     @Published var clientKey: String { didSet { defaults.set(clientKey, forKey: Self.clientKeyKey) } }
     /// Opsiyonel oda adı override'ı (boşsa endpoint'in döndürdüğü oda kullanılır).
     @Published var room: String { didSet { defaults.set(room, forKey: Self.roomKey) } }
@@ -46,7 +46,7 @@ final class SettingsStore: ObservableObject {
     static let livekitURLKey = "livekitURL"
     static let tokenEndpointURLKey = "tokenEndpointURL"
     static let clientKeyKey = "clientKey"
-    static let roomKey = "candanRoom"
+    static let roomKey = "mateRoom"
     static let defaultLivekitURL = Secrets.livekitServerURL
 
     /// Bağlantı için kullanılacak LiveKit URL'i — boşsa default. (TokenSource bunu
@@ -63,7 +63,7 @@ final class SettingsStore: ObservableObject {
         return v
     }
 
-    /// Hermes istemci anahtarı (`X-Candan-Key`). Boş olabilir.
+    /// Hermes istemci anahtarı (`X-Mate-Key`). Boş olabilir.
     static var resolvedClientKey: String {
         (UserDefaults.standard.string(forKey: clientKeyKey) ?? "").trimmingCharacters(in: .whitespaces)
     }
@@ -94,7 +94,7 @@ final class SettingsStore: ObservableObject {
             "stt_engine": sttEngine,
             "voice": voice,
             "language": language,
-            "candan.barge_in": bargeInEnabled ? "1" : "0",
+            "mate.barge_in": bargeInEnabled ? "1" : "0",
         ]
     }
 }

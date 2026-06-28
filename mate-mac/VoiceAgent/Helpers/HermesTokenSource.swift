@@ -1,11 +1,11 @@
 import Foundation
 import LiveKit
 
-/// Hermes `candan_voice` plugin token kaynağı — brain'den BAĞIMSIZ.
+/// Hermes `mate_voice` plugin token kaynağı — brain'den BAĞIMSIZ.
 ///
 /// ORTAK SÖZLEŞME (plugin tarafı buna göre kurulu):
-///   `GET {tokenBaseURL}/candan/token?identity=<client-id>&room=<opsiyonel>`
-///   Header: `X-Candan-Key: <clientKey>`
+///   `GET {tokenBaseURL}/mate/token?identity=<client-id>&room=<opsiyonel>`
+///   Header: `X-Mate-Key: <clientKey>`
 ///   Yanıt:  `{ "url", "room", "token", "identity" }`
 ///
 /// `tokenBaseURL` + `clientKey` Settings'ten gelir (hardcode YOK) → başkaları kendi
@@ -22,7 +22,7 @@ struct HermesTokenSource: TokenSourceFixed {
         var errorDescription: String? {
             switch self {
             case .noEndpoint: return "Hermes token endpoint URL'i boş (Settings → Bağlantı)."
-            case .noKey: return "Hermes istemci anahtarı (X-Candan-Key) boş (Settings → Bağlantı)."
+            case .noKey: return "Hermes istemci anahtarı (X-Mate-Key) boş (Settings → Bağlantı)."
             case let .http(c): return "Hermes token endpoint HTTP \(c)."
             case .badResponse: return "Hermes token yanıtı geçersiz (url/token eksik)."
             }
@@ -42,7 +42,7 @@ struct HermesTokenSource: TokenSourceFixed {
         guard !base.isEmpty else { throw TokenError.noEndpoint }
         guard !key.isEmpty else { throw TokenError.noKey }
 
-        guard var comps = URLComponents(string: base + "/candan/token") else {
+        guard var comps = URLComponents(string: base + "/mate/token") else {
             throw TokenError.noEndpoint
         }
         var items = [URLQueryItem(name: "identity", value: identity)]
@@ -52,7 +52,7 @@ struct HermesTokenSource: TokenSourceFixed {
 
         var req = URLRequest(url: endpoint, timeoutInterval: 8)
         req.httpMethod = "GET"
-        req.setValue(key, forHTTPHeaderField: "X-Candan-Key")
+        req.setValue(key, forHTTPHeaderField: "X-Mate-Key")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -93,10 +93,10 @@ struct HermesTokenSource: TokenSourceFixed {
 }
 
 /// `Session`'a verilen TEK token kaynağı. **HERMES-ONLY**: brain tamamen devre dışı
-/// (sunucuda da kapatıldı). Token yalnız `HermesTokenSource` (candan_voice endpoint)
+/// (sunucuda da kapatıldı). Token yalnız `HermesTokenSource` (mate_voice endpoint)
 /// üzerinden çekilir. Endpoint/key eksikse veya istek hata verirse hata YUKARI
 /// FIRLATILIR → ekrana (ErrorView) düşer. FALLBACK YOK.
-struct CandanTokenSource: TokenSourceFixed {
+struct MateTokenSource: TokenSourceFixed {
     func fetch() async throws -> TokenSourceResponse {
         try await HermesTokenSource().fetch()
     }

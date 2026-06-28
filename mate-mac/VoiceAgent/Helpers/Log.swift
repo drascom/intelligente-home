@@ -8,15 +8,15 @@ import os
 /// parantez içindeki etiket os_log **category**'sine ayrılır.
 ///
 /// Terminalden okuma (mate-mac deseni — `process ==` DEĞİL, `subsystem ==`):
-///   Canlı:   log stream --predicate 'subsystem == "candan.livekit"' --level debug
-///   Geçmiş:  log show   --predicate 'subsystem == "candan.livekit"' --last 5m --info --debug
+///   Canlı:   log stream --predicate 'subsystem == "mate.livekit"' --level debug
+///   Geçmiş:  log show   --predicate 'subsystem == "mate.livekit"' --last 5m --info --debug
 ///   Yardımcı: ./logs.sh -f   (canlı)   ·   ./logs.sh Wake   (kategori)
 /// `nonisolated`: ses render thread'i / SFSpeech handler'ı gibi arka plan
 /// (main-actor olmayan) bağlamlardan da güvenle çağrılabilsin (modülün varsayılan
 /// main-actor izolasyonu yoksa derleme hatası verirdi). Logger Sendable + state
 /// kilitle korunuyor → güvenli.
 enum Log {
-    nonisolated static let subsystem = "candan.livekit"
+    nonisolated static let subsystem = "mate.livekit"
 
     private nonisolated(unsafe) static var loggers: [String: Logger] = [:]
     private nonisolated(unsafe) static let lock = NSLock()
@@ -48,7 +48,7 @@ enum Log {
     // os_log bazı ortamlardan (sandbox'lı CLI / `log show`) OKUNAMIYOR. Bu yüzden
     // logları app sandbox container'ının Caches dizinine de yazıyoruz; geliştirici
     // doğrudan tail edebilir:
-    //   tail -f ~/Library/Containers/com.drascom.mate.livekit/Data/Library/Caches/candan-livekit.log
+    //   tail -f ~/Library/Containers/com.drascom.mate.livekit/Data/Library/Caches/mate-livekit.log
 
     private nonisolated(unsafe) static var fileHandle: FileHandle?
     private nonisolated(unsafe) static var fileReady = false
@@ -60,7 +60,7 @@ enum Log {
 
     nonisolated static var fileURL: URL {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        return caches.appendingPathComponent("candan-livekit.log")
+        return caches.appendingPathComponent("mate-livekit.log")
     }
 
     private nonisolated static func openFileIfNeeded() {

@@ -7,8 +7,8 @@ import Security
 /// Sandbox KAPALI olduğundan (bkz. entitlements) generic-password Keychain için
 /// ek erişim grubu/entitlement gerekmez; varsayılan keychain kullanılır.
 enum DeviceIdentity {
-    nonisolated static let deviceIdKey = "candan.deviceId"
-    nonisolated static let clientTokenKey = "candan.clientToken"
+    nonisolated static let deviceIdKey = "mate.deviceId"
+    nonisolated static let clientTokenKey = "mate.clientToken"
 
     nonisolated static var deviceId: String {
         if let existing = Keychain.read(deviceIdKey), !existing.isEmpty { return existing }

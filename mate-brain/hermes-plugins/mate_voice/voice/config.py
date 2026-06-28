@@ -1,4 +1,4 @@
-"""Env-driven config shim for the vendored Candan voice modules.
+"""Env-driven config shim for the vendored Mate voice modules.
 
 The voice modules (tts/services/turn_detector/speaker) were lifted from
 `mate-brain/brain/voice/` where they read `brain.config.settings`. Inside the
@@ -78,25 +78,25 @@ class _Settings:
         self.turn_recheck_interval = _f("TURN_RECHECK_INTERVAL", 0.4)
 
         # --- LiveKit ---
-        # CANDAN_LIVEKIT_ROOM lets the plugin join a SEPARATE room from brain's
+        # MATE_LIVEKIT_ROOM lets the plugin join a SEPARATE room from brain's
         # agent (mate-demo) so the two don't collide. Falls back to LIVEKIT_ROOM.
         self.livekit_url = _s("LIVEKIT_URL", "ws://127.0.0.1:7880")
         self.livekit_api_key = _s("LIVEKIT_API_KEY", "devkey")
         self.livekit_api_secret = _s("LIVEKIT_API_SECRET", "")
-        self.livekit_room = _s("CANDAN_LIVEKIT_ROOM", _s("LIVEKIT_ROOM", "mate-hermes-test"))
+        self.livekit_room = _s("MATE_LIVEKIT_ROOM", _s("LIVEKIT_ROOM", "mate-hermes-test"))
         self.livekit_token_ttl_seconds = _i("LIVEKIT_TOKEN_TTL_SECONDS", 3600)
         # Public LiveKit URL handed to CLIENTS via the token endpoint (clients
         # can't reach the agent's internal ws://127.0.0.1:7880). Falls back to
         # livekit_url if unset.
-        self.public_livekit_url = _s("CANDAN_PUBLIC_LIVEKIT_URL", "") or self.livekit_url
+        self.public_livekit_url = _s("MATE_PUBLIC_LIVEKIT_URL", "") or self.livekit_url
 
         # --- Token endpoint (clients fetch room-scoped join tokens; secret stays
         #     on the server). Disabled if client_key is empty. ---
-        self.token_port = _i("CANDAN_VOICE_TOKEN_PORT", 8830)
-        self.token_bind = _s("CANDAN_VOICE_TOKEN_BIND", "0.0.0.0")
-        self.client_key = _s("CANDAN_VOICE_CLIENT_KEY", "")
+        self.token_port = _i("MATE_VOICE_TOKEN_PORT", 8830)
+        self.token_bind = _s("MATE_VOICE_TOKEN_BIND", "0.0.0.0")
+        self.client_key = _s("MATE_VOICE_CLIENT_KEY", "")
         # TTL for client tokens minted by the endpoint.
-        self.client_token_ttl_seconds = _i("CANDAN_VOICE_CLIENT_TOKEN_TTL", 3600)
+        self.client_token_ttl_seconds = _i("MATE_VOICE_CLIENT_TOKEN_TTL", 3600)
 
     def resolve_stt_engine(self, engine):
         """(name, host, port). Unknown/missing → default (whisper)."""

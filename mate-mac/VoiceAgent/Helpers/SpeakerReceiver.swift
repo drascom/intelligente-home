@@ -1,7 +1,7 @@
 import LiveKit
 import SwiftUI
 
-/// O an tanınan/aktif konuşmacı bilgisi (brain `candan.speaker` topic'inden).
+/// O an tanınan/aktif konuşmacı bilgisi (brain `mate.speaker` topic'inden).
 struct SpeakerInfo: Equatable {
     let name: String?
     let speakerId: Int?
@@ -15,17 +15,17 @@ struct SpeakerInfo: Equatable {
     }
 }
 
-/// `candan.speaker` text-stream topic'ini dinler; brain JSON yollar:
+/// `mate.speaker` text-stream topic'ini dinler; brain JSON yollar:
 /// `{ "name": string|null, "speakerId": int|null, "guest": bool }`.
 /// @Published son konuşmacıyı tutar; üst barda küçük göstergede gösterilir.
 ///
-/// Ayrı topic — transcript (`lk.transcription`), content (`candan.content`),
-/// debug (`candan.debug`) akışlarına dokunmaz. Best-effort.
+/// Ayrı topic — transcript (`lk.transcription`), content (`mate.content`),
+/// debug (`mate.debug`) akışlarına dokunmaz. Best-effort.
 @MainActor
 final class SpeakerReceiver: ObservableObject {
     @Published private(set) var current: SpeakerInfo?
 
-    private static let topic = "candan.speaker"
+    private static let topic = "mate.speaker"
     private var registered = false
 
     func connectionChanged(_ connected: Bool, room: Room) {

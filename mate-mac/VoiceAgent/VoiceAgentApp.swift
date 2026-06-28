@@ -3,7 +3,7 @@ import SwiftUI
 
 @main
 struct VoiceAgentApp: App {
-    // MARK: - Self-hosted server connection (mate / candan assistant)
+    // MARK: - Self-hosted server connection (mate / mate assistant)
     //
     // We bypass the LiveKit Cloud sandbox and connect directly to our
     // self-hosted LiveKit server (oracle-stage) with a manually-minted token.
@@ -34,7 +34,7 @@ struct VoiceAgentApp: App {
         #endif
 
         // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel
-        // alıcıyla (CandanTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
+        // alıcıyla (MateTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
         // hem asistan satırını "assistant" kimliğinden yollar; SDK'nın varsayılan
         // receiver'ı gönderene göre atfettiği için kullanıcı sözünü yanlış işaretler.
         // Varsayılan transcription receiver'ı bizimkiyle DEĞİŞTİRİYORUZ (aynı topic'e
@@ -42,10 +42,10 @@ struct VoiceAgentApp: App {
         let room = Room()
         // URL'i her bağlanışta Settings'ten (UserDefaults) taze okuyan token kaynağı.
         let session = Session(
-            // Hermes-only token kaynağı: candan_voice plugin token endpoint'inden
+            // Hermes-only token kaynağı: mate_voice plugin token endpoint'inden
             // (Settings'ten taze okunan URL+key) TAZE LiveKit token çeker. FALLBACK
             // YOK: hata olursa ekrana düşer (sessiz düşüş yok).
-            tokenSource: CandanTokenSource(),
+            tokenSource: MateTokenSource(),
             // preConnectAudio KAPALI: açıkken Session bağlanmadan ÖNCE mic'i açıp bir
             // preconnect track yayınlar; WakeCoordinator'ın setMicrophone + reaktif
             // microphoneStateChanged guard'ı bununla çakışır → İKİ mic track + sürekli
@@ -53,7 +53,7 @@ struct VoiceAgentApp: App {
             // bağlantı 2-3 kez kopup yeniden bağlanır. Kapalı = tek deterministik
             // track (WakeCoordinator yönetir) → tek, stabil bağlantı.
             options: SessionOptions(room: room, preConnectAudio: false),
-            receivers: [CandanTranscriptionReceiver(room: room)]
+            receivers: [MateTranscriptionReceiver(room: room)]
         )
         self.session = session
         localMedia = LocalMedia(session: session)

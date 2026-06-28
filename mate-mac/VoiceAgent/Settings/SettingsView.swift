@@ -39,7 +39,7 @@ struct SettingsView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         #endif
-                    TextField("Client key (X-Candan-Key)", text: $settings.clientKey)
+                    TextField("Client key (X-Mate-Key)", text: $settings.clientKey)
                         .textFieldStyle(.roundedBorder)
                         #if !os(macOS)
                             .textInputAutocapitalization(.never)
@@ -51,7 +51,7 @@ struct SettingsView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         #endif
-                    Text("candan_voice token endpoint: GET {url}/candan/token?identity=…&room=… · header X-Candan-Key. Boşsa bağlantı hata verir (ekrana düşer).")
+                    Text("mate_voice token endpoint: GET {url}/mate/token?identity=…&room=… · header X-Mate-Key. Boşsa bağlantı hata verir (ekrana düşer).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

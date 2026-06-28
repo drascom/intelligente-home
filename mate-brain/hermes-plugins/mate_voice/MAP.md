@@ -1,4 +1,4 @@
-# MAP: `livekit_agent.py` → `CandanVoiceAdapter`
+# MAP: `livekit_agent.py` → `MateVoiceAdapter`
 
 Mapping the standalone `mate-brain/brain/voice/livekit_agent.py::LiveKitAgent`
 onto the Hermes `BasePlatformAdapter` contract. **STATUS: IMPLEMENTED** — the
@@ -34,9 +34,9 @@ method**. Hermes splits inbound from outbound:
 | `_process_turn()` — TTS + transcript tail            | `send()`                      | runs out-of-band when brain reply returns. |
 | `_speak()` + `_capture_s16le()` + `_to_mono()`       | `send()`                      | `synthesize_stream`→`to_s16le`→48kHz frames; `_tts_task` for barge-in. |
 | `_publish_transcripts()` / `_publish_text()`         | inside `send()`               | `lk.transcription` topic; mate-mac receiver unchanged. |
-| `_publish_speaker()`                                 | inside `_on_utterance_final`  | `candan.speaker` topic (active-user UI). |
+| `_publish_speaker()`                                 | inside `_on_utterance_final`  | `mate.speaker` topic (active-user UI). |
 | `_set_agent_state()` / `_debug()` / `_send_cue()`    | helpers (port as-is)          | `lk.agent.state` + debug/cue topics. |
-| `_attrs()` / `participant_attributes_changed`        | `connect()` event + `_attr_cache` | per-client stt_engine/voice/language + `candan.awake`/`barge_in`. |
+| `_attrs()` / `participant_attributes_changed`        | `connect()` event + `_attr_cache` | per-client stt_engine/voice/language + `mate.awake`/`barge_in`. |
 | `_begin_enrollment()` / `_complete_enrollment()` / `_parse_name()` | port into inbound path | recognize-first auto-enroll. |
 | `_poll_deliveries()` / `_deliver_due()`              | `_poll_task` in `connect()`   | proactive reminders → could move to Hermes cron + `standalone_sender_fn`. |
 | `conversation_id`                                    | `get_chat_info()` / room scope| `livekit-{room}` ≈ guest scope. |
@@ -52,7 +52,7 @@ method**. Hermes splits inbound from outbound:
 - `self.build_source(chat_id, chat_name, chat_type, user_id, user_name, thread_id, ...) -> SessionSource`
 - `await self.handle_message(MessageEvent(text=, message_type=, source=))` — returns None; reply arrives via `send()`.
 - `register(ctx)` → `ctx.register_platform(name=, label=, adapter_factory=, check_fn=, validate_config=, is_connected=, required_env=, env_enablement_fn=, cron_deliver_env_var=, platform_hint=, ...)`
-- `Platform("candan_voice")` works without core enum edits (dynamic `_missing_` pseudo-member).
+- `Platform("mate_voice")` works without core enum edits (dynamic `_missing_` pseudo-member).
 
 ## Open questions / decisions
 

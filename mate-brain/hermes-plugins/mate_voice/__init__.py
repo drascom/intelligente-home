@@ -1,4 +1,4 @@
-"""Candan Voice Hermes platform plugin (scaffold)."""
+"""Mate Voice Hermes platform plugin (scaffold)."""
 
 from .adapter import register
 

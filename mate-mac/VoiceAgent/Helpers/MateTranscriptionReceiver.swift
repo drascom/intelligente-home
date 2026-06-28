@@ -5,13 +5,13 @@ import LiveKit
 /// ("assistant" kimliği) yayınlar. SDK'nın varsayılan `TranscriptionStreamReceiver`'ı
 /// satırı YALNIZ gönderen kimliğine göre atfettiği için kullanıcının kendi sözünü de
 /// "agent" olarak işaretlerdi. Bu alıcı bunun yerine brain'in koyduğu açık
-/// `candan.role` stream attribute'unu okur (user/assistant); yoksa gönderen kimliğine
+/// `mate.role` stream attribute'unu okur (user/assistant); yoksa gönderen kimliğine
 /// düşer. Aksi her şey (segment id, final, akış) standart text-stream davranışıdır.
 ///
 /// `lk.transcription` topic'inde dinler — bu yüzden Session'a verilen receiver
 /// listesinde SDK'nın varsayılan transcription receiver'ı YERİNE bu kullanılmalı
 /// (aynı topic'e iki handler kaydı çakışır).
-final class CandanTranscriptionReceiver: MessageReceiver, @unchecked Sendable {
+final class MateTranscriptionReceiver: MessageReceiver, @unchecked Sendable {
     private let room: Room
     private let topic: String
 
@@ -59,11 +59,11 @@ final class CandanTranscriptionReceiver: MessageReceiver, @unchecked Sendable {
         )
     }
 
-    /// Konuşmacı: önce brain'in açık `candan.role` attribute'u, yoksa gönderen
+    /// Konuşmacı: önce brain'in açık `mate.role` attribute'u, yoksa gönderen
     /// kimliği (yerel katılımcı → kullanıcı, diğer → agent).
     private static func isUserLine(attrs: [String: String],
                                    sender: Participant.Identity, room: Room) -> Bool {
-        switch attrs["candan.role"]?.lowercased() {
+        switch attrs["mate.role"]?.lowercased() {
         case "user": return true
         case "assistant", "agent": return false
         default: return sender == room.localParticipant.identity

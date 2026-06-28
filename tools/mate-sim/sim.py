@@ -3,8 +3,8 @@
 mate-sim — başsız (headless) mate-mac LiveKit istemci simülatörü.
 
 Uçtan uca test: stage LiveKit odasına bağlan → mic yerine TEST WAV yayınla
-(brain attribute'ları ile: candan.awake=1, stt_engine/voice/language) →
-geri dönen `lk.transcription` text-stream'ini (candan.role: user/assistant) ve
+(brain attribute'ları ile: mate.awake=1, stt_engine/voice/language) →
+geri dönen `lk.transcription` text-stream'ini (mate.role: user/assistant) ve
 agent TTS ses track'ini yakala. Net PASS/FAIL basar.
 
 Token/URL/oda: env (MATE_LK_URL / MATE_LK_TOKEN / MATE_LK_ROOM / MATE_LK_IDENTITY)
@@ -30,13 +30,13 @@ PROMPT_WAV = HERE / "prompt.wav"
 DEFAULT_URL = "wss://mate-livekit.drascom.uk"
 DEFAULT_ROOM = "mate-demo"
 # Brain'in beklediği attribute'lar (mate-mac SettingsStore.brainAttributes + awake).
-# candan.awake=1 OLMAZSA brain sesi/transkripti YOK SAYAR (sunucu wake-gate).
+# mate.awake=1 OLMAZSA brain sesi/transkripti YOK SAYAR (sunucu wake-gate).
 ATTRS = {
-    "candan.awake": "1",
+    "mate.awake": "1",
     "stt_engine": "whisper",
     "voice": "nese",
     "language": "tr",
-    "candan.barge_in": "1",
+    "mate.barge_in": "1",
 }
 
 _log_lines = []
@@ -142,12 +142,12 @@ async def main():
     def _on_join(p):
         log(f"katılımcı geldi: {p.identity}")
 
-    # --- Transkript: lk.transcription text-stream, candan.role ile user/assistant ---
+    # --- Transkript: lk.transcription text-stream, mate.role ile user/assistant ---
     def on_text_stream(reader, participant_identity):
         async def _read():
             info = reader.info
             attrs = dict(getattr(info, "attributes", {}) or {})
-            role = (attrs.get("candan.role") or "").lower()
+            role = (attrs.get("mate.role") or "").lower()
             who = "user" if role == "user" else ("assistant" if role in ("assistant", "agent") else participant_identity)
             text = await reader.read_all()
             transcripts.append((who, text))

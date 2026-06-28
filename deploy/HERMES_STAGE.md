@@ -2,7 +2,7 @@
 
 Hermes Agent (NousResearch) `oracle-stage` (132.145.24.135) üstüne, mevcut
 brain(:8800) + LiveKit(:7880) servislerine **DOKUNMADAN** yeni servis olarak kuruldu.
-Sonraki adımda buraya kendi ses eklentimiz (`candan_voice` Hermes platform adapter
+Sonraki adımda buraya kendi ses eklentimiz (`mate_voice` Hermes platform adapter
 plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
 
 ## Erişim
@@ -28,7 +28,7 @@ plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
   `hermes-gateway.service` → `enabled` (boot'ta gelir), `active running`, `run-as-user=ubuntu`.
   - Durum: `sudo hermes gateway status --system` / `systemctl status hermes-gateway`
   - Log: `journalctl -u hermes-gateway -f`
-  - Şu an "no messaging platforms enabled" (beklenen — `candan_voice` plugin sonra bağlanacak).
+  - Şu an "no messaging platforms enabled" (beklenen — `mate_voice` plugin sonra bağlanacak).
 - **Proxy** (OpenAI-uyumlu `/v1` HTTP server) — `hermes proxy start [--port 8810]`.
   - Boş port **8810** ayrıldı (kullanılan: 22/53/111/7880/7881/8800 ile çakışmaz).
   - ⚠ **KISIT:** `hermes proxy` upstream'i yalnız **`nous`** veya **`xai`** OAuth destekler;
@@ -48,31 +48,31 @@ plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
 ## Doğrulama özeti
 - ✅ LLM round-trip (Codex via Hermes) OK.
 - ✅ Gateway `active running` + boot-enabled.
-- ✅ **KARAR (b):** harici OpenAI-uyumlu `/v1` proxy **GEREKMİYOR**. `candan_voice` plugin
+- ✅ **KARAR (b):** harici OpenAI-uyumlu `/v1` proxy **GEREKMİYOR**. `mate_voice` plugin
   Hermes İÇİNDE çalışıp `handle_message` ile beyni doğrudan çağıracak → gateway yeterli.
   Port **8810** serbest bırakıldı (ileride gerekirse). İş TAMAM.
 
 ---
 
-## candan_voice plugin deploy (2026-06-27)
+## mate_voice plugin deploy (2026-06-27)
 
-`mate-brain/hermes-plugins/candan_voice/` → Hermes platform adapter. Brain'in
+`mate-brain/hermes-plugins/mate_voice/` → Hermes platform adapter. Brain'in
 `voice/livekit_agent.py` mantığı (STT/wake-gate/turn/barge-in/speaker-ID/TTS)
 Hermes `BasePlatformAdapter`'ına taşındı. Voice modülleri (tts/services/
 turn_detector/speaker/hallucination) plugin içine **vendor** edildi; `brain.*`
 bağımlılığı yok, config env'den (`voice/config.py` shim).
 
 ### Kurulum yeri + etkinleştirme
-- **Plugin dizini:** `/home/ubuntu/.hermes/plugins/candan_voice/` (user plugin).
+- **Plugin dizini:** `/home/ubuntu/.hermes/plugins/mate_voice/` (user plugin).
 - **Etkinleştirme (KRİTİK — user platform plugin'leri OPT-IN):**
-  `~/.hermes/config.yaml` → `plugins:\n  enabled:\n    - candan_voice`.
+  `~/.hermes/config.yaml` → `plugins:\n  enabled:\n    - mate_voice`.
   (Allow-list anahtarı = manifest `name:` alanı; bu yüzden plugin.yaml
-  `name: candan_voice` — dizin/platform adı ile aynı tutuldu.)
-- **Env (`~/.hermes/.env`, `# >>> candan_voice >>>` bloğu):** LIVEKIT_URL=
-  ws://127.0.0.1:7880, LIVEKIT_API_KEY/SECRET (brain.env'den), CANDAN_LIVEKIT_ROOM=
+  `name: mate_voice` — dizin/platform adı ile aynı tutuldu.)
+- **Env (`~/.hermes/.env`, `# >>> mate_voice >>>` bloğu):** LIVEKIT_URL=
+  ws://127.0.0.1:7880, LIVEKIT_API_KEY/SECRET (brain.env'den), MATE_LIVEKIT_ROOM=
   **mate-hermes-test** (brain'in mate-demo'su AYRI), STT_HOST=192.168.0.25:10300,
   STT_LANGUAGE=tr, VOX_HOST=192.168.0.25:8808, **TURN_DETECTOR_ENABLED=false**,
-  **SPEAKER_ID_ENABLED=false** (ilk bağlantı sade), CANDAN_VOICE_ALLOW_ALL_USERS=true.
+  **SPEAKER_ID_ENABLED=false** (ilk bağlantı sade), MATE_VOICE_ALLOW_ALL_USERS=true.
 
 ### Deps (Hermes venv: `/home/ubuntu/.hermes/hermes-agent/venv`)
 - Kurulan: `livekit livekit-api wyoming` (websockets zaten vardı). Bunlar ilk
@@ -83,7 +83,7 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
   guest'e düşer (crash yok).
 
 ### Doğrulama (yapıldı)
-- ✅ `discover_plugins()` → candan_voice **registered**, `is_connected=True`.
+- ✅ `discover_plugins()` → mate_voice **registered**, `is_connected=True`.
 - ✅ Gateway restart sonrası adapter LiveKit'e bağlandı: `RoomService.
   list_participants("mate-hermes-test")` → `[('assistant', kind=4=AGENT)]`.
 - ✅ Servis stabil (`NRestarts=0`), traceback yok. Disconnect reason=1 =
@@ -97,18 +97,18 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
   (brain hiç çalışmaz, log/hata yok). İlk B turu'nda STT doğru transcript verdi
   (`'Candan, 2 artı 2 kaç eder?'`) ama cevap üretilmedi — kök neden buydu.
 - **Çözüm:** adapter guest'e `user_id="voice:<participant_identity>"` verir
-  (cihaz-kapsamlı; None DEĞİL) → authz guard'ı geçer, `CANDAN_VOICE_ALLOW_ALL_USERS=true`
+  (cihaz-kapsamlı; None DEĞİL) → authz guard'ı geçer, `MATE_VOICE_ALLOW_ALL_USERS=true`
   ile yetkilenir. Speaker-ID açılınca (Faz 2) tanınan kişi override eder.
 
 ### Token endpoint (2026-06-27, A2)
-- Plugin'e gömülü aiohttp sunucu: `GET /candan/token` (`X-Candan-Key` ile room-scoped
-  join token mint) + `GET /candan/health`. LiveKit secret sunucuda kalır.
-- env (`~/.hermes/.env` candan bloğu): `CANDAN_VOICE_CLIENT_KEY` (openssl rand),
-  `CANDAN_VOICE_TOKEN_PORT=8830`, `CANDAN_PUBLIC_LIVEKIT_URL=wss://mate-livekit.drascom.uk`.
+- Plugin'e gömülü aiohttp sunucu: `GET /mate/token` (`X-Mate-Key` ile room-scoped
+  join token mint) + `GET /mate/health`. LiveKit secret sunucuda kalır.
+- env (`~/.hermes/.env` candan bloğu): `MATE_VOICE_CLIENT_KEY` (openssl rand),
+  `MATE_VOICE_TOKEN_PORT=8830`, `MATE_PUBLIC_LIVEKIT_URL=wss://mate-livekit.drascom.uk`.
 - Bind `0.0.0.0:8830` (henüz public DEĞİL → SSH tüneli ile eriş; public için Traefik route).
 - Doğrulandı: health/200, token/200 (geçerli jwt), yanlış-key/401, identity-yok/400;
   endpoint token'ı ile sim e2e PASS (`[assistant] "3 kere 3, 9 eder."` + reply.wav).
-  Sözleşme: `hermes-plugins/candan_voice/CLIENT_INTEGRATION.md`.
+  Sözleşme: `hermes-plugins/mate_voice/CLIENT_INTEGRATION.md`.
 
 ### Faz 2 notları
 - **Per-user Hermes hafıza scope:** speaker-ID identify kodu bağlı ama Hermes

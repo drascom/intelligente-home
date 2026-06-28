@@ -8,7 +8,7 @@ import SwiftUI
 /// wake dinleyici ↔ LiveKit WebRTC). macOS CoreAudio bu devri temiz yapamıyor →
 /// `StartIO error 35`, aggregate device hataları, sessiz mic. Yeni tasarım:
 /// **LiveKit mikrofonu sürekli yakalar VE sürekli yayınlar; SFSpeech yalnız PCM'i
-/// gözlemler; uyku/uyanık ayrımı SUNUCUDA `candan.awake` ile yapılır.**
+/// gözlemler; uyku/uyanık ayrımı SUNUCUDA `mate.awake` ile yapılır.**
 ///
 /// Neden publish/unpublish DEĞİL (deneyle doğrulandı):
 ///   • PCM (localAudioRenderer) yalnız mic track YAYINDAYKEN akıyor; unpublish edince
@@ -17,17 +17,17 @@ import SwiftUI
 ///     (`skipping cycle due to overload`, -10877) ~28sn'de bir full-reconnect'e
 ///     (CLIENT_REQUEST_LEAVE) yol açıyordu.
 ///   • Çözüm: TEK yol — track'i sürekli yayında tut (startLocalRecording YOK).
-///     Brain, `candan.awake=="0"` iken sesi/transkripti yok sayar (sunucu kapısı).
+///     Brain, `mate.awake=="0"` iken sesi/transkripti yok sayar (sunucu kapısı).
 ///
 /// Durum makinesi (wakeWordEnabled açıkken):
 ///   • Bağlanınca → PCM renderer ekle + mic track'i YAYINLA (sürekli). Uyku moduna gir.
-///   • UYKU → `candan.awake="0"`; mic yayında ama brain yok sayar; wake tanıma aktif.
-///   • Wake duyulunca → tanımayı durdur, `candan.awake="1"` (publish/settle YOK).
+///   • UYKU → `mate.awake="0"`; mic yayında ama brain yok sayar; wake tanıma aktif.
+///   • Wake duyulunca → tanımayı durdur, `mate.awake="1"` (publish/settle YOK).
 ///   • UYANIK → brain sesi işler.
-///   • Re-arm (hareketsizlik) → `candan.awake="0"`, taze tanıma isteği başlat.
+///   • Re-arm (hareketsizlik) → `mate.awake="0"`, taze tanıma isteği başlat.
 ///   • Disconnect → renderer'ı kaldır (mic disconnect ile zaten düşer).
 ///
-/// wakeWordEnabled kapalıyken kapı devre dışı: sürekli mod — `candan.awake="1"`.
+/// wakeWordEnabled kapalıyken kapı devre dışı: sürekli mod — `mate.awake="1"`.
 ///
 /// NOT (gizlilik): Mic uyku sırasında da yayında olduğundan ses sunucuya gider ama
 /// brain `awake="0"` iken yok sayar; macOS mikrofon göstergesi (turuncu nokta) açık
@@ -55,7 +55,7 @@ final class WakeCoordinator: ObservableObject {
     private var connected = false
     private var inactivityTask: Task<Void, Never>?
     private var cueHandlerRegistered = false
-    /// Mikrofon brain'e canlı mı (track yayında)? `candan.awake` attribute'unun kaynağı.
+    /// Mikrofon brain'e canlı mı (track yayında)? `mate.awake` attribute'unun kaynağı.
     private var isAwake = false
     /// Track'in YAYINDA olması istenen niyet. `setMicrophone` ile güncellenir; reaktif
     /// guard (`microphoneStateChanged`) istenmeden yayınlanan track'i buna göre kapatır.
@@ -72,18 +72,18 @@ final class WakeCoordinator: ObservableObject {
         wake.onUnavailable = { [weak self] msg in
             self?.unavailableMessage = msg
             // Wake istendi ama kullanılamıyor: track yayında kalır ama
-            // candan.awake = "0" → brain sızıntıyı yok sayar.
+            // mate.awake = "0" → brain sızıntıyı yok sayar.
             self?.disableGate(continuous: false)
         }
     }
 
-    /// Brain proaktif teslimden önce `candan.cue` topic'ine "reminder" yollar →
+    /// Brain proaktif teslimden önce `mate.cue` topic'ine "reminder" yollar →
     /// belirgin hatırlatma çanı çal (cuesEnabled açıksa).
     private func registerCueHandler() {
         guard !cueHandlerRegistered, let session else { return }
         cueHandlerRegistered = true
         Task {
-            try? await session.room.registerTextStreamHandler(for: "candan.cue") { [weak self] reader, _ in
+            try? await session.room.registerTextStreamHandler(for: "mate.cue") { [weak self] reader, _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let value = (try? await reader.readAll()) ?? ""
@@ -99,7 +99,7 @@ final class WakeCoordinator: ObservableObject {
     private func unregisterCueHandler() {
         guard cueHandlerRegistered, let session else { return }
         cueHandlerRegistered = false
-        Task { await session.room.unregisterTextStreamHandler(for: "candan.cue") }
+        Task { await session.room.unregisterTextStreamHandler(for: "mate.cue") }
     }
 
     // MARK: - Wake yakalama (tek yol: sürekli yayınlanan mic track + PCM renderer)
@@ -138,7 +138,7 @@ final class WakeCoordinator: ObservableObject {
         if isConnected {
             registerCueHandler()
             // TEK yol: bağlanır bağlanmaz renderer'ı bağla + mic'i sürekli yayınla.
-            // Uyku/uyanık ayrımı setAwake (candan.awake) ile sunucuda yapılır.
+            // Uyku/uyanık ayrımı setAwake (mate.awake) ile sunucuda yapılır.
             startWakeCapture()
             evaluate()
         } else {
@@ -191,7 +191,7 @@ final class WakeCoordinator: ObservableObject {
 
     /// Wake kapısını devre dışı bırak: tanımayı durdur, track'i yayınla.
     /// - Parameter continuous: Kullanıcı wake'i bilerek kapattıysa `true` →
-    ///   brain dinlesin (`candan.awake = "1"`). Wake kullanılamıyorsa `false` → `"0"`.
+    ///   brain dinlesin (`mate.awake = "1"`). Wake kullanılamıyorsa `false` → `"0"`.
     private func disableGate(continuous: Bool) {
         cancelInactivityTimer()
         wake.stop()
@@ -215,7 +215,7 @@ final class WakeCoordinator: ObservableObject {
         // Temiz yeniden başlatma: stale tanıma isteğini temizle.
         wake.stop()
         // Mic UNPUBLISH EDİLMEZ — sürekli yayında (tek yol; PCM akmaya devam eder →
-        // wake dinler). Uyku yalnızca SUNUCU kapısı: candan.awake=0 → brain uyku
+        // wake dinler). Uyku yalnızca SUNUCU kapısı: mate.awake=0 → brain uyku
         // sesini/transkriptini yok sayar.
         setAwake(false)
         // Uykuda brain yok sayıyor → optimistic gösterme; SFSpeech'i wake'e bırak.
@@ -334,7 +334,7 @@ final class WakeCoordinator: ObservableObject {
 
     /// Mic track'ini YAYINLA (publish) ya da yayından TAMAMEN KALDIR (unpublish).
     /// Normal akışta yalnız `startWakeCapture` tarafından enabled=true ile çağrılır
-    /// (mic sürekli yayında kalır; uyku/uyanık ayrımı sunucuda candan.awake ile).
+    /// (mic sürekli yayında kalır; uyku/uyanık ayrımı sunucuda mate.awake ile).
     /// enabled=false yalnız reaktif guard (`microphoneStateChanged`) içindir:
     /// istenmeden yayına giren stray track'i kaldırır.
     private func setMicrophone(enabled: Bool) {
@@ -417,16 +417,16 @@ final class WakeCoordinator: ObservableObject {
         publishAttributes()
     }
 
-    /// Tüm participant attribute'larını (brain ayarları + `candan.awake`) TEK sözlük
-    /// olarak yayınlar. Brain `candan.awake == "0"` iken başlayan sözleri yok sayar.
+    /// Tüm participant attribute'larını (brain ayarları + `mate.awake`) TEK sözlük
+    /// olarak yayınlar. Brain `mate.awake == "0"` iken başlayan sözleri yok sayar.
     func publishAttributes() {
         guard let session, session.isConnected else {
             Log.line("[Attr] publishAttributes atlandı — bağlı değil")
             return
         }
         var attrs = settings?.brainAttributes ?? [:]
-        attrs["candan.awake"] = isAwake ? "1" : "0"
-        Log.line("[Attr] → candan.awake=\(isAwake ? "1" : "0") attrs=\(attrs)")
+        attrs["mate.awake"] = isAwake ? "1" : "0"
+        Log.line("[Attr] → mate.awake=\(isAwake ? "1" : "0") attrs=\(attrs)")
         Task {
             do {
                 try await session.room.localParticipant.set(attributes: attrs)
