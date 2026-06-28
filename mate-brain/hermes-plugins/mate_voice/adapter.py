@@ -709,11 +709,15 @@ class MateVoiceAdapter(BasePlatformAdapter):
     async def _dispatch_turn(self, text, speaker, speaker_id, participant, track) -> None:
         """Bir turu Hermes'e ver: aktif-konuşmacı UI + kullanıcı transkripti +
         MessageEvent → handle_message. (Asistan satırı send()'te yayınlanır.)"""
-        # Tanınan kişiye bu bağlantıda BİR KEZ, günün saatine göre karşılama.
+        # Tanınan kişiye bu bağlantıda BİR KEZ selam — SABİT metin değil: Hermes'e
+        # bir DİREKTİF geçeriz (ismiyle, doğal, her sefer farklı; hafızadaki
+        # selamlama tercihine uy), selamın metnini AGENT üretir. Direktif sadece
+        # Hermes'e gider; transkript UI'ına temiz kullanıcı metni yayınlanır.
+        hermes_text = text
         if speaker_id is not None and speaker_id not in self._greeted_speakers:
             self._greeted_speakers.add(speaker_id)
             en = self._is_en(self._attrs(participant).get("language"))
-            await self._enroll_say(self._greeting_for(speaker, en), participant)
+            hermes_text = self._greet_directive(speaker, en) + "\n\n" + text
         self._publish_speaker(speaker, speaker_id, guest=(speaker_id is None))
         human_track_sid = getattr(track, "sid", None)
         asyncio.create_task(self._publish_text(text, track_sid=human_track_sid, role="user"))
@@ -738,7 +742,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
         )
         self._set_agent_state("thinking")
         await self.handle_message(MessageEvent(
-            text=text, message_type=MessageType.TEXT, source=source,
+            text=hermes_text, message_type=MessageType.TEXT, source=source,
             message_id=str(int(time.time() * 1000)),
         ))
 
@@ -749,18 +753,24 @@ class MateVoiceAdapter(BasePlatformAdapter):
         return (language or "").lower().startswith("en")
 
     @staticmethod
-    def _greeting_for(name: str, en: bool) -> str:
-        """Günün saatine göre karşılama. NOT: sunucu yerel saatini kullanır
-        (time.localtime); sunucu TZ'i evin TZ'inden farklıysa istemci TZ'ini
-        attribute ile geçirip burada kullanabiliriz (ileride)."""
+    def _greet_directive(name: str, en: bool) -> str:
+        """Tanınan kişinin oturumdaki İLK mesajına eklenen DİREKTİF (sabit selam
+        DEĞİL): Hermes selamın metnini kendi üretir — ismiyle, doğal, her sefer
+        farklı, hafızadaki selamlama tercihine uyarak. Sadece günün vakti + isim
+        bağlamı verilir. NOT: sunucu yerel saati (TZ farkıysa ileride istemci TZ'i)."""
         h = time.localtime().tm_hour
         if en:
-            tod = ("Good morning" if 5 <= h < 12 else "Good afternoon" if 12 <= h < 18
-                   else "Good evening" if 18 <= h < 22 else "Hello")
-            return f"{tod}, {name}. Welcome back."
-        tod = ("Günaydın" if 5 <= h < 12 else "İyi günler" if 12 <= h < 18
-               else "İyi akşamlar" if 18 <= h < 22 else "İyi geceler")
-        return f"{tod} {name}, hoş geldin."
+            part = ("morning" if 5 <= h < 12 else "afternoon" if 12 <= h < 18
+                    else "evening" if 18 <= h < 22 else "night")
+            return (f"(System note: {name} just connected (~{h:02d}:00, {part}); this is their first "
+                    f"message this session. Before answering, greet them by name — short, natural and "
+                    f"different each time; if your memory has any greeting instruction/preference, follow "
+                    f"it. Then answer their message.)")
+        part = ("sabah" if 5 <= h < 12 else "öğleden sonra" if 12 <= h < 18
+                else "akşam" if 18 <= h < 22 else "gece")
+        return (f"(Sistem notu: {name} az önce bağlandı (~{h:02d}:00, {part}); bu, bu oturumdaki ilk "
+                f"mesajı. Yanıtlamadan önce ona ismiyle KISA, doğal ve her seferinde FARKLI bir selam "
+                f"ver; hafızanda selamlamayla ilgili bir talimat/tercih varsa ona uy. Sonra mesajını yanıtla.)")
 
     @staticmethod
     def _parse_name(text: str) -> Optional[str]:
