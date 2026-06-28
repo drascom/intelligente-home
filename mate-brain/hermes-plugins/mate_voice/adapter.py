@@ -88,6 +88,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
         # utterance isim olur → enroll + bekletilen istek tanınan kullanıcı olarak
         # işlenir. None = enrollment akışında değiliz.
         self._pending_enroll: Optional[dict] = None
+        # Bu bağlantıda zaten "hoş geldin" denmiş speaker_id'ler (bir kez selam).
+        # Her connect/reconnect'te sıfırlanır → tekrar bağlanınca yine karşılar.
+        self._greeted_speakers: set = set()
         self._wake_at = 0.0
         self._barge_in_enabled = True
         self._connected = False
@@ -411,6 +414,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
                     pass
 
         self._attr_cache = {}
+        self._greeted_speakers = set()
         self._barge_in_enabled = True
         self._wake_at = 0.0
 
@@ -705,6 +709,11 @@ class MateVoiceAdapter(BasePlatformAdapter):
     async def _dispatch_turn(self, text, speaker, speaker_id, participant, track) -> None:
         """Bir turu Hermes'e ver: aktif-konuşmacı UI + kullanıcı transkripti +
         MessageEvent → handle_message. (Asistan satırı send()'te yayınlanır.)"""
+        # Tanınan kişiye bu bağlantıda BİR KEZ, günün saatine göre karşılama.
+        if speaker_id is not None and speaker_id not in self._greeted_speakers:
+            self._greeted_speakers.add(speaker_id)
+            en = self._is_en(self._attrs(participant).get("language"))
+            await self._enroll_say(self._greeting_for(speaker, en), participant)
         self._publish_speaker(speaker, speaker_id, guest=(speaker_id is None))
         human_track_sid = getattr(track, "sid", None)
         asyncio.create_task(self._publish_text(text, track_sid=human_track_sid, role="user"))
@@ -738,6 +747,20 @@ class MateVoiceAdapter(BasePlatformAdapter):
     @staticmethod
     def _is_en(language) -> bool:
         return (language or "").lower().startswith("en")
+
+    @staticmethod
+    def _greeting_for(name: str, en: bool) -> str:
+        """Günün saatine göre karşılama. NOT: sunucu yerel saatini kullanır
+        (time.localtime); sunucu TZ'i evin TZ'inden farklıysa istemci TZ'ini
+        attribute ile geçirip burada kullanabiliriz (ileride)."""
+        h = time.localtime().tm_hour
+        if en:
+            tod = ("Good morning" if 5 <= h < 12 else "Good afternoon" if 12 <= h < 18
+                   else "Good evening" if 18 <= h < 22 else "Hello")
+            return f"{tod}, {name}. Welcome back."
+        tod = ("Günaydın" if 5 <= h < 12 else "İyi günler" if 12 <= h < 18
+               else "İyi akşamlar" if 18 <= h < 22 else "İyi geceler")
+        return f"{tod} {name}, hoş geldin."
 
     @staticmethod
     def _parse_name(text: str) -> Optional[str]:
@@ -812,6 +835,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
         greet = f"Nice to meet you, {name}." if en else f"Memnun oldum {name}."
         self._publish_speaker(name, sid, guest=False)
         await self._enroll_say(greet, participant)
+        # Yeni kayıt zaten "Memnun oldum" duydu → bu bağlantıda ayrıca "hoş geldin"
+        # ile karşılama (çift selam olmasın).
+        self._greeted_speakers.add(sid)
         # Bekletilen orijinal isteği şimdi TANINAN kullanıcı olarak işle (kullanıcı
         # tekrar etmek zorunda kalmasın). Held boşsa sadece selam yeter.
         if pend.get("text"):
