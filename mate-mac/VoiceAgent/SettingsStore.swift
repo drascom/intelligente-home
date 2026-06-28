@@ -48,6 +48,8 @@ final class SettingsStore: ObservableObject {
     static let clientKeyKey = "clientKey"
     static let roomKey = "mateRoom"
     static let defaultLivekitURL = Secrets.livekitServerURL
+    /// Onboarding sihirbazında prefill edilen varsayılan Hermes token endpoint'i.
+    static let defaultTokenEndpointURL = "https://mate-token.drascom.uk"
 
     /// Bağlantı için kullanılacak LiveKit URL'i — boşsa default. (TokenSource bunu
     /// her bağlanışta UserDefaults'tan okur; @MainActor store gerekmeden.)

@@ -28,6 +28,9 @@ struct AppView: View {
     /// Mesaj yazma alanı varsayılan GİZLİ; ControlBar'daki text düğmesiyle açılır.
     @State private var showInput = false
     @State private var showSettings = false
+    /// Sıfır-konfig: token endpoint boşsa onboarding sihirbazını göster (ErrorView
+    /// yerine). "Başla" ile URL kaydedilince kapanır → autoConnect devreye girer.
+    @State private var onboarding = SettingsStore.resolvedTokenEndpointURL.isEmpty
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -135,6 +138,13 @@ struct AppView: View {
                 .overlay(alignment: .topLeading) {
                     if !showContent, let name = speaker.current?.label { speakerBadge(name) }
                 }
+                // Sıfır-konfig onboarding — her şeyin ÜSTÜNDE tam ekran.
+                .overlay {
+                    if onboarding {
+                        OnboardingView(onDone: { onboarding = false })
+                            .transition(.opacity)
+                    }
+                }
                 .animation(.default, value: chat)
                 .animation(.default, value: showContent)
                 .animation(.default, value: session.isConnected)
@@ -154,7 +164,8 @@ struct AppView: View {
     /// cheap and self-healing.
     private func autoConnect() async {
         while !Task.isCancelled {
-            if !session.isConnected {
+            // Onboarding sürerken bağlanma (URL henüz onaylanmadı).
+            if !onboarding, !session.isConnected {
                 if session.error != nil { session.dismissError() }
                 await session.start()
             }

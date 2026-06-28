@@ -40,9 +40,13 @@ struct HermesTokenSource: TokenSourceFixed {
         let identity = DeviceIdentity.deviceId
 
         guard !base.isEmpty else { throw TokenError.noEndpoint }
-        guard !key.isEmpty else { throw TokenError.noKey }
 
-        guard var comps = URLComponents(string: base + "/mate/token") else {
+        // Key VARSA authenticated `/mate/token`; key YOKSA key'siz `/mate/demo-token`
+        // (sıfır-konfig / onboarding sihirbazı → "sadece URL" akışı). Demo-token
+        // stable cihaz-kimliğini (DeviceIdentity) alır → speaker-ID + kişiye-özel
+        // oturum reconnect'ler arası tutarlı. NoKey hatası YOK: boş key = demo modu.
+        let path = key.isEmpty ? "/mate/demo-token" : "/mate/token"
+        guard var comps = URLComponents(string: base + path) else {
             throw TokenError.noEndpoint
         }
         var items = [URLQueryItem(name: "identity", value: identity)]
@@ -52,8 +56,9 @@ struct HermesTokenSource: TokenSourceFixed {
 
         var req = URLRequest(url: endpoint, timeoutInterval: 8)
         req.httpMethod = "GET"
-        req.setValue(key, forHTTPHeaderField: "X-Mate-Key")
+        if !key.isEmpty { req.setValue(key, forHTTPHeaderField: "X-Mate-Key") }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        Log.line("[Hermes] token modu: \(key.isEmpty ? "demo (key'siz)" : "authenticated")")
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw TokenError.badResponse }
