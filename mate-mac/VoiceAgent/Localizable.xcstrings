@@ -65,9 +65,6 @@
         }
       }
     },
-    "Connection" : {
-
-    },
     "control.reconnect" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -105,16 +102,19 @@
         }
       }
     },
-    "GET {url}/mate/token?identity=…&room=… · header X-Mate-Key. Boşsa bağlantı hata verir." : {
-
-    },
     "Henüz içerik yok" : {
 
     },
-    "Hermes (mate_voice)" : {
+    "Hermes bağlantısı" : {
 
     },
     "İçerik" : {
+
+    },
+    "LiveKit URL — boşsa token endpoint'in döndürdüğü URL (wss://mate-livekit.drascom.uk) kullanılır." : {
+
+    },
+    "mate_voice token endpoint: GET {url}/mate/token?identity=…&room=… · header X-Mate-Key. Boşsa bağlantı hata verir (ekrana düşer)." : {
 
     },
     "message.placeholder" : {
@@ -126,9 +126,6 @@
           }
         }
       }
-    },
-    "Mode" : {
-
     },
     "render yakında" : {
 
