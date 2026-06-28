@@ -98,6 +98,14 @@ class _Settings:
         # TTL for client tokens minted by the endpoint.
         self.client_token_ttl_seconds = _i("MATE_VOICE_CLIENT_TOKEN_TTL", 3600)
 
+        # --- Onboarding (sihirbaz): açık /mate/demo-token rotası (key'siz, kısa
+        #     ömürlü). onboarding_room boşsa ana odaya düşülür (agent zaten orada)
+        #     → iki-oda (S3) gelene kadar demo işlevsel kalır. ---
+        self.onboarding_room = _s("MATE_ONBOARDING_ROOM", "") or self.livekit_room
+        self.demo_token_ttl_seconds = _i("MATE_VOICE_DEMO_TOKEN_TTL", 600)
+        # Açık demo rotası güvenlik kapısı: varsayılan AÇIK; kapatmak için "0".
+        self.demo_token_enabled = _b("MATE_VOICE_DEMO_TOKEN_ENABLED", True)
+
     def resolve_stt_engine(self, engine):
         """(name, host, port). Unknown/missing → default (whisper)."""
         name = engine or self.stt_default_engine

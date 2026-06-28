@@ -43,6 +43,7 @@ from gateway.config import Platform
 from .voice.config import settings
 from .voice.hallucination import looks_hallucinated
 from .voice.services import WhisperSession
+from .voice.speaker_store import SpeakerStore
 from .voice.tts import synthesize_stream, to_s16le
 
 logger = logging.getLogger(__name__)
@@ -112,13 +113,17 @@ class MateVoiceAdapter(BasePlatformAdapter):
             except Exception as e:
                 log.warning("mate_voice: smart-turn kurulamadı: %r", e)
 
-        # Speaker-ID (identify-only; no enrollment store on Hermes side).
+        # Speaker-ID + plugin-local enrollment store (Faz 2 / onboarding).
+        # Store, SpeakerID açıkken kurulur; reload connect()'te yapılır (async DB).
         self.speaker = None
+        self.speaker_store: Optional[SpeakerStore] = None
         if settings.speaker_id_enabled:
             try:
                 from .voice.speaker import build_speaker_id
 
                 self.speaker = build_speaker_id(settings)
+                if self.speaker is not None:
+                    self.speaker_store = SpeakerStore()
             except Exception as e:
                 log.warning("mate_voice: speaker-ID kurulamadı: %r", e)
 
@@ -158,13 +163,15 @@ class MateVoiceAdapter(BasePlatformAdapter):
             pass
         return at.to_jwt()
 
-    def _mint_client_token(self, identity: str, room: str) -> str:
+    def _mint_client_token(self, identity: str, room: str, ttl_seconds: Optional[int] = None) -> str:
         """Room-scoped JOIN token for a CLIENT participant (publish+subscribe+
-        canUpdateOwnMetadata). NOT kind=agent — a normal participant."""
+        canUpdateOwnMetadata). NOT kind=agent — a normal participant. ttl_seconds
+        verilmezse client_token_ttl (uzun); demo-token kısa TTL geçirir."""
         from datetime import timedelta
 
         from livekit import api
 
+        ttl = ttl_seconds if ttl_seconds is not None else self.settings.client_token_ttl_seconds
         grants = api.VideoGrants(
             room_join=True, room=room,
             can_publish=True, can_subscribe=True, can_update_own_metadata=True,
@@ -173,7 +180,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
             api.AccessToken(self.settings.livekit_api_key, self.settings.livekit_api_secret)
             .with_identity(identity)
             .with_name(identity)
-            .with_ttl(timedelta(seconds=self.settings.client_token_ttl_seconds))
+            .with_ttl(timedelta(seconds=ttl))
             .with_grants(grants)
         )
         return at.to_jwt()
@@ -198,6 +205,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
         app = web.Application()
         app.router.add_get("/mate/health", self._handle_health)
         app.router.add_get("/mate/token", self._handle_token)
+        app.router.add_get("/mate/demo-token", self._handle_demo_token)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, self.settings.token_bind, self.settings.token_port)
@@ -256,6 +264,35 @@ class MateVoiceAdapter(BasePlatformAdapter):
             "identity": identity,
         })
 
+    async def _handle_demo_token(self, request):
+        """AÇIK (key'siz) onboarding token'ı: sihirbazın sıfır-konfig demo bağlantısı.
+        Kısa ömürlü, guest identity, onboarding odası. Anahtar GEREKMEZ — bu yüzden
+        yalnız onboarding odasına ve kısa TTL'e scope'lanır. Kapatmak için
+        MATE_VOICE_DEMO_TOKEN_ENABLED=0."""
+        from aiohttp import web
+        import uuid
+
+        if not self.settings.demo_token_enabled:
+            return web.json_response({"error": "demo token disabled"}, status=403)
+        room = self.settings.onboarding_room
+        identity = "onboard-" + uuid.uuid4().hex[:10]
+        try:
+            token = self._mint_client_token(
+                identity, room, ttl_seconds=self.settings.demo_token_ttl_seconds
+            )
+        except Exception as e:
+            log.warning("mate_voice: demo-token mint hatası: %r", e)
+            return web.json_response({"error": "mint failed"}, status=500)
+        log.info("mate_voice: demo-token verildi identity=%s room=%s ttl=%ds",
+                 identity, room, self.settings.demo_token_ttl_seconds)
+        return web.json_response({
+            "url": self.settings.public_livekit_url,
+            "room": room,
+            "token": token,
+            "identity": identity,
+            "onboarding": True,
+        })
+
     # ── Connection lifecycle ──────────────────────────────────────────────
 
     async def connect(self, *, is_reconnect: bool = False) -> bool:
@@ -267,9 +304,22 @@ class MateVoiceAdapter(BasePlatformAdapter):
             self._set_fatal_error("config_missing", "LIVEKIT_API_SECRET missing", retryable=False)
             return False
         self._want_connected = True
+        await self._load_speakers()  # enrolled kişileri belleğe al (varsa)
         await self._start_token_server()  # bağımsız; oda reconnect'lerinden etkilenmez
         await self._ensure_room()
         return await self._open_room()
+
+    async def _load_speakers(self) -> None:
+        """Enrolled speaker'ları DB'den SpeakerID belleğine yükle. Speaker-ID
+        kapalı / store yoksa no-op. Hatada fail-open (guest moduna düşer)."""
+        if self.speaker is None or self.speaker_store is None:
+            return
+        try:
+            speakers = await self.speaker_store.all_speaker_embeddings()
+            self.speaker.reload(speakers)
+            log.info("mate_voice: %d enrolled speaker yüklendi", len(speakers))
+        except Exception as e:
+            log.warning("mate_voice: speaker reload başarısız: %r", e)
 
     async def _ensure_room(self) -> None:
         """Pre-create the room with a long empty_timeout so LiveKit doesn't close
