@@ -103,7 +103,7 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
 ### Token endpoint (2026-06-27, A2)
 - Plugin'e gömülü aiohttp sunucu: `GET /mate/token` (`X-Mate-Key` ile room-scoped
   join token mint) + `GET /mate/health`. LiveKit secret sunucuda kalır.
-- env (`~/.hermes/.env` candan bloğu): `MATE_VOICE_CLIENT_KEY` (openssl rand),
+- env (`~/.hermes/.env` mate bloğu): `MATE_VOICE_CLIENT_KEY` (openssl rand),
   `MATE_VOICE_TOKEN_PORT=8830`, `MATE_PUBLIC_LIVEKIT_URL=wss://mate-livekit.drascom.uk`.
 - Bind `0.0.0.0:8830` (henüz public DEĞİL → SSH tüneli ile eriş; public için Traefik route).
 - Doğrulandı: health/200, token/200 (geçerli jwt), yanlış-key/401, identity-yok/400;
@@ -121,3 +121,24 @@ bağımlılığı yok, config env'den (`voice/config.py` shim).
   (eski reason-10 ROOM_CLOSED düşüşü biter). Ek backstop: `_reconnect_loop`
   beklenmedik kopuşta backoff ile yeniden bağlanır. Doğrulandı: restart sonrası
   ajan 100sn+ boş odada KALICI bağlı (`list_participants → assistant`), churn yok.
+
+## candan → mate cutover (stage'de YAPILACAK — kod tarafı bitti)
+
+Repo'da plugin/protokol `candan_*` → `mate_*` olarak yeniden adlandırıldı
+(dizin `candan_voice/` → `mate_voice/`, route `/candan/*` → `/mate/*`, header
+`X-Candan-Key` → `X-Mate-Key`, topic/attr `candan.*` → `mate.*`, env `CANDAN_*`
+→ `MATE_*`). Wake word "candan" KORUNDU. Stage'de eşleşmeyi sağlamak için
+(SSH ile CANLI değişikliği orkestratör/kullanıcı yapar — burada SADECE not):
+
+1. `~/.hermes/.env`: tüm `CANDAN_VOICE_*` / `CANDAN_*` anahtarlarını `MATE_*`'e
+   çevir (değerler AYNI kalır). Etkilenenler: `CANDAN_VOICE_CLIENT_KEY`,
+   `CANDAN_VOICE_TOKEN_PORT`, `CANDAN_VOICE_TOKEN_BIND`, `CANDAN_VOICE_CLIENT_TOKEN_TTL`,
+   `CANDAN_LIVEKIT_ROOM`, `CANDAN_PUBLIC_LIVEKIT_URL`, `CANDAN_HOME_CHANNEL`,
+   `CANDAN_VOICE_ALLOW_ALL_USERS`.
+2. `~/.hermes/config.yaml`: `plugins.enabled` listesinde `candan_voice` → `mate_voice`.
+3. Plugin dizini: `~/.hermes/plugins/candan_voice` → `mate_voice` (rename) — ya da
+   deploy script kopyalıyorsa eski `candan_voice` dizinini SİL (artık `mate_voice` kopyalanır).
+4. Gateway restart.
+5. Doğrula: `curl -s https://mate-token.drascom.uk/mate/health` → `200 {status:ok,...}`
+   (eski `/candan/health` artık 404). İstemci (mate-mac) Settings'te token endpoint
+   public URL + Client key zaten aynı; sadece route/header isimleri yeni build ile uyumlu.
