@@ -32,17 +32,9 @@ final class SettingsStore: ObservableObject {
 
     /// LiveKit sunucu URL'i. Boşsa default'a (Secrets) düşülür → bkz. resolvedLivekitURL.
     @Published var livekitURL: String { didSet { defaults.set(livekitURL, forKey: Self.livekitURLKey) } }
-    /// Brain URL'i — `{brainURL}/api/livekit-token` ile TAZE LiveKit token çekilir.
-    @Published var brainURL: String { didSet { defaults.set(brainURL, forKey: Self.brainURLKey) } }
-    /// Brain API token'ı (Bearer). Boşsa → statik Secrets token'a düşülür.
-    @Published var brainToken: String { didSet { defaults.set(brainToken, forKey: Self.brainTokenKey) } }
 
-    // MARK: - Bağlantı modu + Hermes candan_voice token endpoint'i (modüler)
+    // MARK: - Hermes candan_voice token endpoint'i (modüler)
 
-    /// Bağlantı modu: `"hermes"` (candan_voice plugin token endpoint) veya
-    /// `"brain"` (eski device-register/brain endpoint). Başkaları kendi Hermes
-    /// deploy'larına bağlanabilsin diye endpoint+key Settings'ten gelir (hardcode YOK).
-    @Published var connectionMode: String { didSet { defaults.set(connectionMode, forKey: Self.connectionModeKey) } }
     /// Hermes candan_voice token endpoint TABAN URL'i (örn. `https://mate-hermes.drascom.uk`).
     /// İstek: `GET {url}/candan/token?identity=<id>&room=<opsiyonel>` + `X-Candan-Key`.
     @Published var tokenEndpointURL: String { didSet { defaults.set(tokenEndpointURL, forKey: Self.tokenEndpointURLKey) } }
@@ -52,37 +44,16 @@ final class SettingsStore: ObservableObject {
     @Published var room: String { didSet { defaults.set(room, forKey: Self.roomKey) } }
 
     static let livekitURLKey = "livekitURL"
-    static let brainURLKey = "brainURL"
-    static let brainTokenKey = "brainToken"
-    static let connectionModeKey = "connectionMode"
     static let tokenEndpointURLKey = "tokenEndpointURL"
     static let clientKeyKey = "clientKey"
     static let roomKey = "candanRoom"
     static let defaultLivekitURL = Secrets.livekitServerURL
-    static let defaultBrainURL = "https://mate-brain.drascom.uk"
 
     /// Bağlantı için kullanılacak LiveKit URL'i — boşsa default. (TokenSource bunu
     /// her bağlanışta UserDefaults'tan okur; @MainActor store gerekmeden.)
     static var resolvedLivekitURL: String {
         let v = (UserDefaults.standard.string(forKey: livekitURLKey) ?? "").trimmingCharacters(in: .whitespaces)
         return v.isEmpty ? defaultLivekitURL : v
-    }
-
-    /// Token çekmek için brain URL'i — boşsa default.
-    static var resolvedBrainURL: String {
-        let v = (UserDefaults.standard.string(forKey: brainURLKey) ?? "").trimmingCharacters(in: .whitespaces)
-        return v.isEmpty ? defaultBrainURL : v
-    }
-
-    /// Brain API token'ı — boş olabilir (o zaman statik token'a düşülür).
-    static var resolvedBrainToken: String {
-        (UserDefaults.standard.string(forKey: brainTokenKey) ?? "").trimmingCharacters(in: .whitespaces)
-    }
-
-    /// Bağlantı modu — boşsa varsayılan `hermes` (candan_voice plugin).
-    static var resolvedConnectionMode: String {
-        let v = (UserDefaults.standard.string(forKey: connectionModeKey) ?? "").trimmingCharacters(in: .whitespaces)
-        return v.isEmpty ? "hermes" : v
     }
 
     /// Hermes token endpoint taban URL'i (trailing slash temizlenir). Boş olabilir.
@@ -111,9 +82,6 @@ final class SettingsStore: ObservableObject {
         cuesEnabled = defaults.object(forKey: "cuesEnabled") as? Bool ?? true
         bargeInEnabled = defaults.object(forKey: "bargeInEnabled") as? Bool ?? true
         livekitURL = defaults.string(forKey: Self.livekitURLKey) ?? Self.defaultLivekitURL
-        brainURL = defaults.string(forKey: Self.brainURLKey) ?? Self.defaultBrainURL
-        brainToken = defaults.string(forKey: Self.brainTokenKey) ?? ""
-        connectionMode = defaults.string(forKey: Self.connectionModeKey) ?? "hermes"
         tokenEndpointURL = defaults.string(forKey: Self.tokenEndpointURLKey) ?? ""
         clientKey = defaults.string(forKey: Self.clientKeyKey) ?? ""
         room = defaults.string(forKey: Self.roomKey) ?? ""

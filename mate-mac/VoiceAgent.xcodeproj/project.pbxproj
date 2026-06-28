@@ -281,7 +281,7 @@
 				DEVELOPMENT_TEAM = 76TVFCUKK7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BroadcastExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = VoiceAgent;
+				INFOPLIST_KEY_CFBundleDisplayName = mate;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -313,7 +313,7 @@
 				DEVELOPMENT_TEAM = 76TVFCUKK7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BroadcastExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = VoiceAgent;
+				INFOPLIST_KEY_CFBundleDisplayName = mate;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -488,7 +488,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VoiceAgent/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "LiveKit Agent";
+				INFOPLIST_KEY_CFBundleDisplayName = "mate Broadcast";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "VoiceAgent uses your microphone";
@@ -541,7 +541,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VoiceAgent/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "LiveKit Agent";
+				INFOPLIST_KEY_CFBundleDisplayName = "mate Broadcast";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "VoiceAgent uses your microphone";
