@@ -325,10 +325,39 @@ class MateVoiceAdapter(BasePlatformAdapter):
             self._set_fatal_error("config_missing", "LIVEKIT_API_SECRET missing", retryable=False)
             return False
         self._want_connected = True
+        self._ensure_home_channel()  # sessiz auto-sethome ("no home channel" ipucunu önler)
         await self._load_speakers()  # enrolled kişileri belleğe al (varsa)
         await self._start_token_server()  # bağımsız; oda reconnect'lerinden etkilenmez
         await self._ensure_room()
         return await self._open_room()
+
+    def _ensure_home_channel(self) -> None:
+        """Sessiz auto-sethome (yuanbao kalıbı): MATE_HOME_CHANNEL boşsa odayı home
+        channel yap. Böylece Hermes'in 'no home channel is set' ipucu çıkmaz VE
+        proaktif teslim (cron/hatırlatma) için bir hedef oluşur. Origin'e (oturum
+        chat_id'sine) giden kişiye-özel teslimler bundan etkilenmez; bu sadece
+        sahipsiz/fallback teslimler için. env (bu çalışma) + config.yaml (kalıcı)."""
+        import os
+
+        if os.getenv("MATE_HOME_CHANNEL"):
+            return
+        os.environ["MATE_HOME_CHANNEL"] = self.room_name
+        try:
+            from hermes_constants import get_hermes_home
+            from utils import atomic_yaml_write
+            import yaml
+
+            cfg = get_hermes_home() / "config.yaml"
+            data: dict = {}
+            if cfg.exists():
+                with open(cfg, encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            if data.get("MATE_HOME_CHANNEL") != self.room_name:
+                data["MATE_HOME_CHANNEL"] = self.room_name
+                atomic_yaml_write(cfg, data)
+            log.info("mate_voice: auto-sethome → home channel = %s", self.room_name)
+        except Exception as e:
+            log.warning("mate_voice: auto-sethome config yazılamadı (env set edildi): %r", e)
 
     async def _load_speakers(self) -> None:
         """Enrolled speaker'ları DB'den SpeakerID belleğine yükle. Speaker-ID
