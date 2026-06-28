@@ -71,6 +71,14 @@ struct HermesTokenSource: TokenSourceFixed {
         // say → Settings/Secrets URL. (Plugin iç ws://127.0.0.1 dönebilir.)
         let server = Self.pickServerURL(returned: returnedURL,
                                         settings: livekitURL, secrets: secretsURL)
+        // Plugin'in döndürdüğü public LiveKit WSS URL'ini app ayarlarına KAYDET →
+        // kullanıcı elle girmek zorunda kalmaz, Settings'te görünür kalır. (İç/loopback
+        // adres VEYA boşsa dokunma.) UserDefaults thread-safe; SettingsStore okur.
+        if !returnedURL.isEmpty, !Self.isInternal(returnedURL) {
+            await MainActor.run {
+                UserDefaults.standard.set(returnedURL, forKey: SettingsStore.livekitURLKey)
+            }
+        }
         Log.line("[Hermes] token alındı (room=\(room) identity=\(name) server=\(server.absoluteString))")
         return TokenSourceResponse(serverURL: server, participantToken: token,
                                    participantName: name, roomName: room)
