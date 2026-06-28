@@ -728,13 +728,21 @@ class MateVoiceAdapter(BasePlatformAdapter):
         # bayrağına BİLE ulaşamaz → user_id'siz turn sessizce düşer. Katılımcı
         # kimliği stabil cihaz-kullanıcısı verir; MATE_VOICE_ALLOW_ALL_USERS=true
         # ile yetkilenir. Tanınan kişi user_id'yi override eder.
+        # S4 — per-user oturum/geçmiş: TANINAN kişiye per-user chat_id ver →
+        # build_session_key (dm) chat_id'den kurulduğu için her kişi AYRI Hermes
+        # oturumu+geçmişi alır (kişiye özel "beni hatırla"). Hermes PROFİLLERİ
+        # KULLANILMAZ (onlar davranış/model bağlamı içindir, kişi değil). chat_id
+        # Hermes mantıksal kimliği; LiveKit odası (self._room) hep aynı — ses
+        # yönlendirmesini etkilemez. Guest → paylaşımlı oda.
         if speaker_id:
             user_id, user_name = str(speaker_id), speaker
+            chat_id = f"{self.room_name}:{speaker_id}"
         else:
             pid = getattr(participant, "identity", None) or "guest"
             user_id, user_name = f"voice:{pid}", pid
+            chat_id = self.room_name
         source = self.build_source(
-            chat_id=self.room_name,
+            chat_id=chat_id,
             chat_name=self.room_name,
             chat_type="dm",
             user_id=user_id,
