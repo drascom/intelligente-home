@@ -15,7 +15,13 @@
         }
       }
     },
+    "Anahtar gerekmez — sesinle tanınacaksın." : {
+
+    },
     "Bağlanıyor…" : {
+
+    },
+    "Başla" : {
 
     },
     "Client key (X-Mate-Key)" : {
@@ -108,6 +114,9 @@
     "Hermes bağlantısı" : {
 
     },
+    "https://…" : {
+
+    },
     "İçerik" : {
 
     },
@@ -115,6 +124,9 @@
 
     },
     "mate_voice token endpoint: GET {url}/mate/token?identity=…&room=… · header X-Mate-Key. Boşsa bağlantı hata verir (ekrana düşer)." : {
+
+    },
+    "Mate'e hoş geldin" : {
 
     },
     "message.placeholder" : {
@@ -342,6 +354,9 @@
           }
         }
       }
+    },
+    "Tanışalım. Hermes sunucu adresini onayla; sonra mikrofona “candan” deyip kendini tanıt — sesinden seni tanıyacağım." : {
+
     },
     "Token endpoint URL" : {
 
