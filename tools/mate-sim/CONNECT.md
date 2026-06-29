@@ -13,7 +13,7 @@
 
 ## Token — TERCİH: plugin token endpoint
 Plugin artık paylaşılan-anahtarlı bir token endpoint sunar (LiveKit secret sunucuda kalır).
-Tam sözleşme: `mate-brain/hermes-plugins/mate_voice/CLIENT_INTEGRATION.md`.
+Tam sözleşme: `mate_voice/CLIENT_INTEGRATION.md`.
 
 - `GET /mate/token?identity=<id>&room=<ops>` + header `X-Mate-Key: <MATE_VOICE_CLIENT_KEY>`
   → `{url, room, token, identity}`. Health: `GET /mate/health`. Hata: 401/400.

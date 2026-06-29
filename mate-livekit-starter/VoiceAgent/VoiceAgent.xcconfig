@@ -1,4 +1,0 @@
-#include ".env.xcconfig"
-
-PRODUCT_BUNDLE_IDENTIFIER=com.livekit.example.VoiceAssistant
-// DEVELOPMENT_TEAM now comes from .env.xcconfig (59P494J56R for the mate project).

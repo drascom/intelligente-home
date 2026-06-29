@@ -28,3 +28,7 @@ ElevenLabs_ses.mp3
 # Xcode kullanıcı-durumu (editor cruft) — mate-ios + mate-mac
 *.xcuserstate
 xcuserdata/
+
+# build artefaktı
+mate-mac/default.profraw
+*.profraw
