@@ -1,25 +1,21 @@
 #!/bin/sh
-# Brain'i ve sesli yol bağımlılıklarını (STT + TTS) tek komutla kaldırır.
-# Servis scriptleri root'ta: whisper_run.sh, vox_run.sh, brain_run.sh.
+# Sesli yol bağımlılıklarını (STT + TTS) tek komutla kaldırır.
+# Servis scriptleri root'ta: whisper_run.sh, vox_run.sh.
+# (Brain decommission edildi — Hermes-only; ses katmanı mate_voice plugin'inde.)
 #
-#   ./start.sh          Ayakta olan brain/STT/TTS'i KAPATIR, sonra üçünü
-#                       taze başlatır: STT + vox arka planda, brain ön planda
-#                       (Ctrl-C durdurur).
-#   ./start.sh --stop   Brain dahil tüm servisleri durdur (port bazlı).
+#   ./start.sh          Ayakta olan STT/TTS'i KAPATIR, sonra ikisini taze
+#                       başlatır (arka planda).
+#   ./start.sh --stop   STT/TTS servislerini durdur (port bazlı).
 #   ./start.sh --status Tüm halkaların durumunu yaz, hiçbir şey başlatma.
 #
 # Her çalıştırmada temiz restart: önce portları boşaltır, sonra başlatır.
-# Arka plan logları .logs/. Brain ön planda kalır ki logları görüp Ctrl-C ile
-# temiz kapatabilesin.
+# Arka plan logları .logs/.
 set -e
 cd "$(dirname "$0")"
 
 LOGS=".logs"
 mkdir -p "$LOGS"
 
-# .env yükle (BRAIN_PORT, portlar vb. için) — runtime mate-brain/'de
-set -a; [ -f mate-brain/.env ] && . ./mate-brain/.env; set +a
-BRAIN_PORT="${BRAIN_PORT:-8800}"
 STT_PORT="${STT_PORT:-10300}"
 VOX_PORT="${VOX_PORT:-8808}"
 
@@ -52,14 +48,8 @@ mark() { if port_up "$2"; then printf "  \033[32m●\033[0m %-12s :%s\n" "$1" "$
 
 status() {
   echo "Servis durumu:"
-  mark "brain"   "$BRAIN_PORT"
   mark "whisper" "$STT_PORT"
   mark "vox TTS" "$VOX_PORT"
-  # Brain ayaktaysa HA/MQTT bağlantısını da göster
-  if port_up "$BRAIN_PORT"; then
-    health=$(curl -s -m 3 "http://127.0.0.1:$BRAIN_PORT/api/health" 2>/dev/null || true)
-    [ -n "$health" ] && echo "  health: $health"
-  fi
 }
 
 # bir bağımlılığı taze başlat (varsa önce kapat)
@@ -80,7 +70,6 @@ start_dep() { # <ad> <port> <başlatma scripti> <logdosyası>
 }
 
 stop_all() {
-  kill_port brain   "$BRAIN_PORT"
   kill_port whisper "$STT_PORT"
   kill_port vox     "$VOX_PORT"
   rm -f "$LOGS/whisper.pid" "$LOGS/vox.pid"
@@ -94,17 +83,9 @@ case "$1" in
   --stop)   stop_all; exit 0 ;;
 esac
 
-# Önkoşullar (runtime mate-brain/'de)
-[ -d mate-brain/.venv ] || { echo "HATA: mate-brain/.venv yok — önce sanal ortamı kur." >&2; exit 1; }
-[ -f mate-brain/.env ]  || { echo "HATA: mate-brain/.env yok." >&2; exit 1; }
-
 echo "=== Bağımlılıklar (taze başlatılıyor) ==="
 start_dep whisper "$STT_PORT" "./whisper_run.sh" "$LOGS/whisper.log"
 start_dep vox     "$VOX_PORT" "./vox_run.sh"     "$LOGS/vox.log"
 
 echo
-echo "=== Brain (ön planda — Ctrl-C ile durdur) ==="
-kill_port brain "$BRAIN_PORT"
-echo "Not: STT/TTS arka planda kalır; hepsini durdurmak için ./start.sh --stop"
-echo
-exec ./brain_run.sh
+echo "✓ STT + TTS arka planda. Durdurmak için: ./start.sh --stop"

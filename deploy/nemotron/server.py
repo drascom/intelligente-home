@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Wyoming STT sunucusu — NVIDIA Nemotron 3.5 ASR Streaming (cache-aware) sarmalayıcı.
 
-Beyin (mate-brain) STT'yi Wyoming protokolüyle konuşur: `transcribe` + `audio-start`
+İstemci (mate_voice plugin) STT'yi Wyoming protokolüyle konuşur: `transcribe` + `audio-start`
 (rate/width/channels) + `audio-chunk`(PCM) + `audio-stop` gönderir, sonra TEK bir
-`transcript` olayı bekler (bkz. mate-brain/brain/voice/services.py WhisperSession).
+`transcript` olayı bekler (bkz. mate_voice/voice/services.py WhisperSession).
 Bu servis wyoming-faster-whisper ile AYNI sunucu protokolünü konuşur → farklı portta
 (10301) birebir drop-in. Whisper (10300) CANLI; bu servis YAN portta, varsayılan DEĞİL.
 

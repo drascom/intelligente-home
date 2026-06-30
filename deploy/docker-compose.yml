@@ -45,7 +45,7 @@ services:
               count: all
               capabilities: [gpu]
 
-  # Primary TTS for the brain (satellites + apps): VoxCPM2, 48kHz, cloned voices
+  # Primary TTS (satellites + apps): VoxCPM2, 48kHz, cloned voices
   vox:
     build: ../vox
     container_name: vox
@@ -107,18 +107,6 @@ services:
     depends_on:
       - mosquitto
 
-  brain:
-    build: ../mate-brain/brain
-    container_name: brain
-    restart: unless-stopped
-    ports:
-      - "8800:8800"
-    env_file: .env
-    volumes:
-      - brain-data:/data
-    depends_on:
-      - mosquitto
-
 volumes:
   vllm-cache:
   whisper-data:
@@ -127,4 +115,3 @@ volumes:
   mosquitto-data:
   mosquitto-passwd:
   ha-config:
-  brain-data:

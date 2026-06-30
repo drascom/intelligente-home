@@ -1,7 +1,8 @@
 # Hermes Agent — oracle-stage kurulumu
 
 Hermes Agent (NousResearch) `oracle-stage` (132.145.24.135) üstüne, mevcut
-brain(:8800) + LiveKit(:7880) servislerine **DOKUNMADAN** yeni servis olarak kuruldu.
+LiveKit(:7880) servisine **DOKUNMADAN** yeni servis olarak kuruldu.
+(Not: eski standalone brain servisi sonradan decommission edildi — Hermes-only.)
 Sonraki adımda buraya kendi ses eklentimiz (`mate_voice` Hermes platform adapter
 plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
 
@@ -30,7 +31,7 @@ plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
   - Log: `journalctl -u hermes-gateway -f`
   - Şu an "no messaging platforms enabled" (beklenen — `mate_voice` plugin sonra bağlanacak).
 - **Proxy** (OpenAI-uyumlu `/v1` HTTP server) — `hermes proxy start [--port 8810]`.
-  - Boş port **8810** ayrıldı (kullanılan: 22/53/111/7880/7881/8800 ile çakışmaz).
+  - Boş port **8810** ayrıldı (kullanılan: 22/53/111/7880/7881 ile çakışmaz).
   - ⚠ **KISIT:** `hermes proxy` upstream'i yalnız **`nous`** veya **`xai`** OAuth destekler;
     **`openai-codex` desteklenmez.** Codex backend'iyle proxy /v1 endpoint'i sunamaz →
     bu yüzden proxy BAŞLATILMADI (yarım/bozuk servis bırakmamak için).
@@ -41,7 +42,6 @@ plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
 | Port | Servis |
 |------|--------|
 | 7880/7881 | LiveKit (mevcut, dokunulmadı) |
-| 8800 | brain (mevcut, dokunulmadı) |
 | 8810 | Hermes proxy için AYRILDI (Codex kısıtı nedeniyle henüz başlatılmadı) |
 | —    | Hermes gateway: ağ portu açmaz (mesajlaşma/eklenti dispatcher) |
 
@@ -56,7 +56,7 @@ plugin) bağlanacak; gateway o yüzden ayakta tutuluyor.
 
 ## mate_voice plugin deploy (2026-06-27)
 
-`mate-brain/hermes-plugins/mate_voice/` → Hermes platform adapter. Brain'in
+`mate_voice/` (repo root) → Hermes platform adapter. Eski brain'in
 `voice/livekit_agent.py` mantığı (STT/wake-gate/turn/barge-in/speaker-ID/TTS)
 Hermes `BasePlatformAdapter`'ına taşındı. Voice modülleri (tts/services/
 turn_detector/speaker/hallucination) plugin içine **vendor** edildi; `brain.*`
