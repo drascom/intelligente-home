@@ -15,7 +15,7 @@ plugins:
 ## 2. Ortam değişkenleri (`~/.hermes/.env`)
 `hermes plugins install` sırasında `requires_env` zaten soruldu. Eksikse:
 - **Zorunlu:** `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `STT_HOST`/`STT_PORT`,
-  `VOX_HOST`/`VOX_PORT`, `MATE_VOICE_CLIENT_KEY` (istemcilerin `X-Mate-Key`'i; boş bırakılırsa ilk başlatmada otomatik üretilip konsolda gösterilir — o değeri client'a girin).
+  `VOX_HOST`/`VOX_PORT`, `MATE_VOICE_CLIENT_KEY` (istemcilerin `X-Mate-Key`'i; boş bırakılırsa ilk başlatmada otomatik üretilip konsolda metin + QR kod olarak gösterilir — o değeri client'a girin).
 - **Opsiyonel:** `MATE_PUBLIC_LIVEKIT_URL`, `MATE_LIVEKIT_ROOM` (vars. `mate-hermes-test`),
   `MATE_VOICE_TOKEN_PORT` (8830), `TURN_DETECTOR_ENABLED`, `SPEAKER_ID_ENABLED`,
   `SPEAKER_MODEL_PATH` (campplus.onnx; speaker-ID açıksa).

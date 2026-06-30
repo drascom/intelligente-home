@@ -29,6 +29,7 @@ _PIP_SPEC = {
     "transformers": "transformers",
     "huggingface_hub": "huggingface_hub",
     "sherpa_onnx": "sherpa-onnx",
+    "qrcode": "qrcode",
 }
 
 # adapter/voice top-level'da daima gereken çekirdek modüller

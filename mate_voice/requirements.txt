@@ -17,3 +17,5 @@ transformers
 huggingface_hub
 # Speaker-ID / enrollment (SPEAKER_ID_ENABLED):
 sherpa-onnx
+# Client-key QR banner (ilk kurulumda terminal QR; opsiyonel):
+qrcode

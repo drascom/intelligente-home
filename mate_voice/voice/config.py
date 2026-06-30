@@ -86,6 +86,29 @@ def _print_key_banner(key: str, persisted: bool) -> None:
     except Exception:
         pass
     print(box, file=sys.stderr, flush=True)
+    _print_key_qr(key)
+
+
+def _print_key_qr(key: str) -> None:
+    """Key'i terminal ASCII QR olarak bas. qrcode yoksa kurmayı dene; olmazsa atla
+    (fail-open — düz-metin banner zaten gösterildi, asla çökme)."""
+    try:
+        import importlib.util
+        if importlib.util.find_spec("qrcode") is None:
+            try:
+                from ._deps import _pip_install
+                _pip_install(["qrcode"])
+                importlib.invalidate_caches()
+            except Exception:
+                pass
+        import qrcode
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(key)
+        qr.make(fit=True)
+        print("  (mate-mac ile kamera/QR taransın):", file=sys.stderr, flush=True)
+        qr.print_ascii(out=sys.stderr)
+    except Exception:
+        pass  # QR atlandı; metin key yine de görünür
 
 
 _CLIENT_KEY_CHECKED = False
