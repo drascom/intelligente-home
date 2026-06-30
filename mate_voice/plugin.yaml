@@ -40,11 +40,11 @@ requires_env:
     description: "vox TTS port (default 8808)"
     prompt: "vox port"
     password: false
-  - name: MATE_VOICE_CLIENT_KEY
-    description: "Shared key clients send as X-Mate-Key to fetch a join token. Empty = token endpoint disabled."
-    prompt: "Client shared key"
-    password: true
 optional_env:
+  - name: MATE_VOICE_CLIENT_KEY
+    description: "İstemcilerin X-Mate-Key'i. BOŞ bırak → ilk gateway başlatmasında otomatik üretilir, .env'e yazılır, konsolda QR+metin gösterilir."
+    prompt: "Client shared key (boş bırak = otomatik üret)"
+    password: true
   - name: MATE_VOICE_TOKEN_PORT
     description: "Port for the embedded token endpoint (default 8830)."
     prompt: "Token endpoint port"
