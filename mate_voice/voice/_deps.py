@@ -22,11 +22,17 @@ log = logging.getLogger("mate_voice._deps")
 # import-edilen modül adı → pip paket spec'i
 _PIP_SPEC = {
     "numpy": "numpy",
+    "livekit": "livekit",
+    "wyoming": "wyoming",
+    "aiohttp": "aiohttp",
     "onnxruntime": "onnxruntime",
     "transformers": "transformers",
     "huggingface_hub": "huggingface_hub",
     "sherpa_onnx": "sherpa-onnx",
 }
+
+# adapter/voice top-level'da daima gereken çekirdek modüller
+_CORE_MODULES = ["numpy", "livekit", "wyoming", "aiohttp"]
 
 # özellik → gereken import modülleri
 _FEATURE_MODULES = {
@@ -43,7 +49,21 @@ def _missing(modules: list[str]) -> list[str]:
     return out
 
 
+def _ensure_pip() -> None:
+    """Bazı venv'ler (örn. hermes gateway) pip'siz oluşturuluyor. ensurepip ile
+    pip'i venv'e bootstrap et — yoksa self-install hiç çalışamaz. Fail-open."""
+    if importlib.util.find_spec("pip") is not None:
+        return
+    try:
+        subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"],
+                       capture_output=True, text=True, timeout=300)
+        importlib.invalidate_caches()
+    except Exception as e:
+        log.warning("mate_voice: ensurepip başarısız: %r", e)
+
+
 def _pip_install(specs: list[str], timeout: int = 900) -> bool:
+    _ensure_pip()
     cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *specs]
     log.warning("mate_voice: eksik deps kuruluyor (%s) → %s", specs, sys.executable)
     try:
@@ -60,8 +80,10 @@ def _pip_install(specs: list[str], timeout: int = 900) -> bool:
     return True
 
 
-def ensure_deps(*, turn_detector: bool = False, speaker_id: bool = False) -> None:
+def ensure_deps(*, core: bool = False, turn_detector: bool = False, speaker_id: bool = False) -> None:
     """Etkin özelliklerin eksik modüllerini kur. Hepsi varsa no-op (hızlı).
+    `core=True` ise adapter/voice top-level'ın daima gerektirdiği çekirdek
+    modülleri (wyoming·livekit·aiohttp·numpy) de garanti edilir.
     Fail-open: kurulamazsa sessizce devam (özellik kendi try/except'inde degrade).
     Kapatmak için env MATE_VOICE_AUTO_INSTALL_DEPS=0."""
     import os
@@ -70,6 +92,8 @@ def ensure_deps(*, turn_detector: bool = False, speaker_id: bool = False) -> Non
         return
 
     wanted: list[str] = []
+    if core:
+        wanted += _CORE_MODULES
     if turn_detector:
         wanted += _FEATURE_MODULES["turn_detector"]
     if speaker_id:
