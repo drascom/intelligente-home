@@ -24,7 +24,7 @@ _PIP_SPEC = {
     "numpy": "numpy",
     "livekit": "livekit",
     "livekit.api": "livekit-api",   # meta `livekit` getirmez; ayrı paket
-    "livekit.rtc": "livekit-rtc",
+    "livekit.rtc": "livekit",        # `livekit.rtc` meta `livekit` İÇİNDE gelir
     "wyoming": "wyoming",
     "aiohttp": "aiohttp",
     "onnxruntime": "onnxruntime",

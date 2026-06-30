@@ -9,7 +9,6 @@
 # Çekirdek (plugin'in çalışması için; genelde gateway'de zaten var):
 livekit
 livekit-api
-livekit-rtc
 wyoming
 aiohttp
 numpy
