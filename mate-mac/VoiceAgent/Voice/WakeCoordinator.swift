@@ -17,20 +17,20 @@ import SwiftUI
 ///     (`skipping cycle due to overload`, -10877) ~28sn'de bir full-reconnect'e
 ///     (CLIENT_REQUEST_LEAVE) yol açıyordu.
 ///   • Çözüm: TEK yol — track'i sürekli yayında tut (startLocalRecording YOK).
-///     Brain, `mate.awake=="0"` iken sesi/transkripti yok sayar (sunucu kapısı).
+///     Agent, `mate.awake=="0"` iken sesi/transkripti yok sayar (sunucu kapısı).
 ///
 /// Durum makinesi (wakeWordEnabled açıkken):
 ///   • Bağlanınca → PCM renderer ekle + mic track'i YAYINLA (sürekli). Uyku moduna gir.
-///   • UYKU → `mate.awake="0"`; mic yayında ama brain yok sayar; wake tanıma aktif.
+///   • UYKU → `mate.awake="0"`; mic yayında ama agent yok sayar; wake tanıma aktif.
 ///   • Wake duyulunca → tanımayı durdur, `mate.awake="1"` (publish/settle YOK).
-///   • UYANIK → brain sesi işler.
+///   • UYANIK → agent sesi işler.
 ///   • Re-arm (hareketsizlik) → `mate.awake="0"`, taze tanıma isteği başlat.
 ///   • Disconnect → renderer'ı kaldır (mic disconnect ile zaten düşer).
 ///
 /// wakeWordEnabled kapalıyken kapı devre dışı: sürekli mod — `mate.awake="1"`.
 ///
 /// NOT (gizlilik): Mic uyku sırasında da yayında olduğundan ses sunucuya gider ama
-/// brain `awake="0"` iken yok sayar; macOS mikrofon göstergesi (turuncu nokta) açık
+/// agent `awake="0"` iken yok sayar; macOS mikrofon göstergesi (turuncu nokta) açık
 /// kalır — uygulama gerçekten wake kelimesini dinliyor.
 @MainActor
 final class WakeCoordinator: ObservableObject {
@@ -55,7 +55,7 @@ final class WakeCoordinator: ObservableObject {
     private var connected = false
     private var inactivityTask: Task<Void, Never>?
     private var cueHandlerRegistered = false
-    /// Mikrofon brain'e canlı mı (track yayında)? `mate.awake` attribute'unun kaynağı.
+    /// Mikrofon agent'e canlı mı (track yayında)? `mate.awake` attribute'unun kaynağı.
     private var isAwake = false
     /// Track'in YAYINDA olması istenen niyet. `setMicrophone` ile güncellenir; reaktif
     /// guard (`microphoneStateChanged`) istenmeden yayınlanan track'i buna göre kapatır.
@@ -72,12 +72,12 @@ final class WakeCoordinator: ObservableObject {
         wake.onUnavailable = { [weak self] msg in
             self?.unavailableMessage = msg
             // Wake istendi ama kullanılamıyor: track yayında kalır ama
-            // mate.awake = "0" → brain sızıntıyı yok sayar.
+            // mate.awake = "0" → agent sızıntıyı yok sayar.
             self?.disableGate(continuous: false)
         }
     }
 
-    /// Brain proaktif teslimden önce `mate.cue` topic'ine "reminder" yollar →
+    /// Agent proaktif teslimden önce `mate.cue` topic'ine "reminder" yollar →
     /// belirgin hatırlatma çanı çal (cuesEnabled açıksa).
     private func registerCueHandler() {
         guard !cueHandlerRegistered, let session else { return }
@@ -154,7 +154,7 @@ final class WakeCoordinator: ObservableObject {
     /// ControlBar "mic" butonu için manuel uyku/uyanık geçişi.
     /// LiveKit-mute YAPILMAZ — mic her zaman yayında/capture'da kalır ki wake PCM
     /// aksın. Gürültülü ortamda otomatik re-arm (inaktivite) tetiklenmediğinde
-    /// kullanıcı buradan elle uykuya alır (brain awake=0 ile duymaz); "candan" ile
+    /// kullanıcı buradan elle uykuya alır (agent awake=0 ile duymaz); "candan" ile
     /// (veya tekrar basarak) uyandırır.
     func toggleSleep() {
         guard connected, settings?.wakeWordEnabled == true else { return }
@@ -191,14 +191,14 @@ final class WakeCoordinator: ObservableObject {
 
     /// Wake kapısını devre dışı bırak: tanımayı durdur, track'i yayınla.
     /// - Parameter continuous: Kullanıcı wake'i bilerek kapattıysa `true` →
-    ///   brain dinlesin (`mate.awake = "1"`). Wake kullanılamıyorsa `false` → `"0"`.
+    ///   agent dinlesin (`mate.awake = "1"`). Wake kullanılamıyorsa `false` → `"0"`.
     private func disableGate(continuous: Bool) {
         cancelInactivityTimer()
         wake.stop()
         mode = .inactive
         setMicrophone(enabled: true)
         setAwake(continuous)
-        // Brain dinliyorsa (continuous) optimistic lokal transkript aktif; aksi halde kapalı.
+        // Agent dinliyorsa (continuous) optimistic lokal transkript aktif; aksi halde kapalı.
         if continuous { echo?.start(language: settings?.language ?? "tr") } else { echo?.stop() }
         if continuous { playReadyOnce() }
     }
@@ -215,10 +215,10 @@ final class WakeCoordinator: ObservableObject {
         // Temiz yeniden başlatma: stale tanıma isteğini temizle.
         wake.stop()
         // Mic UNPUBLISH EDİLMEZ — sürekli yayında (tek yol; PCM akmaya devam eder →
-        // wake dinler). Uyku yalnızca SUNUCU kapısı: mate.awake=0 → brain uyku
+        // wake dinler). Uyku yalnızca SUNUCU kapısı: mate.awake=0 → agent uyku
         // sesini/transkriptini yok sayar.
         setAwake(false)
-        // Uykuda brain yok sayıyor → optimistic gösterme; SFSpeech'i wake'e bırak.
+        // Uykuda agent yok sayıyor → optimistic gösterme; SFSpeech'i wake'e bırak.
         echo?.stop()
         if playCue, settings?.cuesEnabled == true { cues.playSleeping() }
         startWakeListening()
@@ -230,12 +230,12 @@ final class WakeCoordinator: ObservableObject {
         // Tanımayı durdur (artık wake aramaya gerek yok). Renderer bağlı kalır;
         // aktif istek olmadığı için appendPCM sessiz no-op olur.
         wake.stop()
-        // Brain artık işliyor → optimistic lokal transkripti başlat.
+        // Agent artık işliyor → optimistic lokal transkripti başlat.
         echo?.start(language: settings?.language ?? "tr")
         if settings?.cuesEnabled == true { cues.playWakeDetected() }
         // Mic ZATEN sürekli yayında → publish YOK demek = setMicrophone/setAwake
         // sırasızlık yarışı YOK. Settle de YOK (ilk komut sözcükleri kesilmesin):
-        // brain, awake=0 iken başlayan "candan" sözünü zaten yok sayar; awake=1
+        // agent, awake=0 iken başlayan "candan" sözünü zaten yok sayar; awake=1
         // sonrası konuşma işlenir.
         setAwake(true)
         armInactivityTimer()
@@ -345,7 +345,7 @@ final class WakeCoordinator: ObservableObject {
             if enabled {
                 await publishMicWithRetry(lp)
             } else {
-                // Mute değil unpublish: brain'e giden yayın/encode yolunu kapat.
+                // Mute değil unpublish: agent'e giden yayın/encode yolunu kapat.
                 for pub in lp.localAudioTracks {
                     try? await lp.unpublish(publication: pub)
                 }
@@ -374,7 +374,7 @@ final class WakeCoordinator: ObservableObject {
                 try await waitForPublishPermission(lp)
                 guard connected, micShouldBeLive else { return } // uyku/kapanma/disconnect → vazgeç
                 try await lp.setMicrophone(enabled: true)
-                Log.line("[Mic] published — brain duyar")
+                Log.line("[Mic] published — agent duyar")
                 return
             } catch {
                 guard connected, micShouldBeLive else { return }
@@ -417,14 +417,14 @@ final class WakeCoordinator: ObservableObject {
         publishAttributes()
     }
 
-    /// Tüm participant attribute'larını (brain ayarları + `mate.awake`) TEK sözlük
-    /// olarak yayınlar. Brain `mate.awake == "0"` iken başlayan sözleri yok sayar.
+    /// Tüm participant attribute'larını (agent ayarları + `mate.awake`) TEK sözlük
+    /// olarak yayınlar. Agent `mate.awake == "0"` iken başlayan sözleri yok sayar.
     func publishAttributes() {
         guard let session, session.isConnected else {
             Log.line("[Attr] publishAttributes atlandı — bağlı değil")
             return
         }
-        var attrs = settings?.brainAttributes ?? [:]
+        var attrs = settings?.agentAttributes ?? [:]
         attrs["mate.awake"] = isAwake ? "1" : "0"
         Log.line("[Attr] → mate.awake=\(isAwake ? "1" : "0") attrs=\(attrs)")
         // RETRY: session.isConnected, gerçek oda bağlanmadan ÖNCE true olabiliyor →

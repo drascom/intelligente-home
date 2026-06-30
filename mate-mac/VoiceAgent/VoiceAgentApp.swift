@@ -23,7 +23,7 @@ struct VoiceAgentApp: App {
     // independently of the macOS system default, and remembers the choice.
     @StateObject private var deviceStore = AudioDeviceStore()
 
-    // User settings (wake word, brain attributes, cues…), persisted to UserDefaults.
+    // User settings (wake word, agent attributes, cues…), persisted to UserDefaults.
     @StateObject private var settings = SettingsStore()
 
     init() {
@@ -34,7 +34,7 @@ struct VoiceAgentApp: App {
         #endif
 
         // Kendi Room'umuzu kurup Session'a veriyoruz ki transcript'leri özel
-        // alıcıyla (MateTranscriptionReceiver) tüketebilelim: brain hem kullanıcı
+        // alıcıyla (MateTranscriptionReceiver) tüketebilelim: agent hem kullanıcı
         // hem asistan satırını "assistant" kimliğinden yollar; SDK'nın varsayılan
         // receiver'ı gönderene göre atfettiği için kullanıcı sözünü yanlış işaretler.
         // Varsayılan transcription receiver'ı bizimkiyle DEĞİŞTİRİYORUZ (aynı topic'e
@@ -45,7 +45,7 @@ struct VoiceAgentApp: App {
             // Hermes-only token kaynağı: mate_voice plugin token endpoint'inden
             // (Settings'ten taze okunan URL+key) TAZE LiveKit token çeker. FALLBACK
             // YOK: hata olursa ekrana düşer (sessiz düşüş yok).
-            tokenSource: MateTokenSource(),
+            tokenSource: HermesTokenSource(),
             // preConnectAudio KAPALI: açıkken Session bağlanmadan ÖNCE mic'i açıp bir
             // preconnect track yayınlar; WakeCoordinator'ın setMicrophone + reaktif
             // microphoneStateChanged guard'ı bununla çakışır → İKİ mic track + sürekli

@@ -3,9 +3,9 @@ import Foundation
 import Speech
 
 /// Kullanıcının kendi sözünü ANINDA (optimistic) gösteren on-device SFSpeech
-/// tanıyıcı. Brain STT'si (`lk.transcription`) geç döndüğü için, kullanıcı
+/// tanıyıcı. Agent STT'si (`lk.transcription`) geç döndüğü için, kullanıcı
 /// konuşurken partial sonuçları lokal bir "user" balonu olarak hemen gösterir;
-/// brain'in kesin `.userTranscript`'i gelince ``reconcile()`` ile temizlenir
+/// agent'in kesin `.userTranscript`'i gelince ``reconcile()`` ile temizlenir
 /// (gerçek balon zaten session.messages'ta → duplicate olmaz).
 ///
 /// ``WakeWordDetector`` ile AYNI desende ama kendi `request`'i var; ikisi de
@@ -23,8 +23,8 @@ final class LocalEchoTranscriber: NSObject, ObservableObject {
     private var rotationTimer: DispatchSourceTimer?
     private var running = false
 
-    /// Aktif tanıma isteğinin o anki tam metni ve brain'in "kesinleştirdiği"
-    /// karakter sayısı. provisional = full metnin bu offset'ten SONRASI. Brain
+    /// Aktif tanıma isteğinin o anki tam metni ve agent'in "kesinleştirdiği"
+    /// karakter sayısı. provisional = full metnin bu offset'ten SONRASI. Agent
     /// kesin satırı gelince offset ilerletilir (tanıma YENİDEN BAŞLATILMAZ →
     /// sürekli temiz akış korunur, balon gidip gelmez).
     private var fullText = ""
@@ -68,7 +68,7 @@ final class LocalEchoTranscriber: NSObject, ObservableObject {
         provisional = ""
     }
 
-    /// Brain o ana kadarki sözü kesinleştirdi (kalıcı balonu o gösterecek):
+    /// Agent o ana kadarki sözü kesinleştirdi (kalıcı balonu o gösterecek):
     /// optimistic satırı TEK SEFER gizle. Tanımayı YENİDEN BAŞLATMA — sadece
     /// offset'i ilerlet; akış kesilmez, sonraki cümle yerinde görünmeye devam eder.
     func commitCurrent() {
@@ -95,7 +95,7 @@ final class LocalEchoTranscriber: NSObject, ObservableObject {
         task = recognizer?.recognitionTask(with: req, resultHandler: handler)
     }
 
-    /// Tam metni güncelle; provisional = brain'in kesinleştirdiği offset'ten sonrası.
+    /// Tam metni güncelle; provisional = agent'in kesinleştirdiği offset'ten sonrası.
     /// Böylece aynı balon YERİNDE büyür; kesinleşen kısım tekrar görünmez (flicker yok).
     private func update(fullText text: String) {
         fullText = text

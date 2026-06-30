@@ -1,7 +1,7 @@
 import LiveKit
 import SwiftUI
 
-/// Brain'in gönderdiği zengin içerik öğesi (YouTube / görsel / PDF / web).
+/// Agent'in gönderdiği zengin içerik öğesi (YouTube / görsel / PDF / web).
 struct ContentItem: Identifiable, Equatable {
     enum Kind: String { case youtube, image, pdf, web, unknown }
     let id: String
@@ -10,7 +10,7 @@ struct ContentItem: Identifiable, Equatable {
     let title: String
 }
 
-/// `mate.content` text-stream topic'ini dinler; brain JSON payload yollar:
+/// `mate.content` text-stream topic'ini dinler; agent JSON payload yollar:
 /// `{ "type": "youtube"|"image"|"pdf"|"web", "url": "...", "id": "...", "title": "..." }`.
 /// Parse edip @Published listede tutar; sağ içerik paneli bunu gösterir.
 ///

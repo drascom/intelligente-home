@@ -29,7 +29,7 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 2 * .grid) {
             ChatScrollView(messageBuilder: message)
-            // Optimistic: kullanıcının kendi sözü ANINDA (soluk) — brain kesin
+            // Optimistic: kullanıcının kendi sözü ANINDA (soluk) — agent kesin
             // transkripti gelince WakeCoordinator/AppView reconcile ile temizler.
             if !echo.provisional.isEmpty {
                 provisionalBubble(echo.provisional)

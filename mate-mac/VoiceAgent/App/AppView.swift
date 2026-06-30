@@ -15,7 +15,7 @@ struct AppView: View {
     /// Kullanıcının kendi sözünü anında gösteren optimistic lokal transkript.
     @StateObject private var echo = LocalEchoTranscriber()
 
-    /// Brain'in gönderdiği zengin içerik (`mate.content`) → sağ panel.
+    /// Agent'in gönderdiği zengin içerik (`mate.content`) → sağ panel.
     @StateObject private var contentChannel = ContentChannelReceiver()
     @State private var showContent = false
 
@@ -34,12 +34,12 @@ struct AppView: View {
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
-    /// Bağlandığında + brain ayarları değiştiğinde attribute yeniden yayınlansın.
+    /// Bağlandığında + agent ayarları değiştiğinde attribute yeniden yayınlansın.
     private var attributeSnapshot: String {
         "\(session.isConnected)|\(settings.sttEngine)|\(settings.voice)|\(settings.language)|\(settings.bargeInEnabled)"
     }
 
-    /// Brain'den gelen kesin kullanıcı transkripti sayısı — arttığında optimistic
+    /// Agent'den gelen kesin kullanıcı transkripti sayısı — arttığında optimistic
     /// satırı reconcile et (temizle + taze başlat → duplicate olmaz).
     private var brainUserTranscriptCount: Int {
         session.messages.reduce(0) { count, message in
@@ -70,7 +70,7 @@ struct AppView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
-        // Brain ayarları + mate.awake TEK sözlükte birlikte gider (WakeCoordinator).
+        // Agent ayarları + mate.awake TEK sözlükte birlikte gider (WakeCoordinator).
         .task(id: attributeSnapshot) { wakeCoordinator.publishAttributes() }
         .onAppear { wakeCoordinator.attach(session: session, settings: settings, echo: echo) }
         .onChange(of: brainUserTranscriptCount) { _, _ in echo.commitCurrent() }

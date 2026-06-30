@@ -1,7 +1,7 @@
 import Foundation
 import LiveKit
 
-/// Hermes `mate_voice` plugin token kaynağı — brain'den BAĞIMSIZ.
+/// Hermes `mate_voice` plugin token kaynağı — agent'den BAĞIMSIZ.
 ///
 /// ORTAK SÖZLEŞME (plugin tarafı buna göre kurulu):
 ///   `GET {tokenBaseURL}/mate/token?identity=<client-id>&room=<opsiyonel>`
@@ -102,15 +102,5 @@ struct HermesTokenSource: TokenSourceFixed {
     private static func isInternal(_ s: String) -> Bool {
         let l = s.lowercased()
         return l.contains("127.0.0.1") || l.contains("localhost") || l.contains("://0.0.0.0")
-    }
-}
-
-/// `Session`'a verilen TEK token kaynağı. **HERMES-ONLY**: brain tamamen devre dışı
-/// (sunucuda da kapatıldı). Token yalnız `HermesTokenSource` (mate_voice endpoint)
-/// üzerinden çekilir. Endpoint/key eksikse veya istek hata verirse hata YUKARI
-/// FIRLATILIR → ekrana (ErrorView) düşer. FALLBACK YOK.
-struct MateTokenSource: TokenSourceFixed {
-    func fetch() async throws -> TokenSourceResponse {
-        try await HermesTokenSource().fetch()
     }
 }

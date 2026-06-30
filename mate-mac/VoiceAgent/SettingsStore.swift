@@ -6,19 +6,19 @@ import Foundation
 /// Eski WebSocket-bridge ayarları (bridge URL/token, cihaz TTS, gürültü
 /// filtresi vb.) bilinçli olarak çıkarıldı: LiveKit sunucu URL'i/token'ı
 /// `Secrets.swift` içinde. Buradaki `stt_engine` / `voice` / `language`
-/// brain'e LiveKit participant attribute'ları olarak gönderilir; geri kalanı
+/// agent'e LiveKit participant attribute'ları olarak gönderilir; geri kalanı
 /// (wake word, cue sesleri, barge-in) istemci-yerel davranışlardır.
 @MainActor
 final class SettingsStore: ObservableObject {
     private let defaults = UserDefaults.standard
 
-    // MARK: - Brain'e gönderilen (LiveKit attributes)
+    // MARK: - Agent'e gönderilen (LiveKit attributes)
 
-    /// Yanıt dili. Brain attribute key: `language`.
+    /// Yanıt dili. Agent attribute key: `language`.
     @Published var language: String { didSet { defaults.set(language, forKey: "language") } }
-    /// TTS ses adı. Brain attribute key: `voice`.
+    /// TTS ses adı. Agent attribute key: `voice`.
     @Published var voice: String { didSet { defaults.set(voice, forKey: "voice") } }
-    /// Sunucu STT motoru (whisper/nemotron). Brain attribute key: `stt_engine`.
+    /// Sunucu STT motoru (whisper/nemotron). Agent attribute key: `stt_engine`.
     @Published var sttEngine: String { didSet { defaults.set(sttEngine, forKey: "sttEngine") } }
 
     // MARK: - İstemci-yerel davranışlar
@@ -89,9 +89,9 @@ final class SettingsStore: ObservableObject {
         room = defaults.string(forKey: Self.roomKey) ?? ""
     }
 
-    /// Brain'in beklediği participant attribute sözlüğü.
-    /// Anahtarlar brain tarafıyla birebir eşleşmeli: `stt_engine`, `voice`, `language`.
-    var brainAttributes: [String: String] {
+    /// Agent'in beklediği participant attribute sözlüğü.
+    /// Anahtarlar agent tarafıyla birebir eşleşmeli: `stt_engine`, `voice`, `language`.
+    var agentAttributes: [String: String] {
         [
             "stt_engine": sttEngine,
             "voice": voice,

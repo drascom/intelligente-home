@@ -1,7 +1,7 @@
 import LiveKit
 import SwiftUI
 
-/// O an tanınan/aktif konuşmacı bilgisi (brain `mate.speaker` topic'inden).
+/// O an tanınan/aktif konuşmacı bilgisi (agent `mate.speaker` topic'inden).
 struct SpeakerInfo: Equatable {
     let name: String?
     let speakerId: Int?
@@ -15,7 +15,7 @@ struct SpeakerInfo: Equatable {
     }
 }
 
-/// `mate.speaker` text-stream topic'ini dinler; brain JSON yollar:
+/// `mate.speaker` text-stream topic'ini dinler; agent JSON yollar:
 /// `{ "name": string|null, "speakerId": int|null, "guest": bool }`.
 /// @Published son konuşmacıyı tutar; üst barda küçük göstergede gösterilir.
 ///

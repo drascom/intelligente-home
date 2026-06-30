@@ -1,7 +1,7 @@
 import LiveKit
 import SwiftUI
 
-/// Sunucunun (brain) canlı durum satırını dinler — `mate.debug` text-stream
+/// Sunucunun (agent) canlı durum satırını dinler — `mate.debug` text-stream
 /// topic'i (turn detection/EOU, agent state, stt partial/final, tts baş/bit…).
 /// Gelen SON satırı tutar; AppView en altta soluk monospace bir şeritte gösterir.
 ///

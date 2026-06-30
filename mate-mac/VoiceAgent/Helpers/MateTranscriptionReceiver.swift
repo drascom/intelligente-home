@@ -1,10 +1,10 @@
 import Foundation
 import LiveKit
 
-/// Transcript alıcısı — brain HEM kullanıcı HEM asistan satırını aynı gönderenden
+/// Transcript alıcısı — agent HEM kullanıcı HEM asistan satırını aynı gönderenden
 /// ("assistant" kimliği) yayınlar. SDK'nın varsayılan `TranscriptionStreamReceiver`'ı
 /// satırı YALNIZ gönderen kimliğine göre atfettiği için kullanıcının kendi sözünü de
-/// "agent" olarak işaretlerdi. Bu alıcı bunun yerine brain'in koyduğu açık
+/// "agent" olarak işaretlerdi. Bu alıcı bunun yerine agent'in koyduğu açık
 /// `mate.role` stream attribute'unu okur (user/assistant); yoksa gönderen kimliğine
 /// düşer. Aksi her şey (segment id, final, akış) standart text-stream davranışıdır.
 ///
@@ -32,7 +32,7 @@ final class MateTranscriptionReceiver: MessageReceiver, @unchecked Sendable {
             let isUser = Self.isUserLine(attrs: attrs, sender: participantIdentity, room: room)
             let isFinal = (attrs["lk.transcription_final"] as NSString?)?.boolValue ?? false
 
-            // brain her satırı tek send_text ile (tam metin) yollar; yine de
+            // agent her satırı tek send_text ile (tam metin) yollar; yine de
             // chunk gelebilir → biriktirip her güncellemede yayınla, kapanışta final.
             var content = ""
             for try await chunk in reader {
@@ -59,7 +59,7 @@ final class MateTranscriptionReceiver: MessageReceiver, @unchecked Sendable {
         )
     }
 
-    /// Konuşmacı: önce brain'in açık `mate.role` attribute'u, yoksa gönderen
+    /// Konuşmacı: önce agent'in açık `mate.role` attribute'u, yoksa gönderen
     /// kimliği (yerel katılımcı → kullanıcı, diğer → agent).
     private static func isUserLine(attrs: [String: String],
                                    sender: Participant.Identity, room: Room) -> Bool {
