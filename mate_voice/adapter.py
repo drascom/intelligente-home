@@ -1199,19 +1199,22 @@ def register(ctx) -> None:
                 "action",
                 nargs="?",
                 default="reconfigure",
-                choices=["reconfigure"],
-                help="reconfigure: bağlantı bilgilerini sorup .env'e yazar",
+                choices=["reconfigure", "show-key"],
+                help="reconfigure: bağlantı bilgilerini sorup .env'e yazar · "
+                     "show-key: client bağlantı kodunu (key+QR) tekrar göster",
             )
 
         def _handler(args):
             # Lazy import so the voice stack (livekit/wyoming) is NOT loaded
-            # on this path — reconfigure must work when audio deps are broken.
-            from .voice.reconfigure import run_reconfigure
+            # on this path — must work when audio deps are broken.
+            from .voice.reconfigure import run_reconfigure, run_show_key
+            if getattr(args, "action", "reconfigure") == "show-key":
+                return run_show_key(args)
             return run_reconfigure(args)
 
         register_cli(
             "mate_voice",
-            "mate_voice ses eklentisi komutları (reconfigure)",
+            "mate_voice ses eklentisi komutları (reconfigure, show-key)",
             _setup,
             _handler,
         )

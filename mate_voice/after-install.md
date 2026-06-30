@@ -21,3 +21,4 @@ Mate Voice, Hermes'e LiveKit üzerinden **canlı sesli asistan** ekler: konuş, 
    `✓ mate_voice connected` ve `Gateway running with 1 platform(s)`.
 4. Bağlantı bilgilerini sonradan değiştirmek için: `hermes mate_voice reconfigure`
    (sorar, `.env`'e yazar; sonra gateway restart).
+5. Bağlantı kodunu (key+QR) tekrar görmek için: `hermes mate_voice show-key`.

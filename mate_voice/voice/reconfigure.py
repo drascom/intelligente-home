@@ -74,3 +74,60 @@ def run_reconfigure(args=None) -> int:
         print("Değişikliklerin etkili olması için gateway'i yeniden başlat:")
         print("  sudo systemctl restart hermes-gateway   (veya: hermes gateway restart)")
     return 0
+
+
+def _print_qr(data: str) -> None:
+    """data'yı terminal ASCII QR olarak bas. qrcode yoksa kurmayı dene; olmazsa
+    atla (fail-open — düz-metin key zaten gösterildi, asla çökme).
+
+    NOT: voice/config.py'deki _print_key_qr ile aynı mantık ama config'i import
+    ETMEYİZ — config import-time'da _ensure_client_key() çalıştırıp eksik key'i
+    ÜRETİRDİ; show-key sadece OKUMALI, üretmemeli."""
+    try:
+        import importlib.util
+        if importlib.util.find_spec("qrcode") is None:
+            try:
+                from ._deps import _pip_install
+                _pip_install(["qrcode"])
+                importlib.invalidate_caches()
+            except Exception:
+                pass
+        import qrcode
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(data)
+        qr.make(fit=True)
+        print("  (mate-mac ile kamera/QR taransın):")
+        qr.print_ascii()
+    except Exception:
+        pass  # QR atlandı; metin key yine de görünür
+
+
+def run_show_key(args=None) -> int:
+    """CLIENT_KEY + QR + özet bağlantı bilgisini tekrar göster (maskeleme YOK).
+
+    Sadece OKUR — eksik key üretmez. Returns 0 her zaman (çökme yok)."""
+    from hermes_cli.config import get_env_value
+
+    key = (get_env_value("MATE_VOICE_CLIENT_KEY") or "").strip()
+    if not key:
+        print("CLIENT_KEY henüz üretilmemiş.")
+        print("`hermes gateway restart` ile ilk başlatmada otomatik üretilir.")
+        return 0
+
+    print("mate_voice — client bağlantı kodu\n")
+    print(f"MATE_VOICE_CLIENT_KEY: {key}")
+    print("client (mate-mac) → 'X-Mate-Key' / Client Key alanına gir.")
+    _print_qr(key)
+
+    # Bağlantı için gereken özet (varsa)
+    livekit = (get_env_value("MATE_PUBLIC_LIVEKIT_URL")
+               or get_env_value("LIVEKIT_URL") or "").strip()
+    room = (get_env_value("MATE_LIVEKIT_ROOM") or "").strip()
+    port = (get_env_value("MATE_VOICE_TOKEN_PORT") or "8830").strip()
+    print("\nBağlantı özeti:")
+    if livekit:
+        print(f"  LiveKit URL : {livekit}")
+    if room:
+        print(f"  Oda         : {room}")
+    print(f"  Token portu : {port}")
+    return 0
