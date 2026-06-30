@@ -40,6 +40,7 @@ from gateway.platforms.base import (
 )
 from gateway.config import Platform
 
+from .update_check import PLUGIN_IDENTIFIER, check_for_update, is_affirmative_reply
 from .voice.config import settings
 from .voice.hallucination import looks_hallucinated
 from .voice.services import WhisperSession
@@ -63,6 +64,7 @@ STT_WIDTH = 2
 STT_CHANNELS = 1
 PUB_RATE = 48000
 PUB_CHANNELS = 1
+UPDATE_CHECK_INTERVAL_S = 6 * 3600
 
 
 class MateVoiceAdapter(BasePlatformAdapter):
@@ -105,6 +107,16 @@ class MateVoiceAdapter(BasePlatformAdapter):
         # shared key; LiveKit secret stays server-side. Started once in connect(),
         # independent of room reconnects, stopped in disconnect().
         self._token_runner = None
+
+        # Periyodik öz-güncelleme kontrolü: connect()'te bir kez başlar, oda
+        # reconnect'lerinden etkilenmez (token server ile aynı kalıp).
+        # _pending_update_version dolunca, akan bir konuşma turu bitince (bkz.
+        # _dispatch_turn) sesli duyurulur; sıradaki utterance "evet/güncelle"
+        # ise _apply_update tetiklenir, değilse teklif düşer ve söz normal
+        # akışa gider (kullanıcının asıl isteği kaybolmaz).
+        self._update_check_task: Optional[asyncio.Task] = None
+        self._pending_update_version: Optional[str] = None
+        self._update_offer_announced = False
 
         # Eksik Python deps'i (onnxruntime/transformers/sherpa-onnx…) gateway
         # venv'ine kendi kur — Hermes installer deps kurmaz. Sadece ETKİN
@@ -287,6 +299,79 @@ class MateVoiceAdapter(BasePlatformAdapter):
             except Exception:
                 pass
 
+    # ── Öz-güncelleme kontrolü ──────────────────────────────────────────
+
+    def _start_update_checker(self) -> None:
+        if self._update_check_task is not None:
+            return
+        self._update_check_task = asyncio.create_task(self._update_check_loop())
+
+    async def _update_check_loop(self) -> None:
+        """Periyodik versiyon kontrolü. Sadece bayrağı set eder — duyuru,
+        akan bir konuşma turunun sonunda (_dispatch_turn) yapılır ki proaktif
+        uyandırma gerekmesin."""
+        while self._want_connected:
+            await asyncio.sleep(UPDATE_CHECK_INTERVAL_S)
+            if not self._want_connected or self._pending_update_version:
+                continue
+            try:
+                latest = await check_for_update()
+            except Exception as e:
+                log.warning("mate_voice: güncelleme kontrolü hata: %r", e)
+                continue
+            if latest:
+                log.info("mate_voice: güncelleme mevcut: %s", latest)
+                self._pending_update_version = latest
+                self._update_offer_announced = False
+
+    async def _speak_standalone(self, text: str) -> None:
+        """Bir konuşma turuna bağlı olmayan tek seferlik TTS (duyuru/sonuç).
+        _speak() artık parça-arası "thinking" ile bitiyor (bkz. send()) —
+        burada turu biz kapatıyoruz, idle'a biz dönüyoruz."""
+        self._tts_task = asyncio.create_task(self._speak(text))
+        try:
+            await self._tts_task
+        except asyncio.CancelledError:
+            pass
+        self._set_agent_state("idle")
+
+    async def _announce_update(self) -> None:
+        version = self._pending_update_version
+        if not version:
+            return
+        await self._speak_standalone(
+            f"Bu arada, mate_voice için bir güncelleme var, sürüm {version}. "
+            "Yüklememi istersen 'güncelle' de."
+        )
+
+    async def _apply_update(self, version: str) -> None:
+        log.info("mate_voice: güncelleme uygulanıyor → %s", version)
+        await self._speak_standalone("Tamam, güncelliyorum, bir saniye.")
+        ok, output = await asyncio.to_thread(self._run_install_force)
+        if ok:
+            log.info("mate_voice: güncelleme tamam (%s)", version)
+            msg = (
+                f"Güncellendi, sürüm {version}. Etkili olması için gateway'in "
+                "yeniden başlatılması gerekiyor: hermes gateway restart."
+            )
+        else:
+            log.warning("mate_voice: güncelleme başarısız: %s", output)
+            msg = "Güncelleme başarısız oldu, loglara bakman gerekebilir."
+        await self._speak_standalone(msg)
+
+    @staticmethod
+    def _run_install_force() -> tuple:
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["hermes", "plugins", "install", PLUGIN_IDENTIFIER, "--force", "--enable"],
+                capture_output=True, text=True, timeout=120,
+            )
+            return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+        except Exception as e:
+            return False, repr(e)
+
     async def _handle_health(self, request):
         from aiohttp import web
         return web.json_response({
@@ -366,6 +451,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
         self._ensure_home_channel()  # sessiz auto-sethome ("no home channel" ipucunu önler)
         await self._load_speakers()  # enrolled kişileri belleğe al (varsa)
         await self._start_token_server()  # bağımsız; oda reconnect'lerinden etkilenmez
+        self._start_update_checker()      # bağımsız; oda reconnect'lerinden etkilenmez
         await self._ensure_room()
         return await self._open_room()
 
@@ -543,6 +629,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
         self._want_connected = False
         self._connected = False
         await self._stop_token_server()
+        if self._update_check_task:
+            self._update_check_task.cancel()
+            self._update_check_task = None
         if self._reconnect_task:
             self._reconnect_task.cancel()
             self._reconnect_task = None
@@ -759,6 +848,17 @@ class MateVoiceAdapter(BasePlatformAdapter):
         if not text:
             return
 
+        if self._pending_update_version and self._update_offer_announced:
+            version = self._pending_update_version
+            self._pending_update_version = None
+            self._update_offer_announced = False
+            if is_affirmative_reply(text):
+                log.info("mate_voice: güncelleme onaylandı (%s)", version)
+                asyncio.create_task(self._apply_update(version))
+                return
+            log.info("mate_voice: güncelleme teklifi geçti, normal devam: %r", text[:40])
+            # düş — kullanıcının asıl sözü normal akışa gitsin (kaybolmasın).
+
         speaker, emb = await self._identify(pcm)
         speaker_id = self.speaker.id_for(speaker) if (self.speaker and speaker) else None
 
@@ -823,6 +923,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
         ))
         # Tur (tüm send() parçaları dahil) burada gerçekten bitti → şimdi idle.
         self._set_agent_state("idle")
+        if self._pending_update_version and not self._update_offer_announced:
+            self._update_offer_announced = True
+            asyncio.create_task(self._announce_update())
 
     # ── Recognize-first oto-enrollment ─────────────────────────────────────
 
@@ -1207,22 +1310,38 @@ def register(ctx) -> None:
                 "action",
                 nargs="?",
                 default="reconfigure",
-                choices=["reconfigure", "show-key"],
+                choices=["reconfigure", "show-key", "check-update"],
                 help="reconfigure: bağlantı bilgilerini sorup .env'e yazar · "
-                     "show-key: client bağlantı kodunu (key+QR) tekrar göster",
+                     "show-key: client bağlantı kodunu (key+QR) tekrar göster · "
+                     "check-update: yeni sürüm var mı kontrol et (6sn'lik periyodik "
+                     "kontrolü beklemeden, çalışan agent dışında manuel)",
             )
 
         def _handler(args):
             # Lazy import so the voice stack (livekit/wyoming) is NOT loaded
             # on this path — must work when audio deps are broken.
-            from .voice.reconfigure import run_reconfigure, run_show_key
-            if getattr(args, "action", "reconfigure") == "show-key":
+            action = getattr(args, "action", "reconfigure")
+            if action == "show-key":
+                from .voice.reconfigure import run_show_key
                 return run_show_key(args)
+            if action == "check-update":
+                import asyncio as _asyncio
+
+                from .update_check import check_for_update, installed_version
+
+                latest = _asyncio.run(check_for_update())
+                if latest:
+                    print(f"Güncelleme mevcut: {installed_version()} → {latest}")
+                    print(f"Yüklemek için: hermes plugins install {PLUGIN_IDENTIFIER} --force --enable")
+                else:
+                    print(f"Güncel (sürüm {installed_version()}).")
+                return None
+            from .voice.reconfigure import run_reconfigure
             return run_reconfigure(args)
 
         register_cli(
             "mate_voice",
-            "mate_voice ses eklentisi komutları (reconfigure, show-key)",
+            "mate_voice ses eklentisi komutları (reconfigure, show-key, check-update)",
             _setup,
             _handler,
         )
