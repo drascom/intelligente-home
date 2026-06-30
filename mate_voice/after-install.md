@@ -19,3 +19,5 @@ Mate Voice, Hermes'e LiveKit üzerinden **canlı sesli asistan** ekler: konuş, 
    **client (mate-mac) ayarlarındaki `X-Mate-Key` / Client Key** alanına gir.
 3. Bağlantı doğrulaması — `~/.hermes/logs/gateway.log` içinde:
    `✓ mate_voice connected` ve `Gateway running with 1 platform(s)`.
+4. Bağlantı bilgilerini sonradan değiştirmek için: `hermes mate_voice reconfigure`
+   (sorar, `.env`'e yazar; sonra gateway restart).

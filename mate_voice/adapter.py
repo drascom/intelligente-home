@@ -1189,3 +1189,29 @@ def register(ctx) -> None:
             "(barge-in) at any time."
         ),
     )
+
+    # CLI: `hermes mate_voice reconfigure` — re-enter connection settings.
+    # Registration is optional; older Hermes builds may lack the hook.
+    register_cli = getattr(ctx, "register_cli_command", None)
+    if register_cli is not None:
+        def _setup(subparser):
+            subparser.add_argument(
+                "action",
+                nargs="?",
+                default="reconfigure",
+                choices=["reconfigure"],
+                help="reconfigure: bağlantı bilgilerini sorup .env'e yazar",
+            )
+
+        def _handler(args):
+            # Lazy import so the voice stack (livekit/wyoming) is NOT loaded
+            # on this path — reconfigure must work when audio deps are broken.
+            from .voice.reconfigure import run_reconfigure
+            return run_reconfigure(args)
+
+        register_cli(
+            "mate_voice",
+            "mate_voice ses eklentisi komutları (reconfigure)",
+            _setup,
+            _handler,
+        )
