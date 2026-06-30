@@ -1,44 +1,21 @@
-# Mate Voice — kurulumdan sonra
+# Mate Voice — kurulum sonrası
 
-Bu plugin, LiveKit üzerinden **canlı sesli** bir Mate arayüzü ekler (wake-word
-gate, smart-turn EOU, barge-in, speaker-ID/enrollment, canlı transkript; STT=whisper,
-TTS=vox ağ servisleri). Bağlantı + token sözleşmesi: `CLIENT_INTEGRATION.md`.
+Mate Voice, Hermes'e LiveKit üzerinden **canlı sesli asistan** ekler: konuş, dinlesin, sesli yanıt versin.
 
-## 1. Etkinleştir
-`~/.hermes/config.yaml`:
-```yaml
-plugins:
-  enabled:
-    - mate_voice
-```
+## Nereye bağlanır
+- **LiveKit:** `LIVEKIT_URL` (örn. `wss://mate-livekit.drascom.uk`) · **Oda:** `MATE_LIVEKIT_ROOM` (varsayılan `mate-hermes-test`)
 
-## 2. Ortam değişkenleri (`~/.hermes/.env`)
-`hermes plugins install` sırasında `requires_env` zaten soruldu. Eksikse:
-- **Zorunlu:** `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `STT_HOST`/`STT_PORT`,
-  `VOX_HOST`/`VOX_PORT`, `MATE_VOICE_CLIENT_KEY` (istemcilerin `X-Mate-Key`'i; boş bırakılırsa ilk başlatmada otomatik üretilip konsolda metin + QR kod olarak gösterilir — o değeri client'a girin).
-- **Opsiyonel:** `MATE_PUBLIC_LIVEKIT_URL`, `MATE_LIVEKIT_ROOM` (vars. `mate-hermes-test`),
-  `MATE_VOICE_TOKEN_PORT` (8830), `TURN_DETECTOR_ENABLED`, `SPEAKER_ID_ENABLED`,
-  `SPEAKER_MODEL_PATH` (campplus.onnx; speaker-ID açıksa).
+## Girilen değerler (`~/.hermes/.env`)
+- `LIVEKIT_URL` · `LIVEKIT_API_KEY` · `LIVEKIT_API_SECRET` — LiveKit bağlantısı
+- `STT_HOST`/`STT_PORT` (whisper) · `VOX_HOST`/`VOX_PORT` (TTS) — ses servisleri
+- `MATE_VOICE_CLIENT_KEY` — istemcinin `X-Mate-Key`'i (boş bırakılırsa ilk başlatmada otomatik üretilir)
 
-## 3. Python bağımlılıkları — OTOMATİK
-Hermes plugin installer Python deps KURMAZ. Bu plugin **kendi kurar**: gateway
-ilk başladığında, ETKİN özelliklerin (turn-detector / speaker-ID) eksik paketlerini
-(`onnxruntime`, `transformers`, `huggingface_hub`, `sherpa-onnx`, `numpy`) gateway
-venv'ine `pip install` eder (fail-open; bkz. `voice/_deps.py`). İlk başlangıç bu
-yüzden biraz uzun sürebilir.
-
-- Kapatmak: `MATE_VOICE_AUTO_INSTALL_DEPS=0`.
-- Elle kurmak: `<hermes-venv>/bin/python -m pip install -r requirements.txt`.
-- Eğer Hermes ajanı bunu senin yerine kuracaksa: `requirements.txt`'i kur ve
-  yukarıdaki env'leri ayarla, sonra gateway'i yeniden başlat.
-
-## 4. Başlat / doğrula
-```
-sudo systemctl restart hermes-gateway
-curl -s http://localhost:8830/mate/health     # {"status":"ok",...}
-```
-Loglar: `mate_voice: oda hazır`, `… token endpoint AÇIK`, (speaker açıksa) `… enrolled speaker yüklendi`.
-
-## 5. Onboarding (sihirbaz)
-Açık demo token: `GET /mate/demo-token` (key'siz, kısa ömürlü, onboarding odası).
-İstemci sıfır-konfig bununla bağlanıp sesli tanışma + enrollment yapar.
+## Son adım
+1. Gateway'i yeniden başlat:
+   ```
+   hermes gateway restart
+   ```
+2. İlk başlatmada konsolda **CLIENT_KEY ve QR kodu** çıkar (key otomatik üretildiyse). Bu değeri
+   **client (mate-mac) ayarlarındaki `X-Mate-Key` / Client Key** alanına gir.
+3. Bağlantı doğrulaması — `~/.hermes/logs/gateway.log` içinde:
+   `✓ mate_voice connected` ve `Gateway running with 1 platform(s)`.
