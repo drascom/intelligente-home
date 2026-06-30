@@ -681,6 +681,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
                         )
                     except asyncio.TimeoutError:
                         log.warning("mate_voice: utterance işleme 60sn aştı, atlandı")
+                        self._set_agent_state("idle")
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -820,6 +821,8 @@ class MateVoiceAdapter(BasePlatformAdapter):
             text=hermes_text, message_type=MessageType.TEXT, source=source,
             message_id=str(int(time.time() * 1000)),
         ))
+        # Tur (tüm send() parçaları dahil) burada gerçekten bitti → şimdi idle.
+        self._set_agent_state("idle")
 
     # ── Recognize-first oto-enrollment ─────────────────────────────────────
 
@@ -990,7 +993,12 @@ class MateVoiceAdapter(BasePlatformAdapter):
             raise
         except Exception as e:
             log.warning("mate_voice: TTS başarısız: %r", e)
-        self._set_agent_state("idle")
+        # "idle" DEĞİL: Hermes uzun yanıtı birden çok send() çağrısıyla (cümle
+        # cümle) gönderebilir. Burada "idle" yapılırsa, parçalar arası LLM
+        # bekleme aralığı client'a (WakeCoordinator) inaktivite gibi görünür ve
+        # yanıt bitmeden uykuya geçirir. Turun gerçek bitişi _dispatch_turn'de
+        # handle_message dönünce işaretlenir.
+        self._set_agent_state("thinking")
 
     async def _capture_s16le(self, rtc, source, pcm: bytes, rate: int, channels: int) -> int:
         if not pcm:
