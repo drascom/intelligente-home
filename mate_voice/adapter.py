@@ -1169,7 +1169,7 @@ def register(ctx) -> None:
     """Plugin entry point: called by the Hermes plugin system."""
     ctx.register_platform(
         name=PLATFORM_NAME,
-        label="Mate Voice",
+        label="LiveKit Voice",
         adapter_factory=lambda cfg: MateVoiceAdapter(cfg),
         check_fn=check_requirements,
         validate_config=validate_config,
