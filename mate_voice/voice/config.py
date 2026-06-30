@@ -11,14 +11,18 @@ okur. `.env` gitignored; `.env.example` commit'li (açıklamalı şablon).
 """
 
 import os
+import secrets
+import sys
 from pathlib import Path
+
+_PLUGIN_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"  # <plugin>/.env
 
 
 def _load_plugin_env() -> None:
     """Plugin kök dizinindeki `.env`'i os.environ'a yükle (setdefault). Basit
     parser (python-dotenv deps'i gerekmez): KEY=VALUE, # yorum, boş satır atla,
     çevreleyen tırnakları soy. Zaten set olan anahtarı EZMEZ."""
-    env_path = Path(__file__).resolve().parent.parent / ".env"  # <plugin>/.env
+    env_path = _PLUGIN_ENV_PATH
     try:
         if not env_path.is_file():
             return
@@ -36,6 +40,72 @@ def _load_plugin_env() -> None:
 
 
 _load_plugin_env()
+
+
+def _persist_client_key(key: str) -> bool:
+    """`MATE_VOICE_CLIENT_KEY=<key>` satırını plugin .env'e yaz/güncelle. Fail-open."""
+    path = _PLUGIN_ENV_PATH
+    line = f"MATE_VOICE_CLIENT_KEY={key}"
+    try:
+        if path.is_file():
+            lines = path.read_text(encoding="utf-8").splitlines()
+            out, replaced = [], False
+            for ln in lines:
+                if ln.strip().split("=", 1)[0].strip() == "MATE_VOICE_CLIENT_KEY":
+                    out.append(line)
+                    replaced = True
+                else:
+                    out.append(ln)
+            if not replaced:
+                out.append(line)
+            path.write_text("\n".join(out) + "\n", encoding="utf-8")
+        else:
+            path.write_text(line + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False  # izin yoksa çökme — banner yine de gösterilir
+
+
+def _print_key_banner(key: str, persisted: bool) -> None:
+    saved = "Plugin .env'e kaydedildi." if persisted else "UYARI: .env'e YAZILAMADI (izin?) — elle ekleyin."
+    box = (
+        "\n"
+        "╔═══════════════════════════════════════════════════════════════╗\n"
+        "║  🔑 MATE_VOICE_CLIENT_KEY üretildi (ilk kurulum)              ║\n"
+        "╠═══════════════════════════════════════════════════════════════╣\n"
+        f"║  {key}\n"
+        "║  Bu değeri client (mate-mac) ayarlarına 'X-Mate-Key' / Client\n"
+        f"║  Key olarak girin. {saved}\n"
+        "╚═══════════════════════════════════════════════════════════════╝\n"
+    )
+    try:
+        import logging
+        logging.getLogger("mate_voice.config").warning(
+            "MATE_VOICE_CLIENT_KEY üretildi: %s (%s)", key,
+            "persisted" if persisted else "persist FAILED")
+    except Exception:
+        pass
+    print(box, file=sys.stderr, flush=True)
+
+
+_CLIENT_KEY_CHECKED = False
+
+
+def _ensure_client_key() -> None:
+    """Key boşsa üret + persist + banner. İdempotent + modül-seviyesi tek-sefer guard."""
+    global _CLIENT_KEY_CHECKED
+    if _CLIENT_KEY_CHECKED:
+        return
+    _CLIENT_KEY_CHECKED = True
+    if (os.getenv("MATE_VOICE_CLIENT_KEY") or "").strip():
+        return  # zaten dolu → no-op, banner yok
+    key = secrets.token_hex(24)
+    os.environ["MATE_VOICE_CLIENT_KEY"] = key
+    persisted = _persist_client_key(key)
+    _print_key_banner(key, persisted)
+
+
+_ensure_client_key()
 
 
 def _f(name: str, default: float) -> float:
