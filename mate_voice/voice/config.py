@@ -124,7 +124,17 @@ def _ensure_client_key() -> None:
         return  # zaten dolu → no-op, banner yok
     key = secrets.token_hex(24)
     os.environ["MATE_VOICE_CLIENT_KEY"] = key
-    persisted = _persist_client_key(key)
+    # GLOBAL ~/.hermes/.env'e yaz (plugin .env DEĞİL): `hermes plugins install
+    # --force` plugin dizinini sıfırlar → plugin .env'deki key kaybolur → yeniden
+    # üretilir → bağlı client'lar kopar. Global .env install --force'tan etkilenmez.
+    # Fail-open: Hermes util import edilemezse (test / Hermes yok) eski davranış.
+    persisted = False
+    try:
+        from hermes_cli.config import save_env_value
+        save_env_value("MATE_VOICE_CLIENT_KEY", key)
+        persisted = True
+    except Exception:
+        persisted = _persist_client_key(key)  # fallback: plugin .env
     _print_key_banner(key, persisted)
 
 
