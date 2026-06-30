@@ -23,6 +23,8 @@ log = logging.getLogger("mate_voice._deps")
 _PIP_SPEC = {
     "numpy": "numpy",
     "livekit": "livekit",
+    "livekit.api": "livekit-api",   # meta `livekit` getirmez; ayrı paket
+    "livekit.rtc": "livekit-rtc",
     "wyoming": "wyoming",
     "aiohttp": "aiohttp",
     "onnxruntime": "onnxruntime",
@@ -33,7 +35,7 @@ _PIP_SPEC = {
 }
 
 # adapter/voice top-level'da daima gereken çekirdek modüller
-_CORE_MODULES = ["numpy", "livekit", "wyoming", "aiohttp"]
+_CORE_MODULES = ["numpy", "livekit.api", "livekit.rtc", "wyoming", "aiohttp"]
 
 # özellik → gereken import modülleri
 _FEATURE_MODULES = {
@@ -45,7 +47,11 @@ _FEATURE_MODULES = {
 def _missing(modules: list[str]) -> list[str]:
     out = []
     for m in modules:
-        if importlib.util.find_spec(m) is None:
+        try:
+            present = importlib.util.find_spec(m) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            present = False  # alt-modül parent'ı yoksa find_spec patlayabilir → eksik say
+        if not present:
             out.append(m)
     return out
 
