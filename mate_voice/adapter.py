@@ -89,6 +89,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
         self._pub_track_sid = None   # our published track sid (transcript attribution)
         self._tts_task: Optional[asyncio.Task] = None  # in-flight TTS (barge-in cancels)
         self._active_turn_speaker_id: Optional[int] = None
+        self._tts_target_speaker_id: Optional[int] = None
         self._consume_tasks: Dict[str, asyncio.Task] = {}  # per-participant track consumers
         self._attr_cache: Dict[str, dict] = {}
         # Recognize-first oto-enrollment durumu: bilinmeyen ses asistana hitap
@@ -963,7 +964,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
             return False
         try:
             emb = await asyncio.to_thread(sp.embed_pcm, pcm, STT_RATE, STT_WIDTH, STT_CHANNELS)
-            target_id = self._active_turn_speaker_id
+            target_id = self._tts_target_speaker_id
+            if target_id is None:
+                target_id = self._active_turn_speaker_id
             if target_id is not None:
                 name, score = sp.identify(emb)
                 sid = sp.id_for(name) if name else None
@@ -1132,6 +1135,8 @@ class MateVoiceAdapter(BasePlatformAdapter):
         )
         # TTS as a cancellable task so the next utterance can barge-in.
         voice = None  # per-client voice attr could be threaded via metadata later
+        prev_tts_target = self._tts_target_speaker_id
+        self._tts_target_speaker_id = self._speaker_id_from_chat_id(chat_id)
         self._tts_task = asyncio.create_task(self._speak(content, voice))
         try:
             await self._tts_task
@@ -1140,7 +1145,18 @@ class MateVoiceAdapter(BasePlatformAdapter):
         except Exception as e:
             log.warning("mate_voice: send/TTS hatası: %r", e)
             return SendResult(success=False, error=str(e))
+        finally:
+            self._tts_target_speaker_id = prev_tts_target
         return SendResult(success=True, message_id=str(int(time.time() * 1000)))
+
+    def _speaker_id_from_chat_id(self, chat_id: str) -> Optional[int]:
+        prefix = f"{self.room_name}:"
+        if not chat_id.startswith(prefix):
+            return None
+        try:
+            return int(chat_id[len(prefix):])
+        except (TypeError, ValueError):
+            return None
 
     async def _speak(self, text: str, voice: Optional[str] = None) -> None:
         from livekit import rtc
