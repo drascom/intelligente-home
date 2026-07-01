@@ -5,9 +5,9 @@ so the installed copy has no `.git` directory and `hermes plugins update` can't
 git-pull it (see PluginOperationError in hermes_cli/plugins_cmd.py). The only way
 to refresh it is a full reinstall (`hermes plugins install ... --force`).
 
-This module just answers "is there a newer version published?" by comparing the
-local `plugin.yaml` version against the same file's version on the upstream
-default branch (fetched as raw content, no git clone needed for the check itself).
+This module compares the local `plugin.yaml` version against upstream and powers
+the manual `check-update` CLI action, including the interactive install/restart
+flow.
 """
 
 from __future__ import annotations
