@@ -1034,22 +1034,10 @@ class MateVoiceAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _parse_name(text: str) -> Optional[str]:
-        """Kısa isim çıkar: 'Ben Ali', 'Adım Ali', 'My name is Ali', 'Ali'. İlk 1-2
-        kelimeyi isim say; dolgu öneklerini at. Harf yoksa None."""
-        import re
+        """Conservative spoken-name extraction for enrollment."""
+        from .voice.name_parser import parse_spoken_name
 
-        t = (text or "").strip().strip(".!?,").strip()
-        low = t.lower()
-        for p in ("benim adım", "adım", "ben ", "my name is", "i am ", "i'm ",
-                  "it's ", "it is ", "im "):
-            if low.startswith(p):
-                t = t[len(p):].strip()
-                break
-        words = [w for w in re.split(r"\s+", t) if w][:2]
-        name = " ".join(words).strip(".!?,")
-        if not name or not any(c.isalpha() for c in name):
-            return None
-        return name[:40].title()
+        return parse_spoken_name(text)
 
     async def _enroll_say(self, text: str, participant=None) -> None:
         """Enrollment alt-akışı asistan satırı: transcript + TTS (await → sıralı).
