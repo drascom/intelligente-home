@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,8 @@ _AFFIRMATIVE_WORDS = {
     "evet", "güncelle", "guncelle", "yükle", "yukle", "tamam", "olur",
     "yes", "update", "ok", "okay",
 }
+_CLI_YES = {"e", "evet", "y", "yes"}
+_CLI_NO = {"h", "hayır", "hayir", "n", "no"}
 
 
 def installed_version() -> str:
@@ -83,3 +86,60 @@ async def check_for_update() -> Optional[str]:
     if remote and is_newer(remote, installed_version()):
         return remote
     return None
+
+
+def run_install_force() -> tuple[bool, str]:
+    try:
+        result = subprocess.run(
+            ["hermes", "plugins", "install", PLUGIN_IDENTIFIER, "--force", "--enable"],
+            capture_output=True, text=True, timeout=120,
+        )
+        return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+    except Exception as e:
+        return False, repr(e)
+
+
+def run_gateway_restart() -> tuple[bool, str]:
+    try:
+        result = subprocess.run(
+            ["sudo", "hermes", "gateway", "restart"],
+            capture_output=True, text=True, timeout=60,
+        )
+        return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+    except Exception as e:
+        return False, repr(e)
+
+
+def run_check_update_cli() -> int:
+    latest = asyncio.run(check_for_update())
+    current = installed_version()
+    if not latest:
+        print(f"Güncel (sürüm {current}).")
+        return 0
+
+    print(f"Güncelleme mevcut: {current} → {latest}")
+    answer = input("Güncelleme yapmak ister misiniz? [yes/no]: ").strip().casefold()
+    if answer in _CLI_NO or answer == "":
+        print("Güncelleme iptal edildi.")
+        return 0
+    if answer not in _CLI_YES:
+        print("Yanıt anlaşılamadı; güncelleme yapılmadı.")
+        return 2
+
+    print(f"Çalıştırılıyor: hermes plugins install {PLUGIN_IDENTIFIER} --force --enable")
+    ok, output = run_install_force()
+    if output.strip():
+        print(output.strip())
+    if not ok:
+        print("Güncelleme başarısız oldu.")
+        return 1
+
+    print("Güncelleme tamamlandı. Gateway yeniden başlatılıyor: sudo hermes gateway restart")
+    ok, output = run_gateway_restart()
+    if output.strip():
+        print(output.strip())
+    if not ok:
+        print("Gateway restart başarısız oldu; elle çalıştırın: sudo hermes gateway restart")
+        return 1
+    print(f"Güncellendi ve gateway yeniden başlatıldı (sürüm {latest}).")
+    return 0

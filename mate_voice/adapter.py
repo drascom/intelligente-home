@@ -368,16 +368,9 @@ class MateVoiceAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _run_install_force() -> tuple:
-        import subprocess
+        from .update_check import run_install_force
 
-        try:
-            result = subprocess.run(
-                ["hermes", "plugins", "install", PLUGIN_IDENTIFIER, "--force", "--enable"],
-                capture_output=True, text=True, timeout=120,
-            )
-            return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
-        except Exception as e:
-            return False, repr(e)
+        return run_install_force()
 
     async def _handle_health(self, request):
         from aiohttp import web
@@ -1429,17 +1422,9 @@ def register(ctx) -> None:
                 from .voice.reconfigure import run_show_key
                 return run_show_key(args)
             if action == "check-update":
-                import asyncio as _asyncio
+                from .update_check import run_check_update_cli
 
-                from .update_check import check_for_update, installed_version
-
-                latest = _asyncio.run(check_for_update())
-                if latest:
-                    print(f"Güncelleme mevcut: {installed_version()} → {latest}")
-                    print(f"Yüklemek için: hermes plugins install {PLUGIN_IDENTIFIER} --force --enable")
-                else:
-                    print(f"Güncel (sürüm {installed_version()}).")
-                return None
+                return run_check_update_cli()
             from .voice.reconfigure import run_reconfigure
             return run_reconfigure(args)
 

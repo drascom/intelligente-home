@@ -1,7 +1,7 @@
 name: mate_voice
 label: LiveKit Voice
 kind: platform
-version: 0.2.3
+version: 0.2.4
 description: >
   LiveKit voice platform adapter for Hermes Agent. Carries the Mate voice
   stack (RMS endpointing, smart-turn v3 EOU, barge-in, wake-word gate,
