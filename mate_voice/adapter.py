@@ -58,7 +58,12 @@ SILENCE_AFTER_S = 1.0
 MAX_UTTERANCE_S = 12.0
 WAKE_PROPAGATION_TOLERANCE_S = 0.4
 BARGE_IN_MIN_S = 0.25
-AUDIO_QUEUE_MS = 200
+# TTS yayın tamponu. Vox parçaları GPU'da SIRAYLA üretiyor; parça-arası üretim
+# boşluğu ölçüldü ~2-5sn (max 4.8s). Küçük tampon (200ms) bu boşlukta boşalıp
+# istemcide SESSİZLİK/kesinti yapıyordu (uzun metinde defalarca). Büyük tampon,
+# agent üretimi ilerideyken ses biriktirip boşlukları yutar. Barge-in zaten
+# clear_queue() ile tamponu anında boşalttığı için kesme gecikmesi artmaz.
+AUDIO_QUEUE_MS = 8000
 STT_RATE = 16000
 STT_WIDTH = 2
 STT_CHANNELS = 1
@@ -83,6 +88,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
         self._source = None          # rtc.AudioSource (published TTS)
         self._pub_track_sid = None   # our published track sid (transcript attribution)
         self._tts_task: Optional[asyncio.Task] = None  # in-flight TTS (barge-in cancels)
+        self._active_turn_speaker_id: Optional[int] = None
         self._consume_tasks: Dict[str, asyncio.Task] = {}  # per-participant track consumers
         self._attr_cache: Dict[str, dict] = {}
         # Recognize-first oto-enrollment durumu: bilinmeyen ses asistana hitap
@@ -674,6 +680,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
         silence_s = 0.0
         utterance_s = 0.0
         last_turn_check_s = 0.0
+        last_barge_check_s = 0.0
         utterance_awake = True
         utterance_start_at = 0.0
         try:
@@ -705,6 +712,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
                     silence_s = 0.0
                     utterance_s = 0.0
                     last_turn_check_s = 0.0
+                    last_barge_check_s = 0.0
                     utterance_start_at = 0.0
 
                 await stt.feed(
@@ -731,10 +739,22 @@ class MateVoiceAdapter(BasePlatformAdapter):
                     silence_s = 0.0
                     last_turn_check_s = 0.0
                     consec_speech_s += chunk_s
-                    if (self._barge_in_enabled
+                    barge_in_enabled = (
+                        self._attrs(participant).get(
+                            "mate.barge_in",
+                            "1" if self._barge_in_enabled else "0",
+                        ) != "0"
+                    )
+                    if (barge_in_enabled
                             and consec_speech_s >= BARGE_IN_MIN_S
                             and self._tts_task and not self._tts_task.done()):
-                        self._tts_task.cancel()
+                        min_s = self.settings.barge_in_speaker_min_seconds
+                        if (not self.settings.barge_in_speaker_gate
+                                or (utterance_s >= min_s
+                                    and utterance_s - last_barge_check_s >= 0.3)):
+                            last_barge_check_s = utterance_s
+                            if await self._should_barge_in(bytes(buf)):
+                                self._tts_task.cancel()
 
                 if utterance_s >= MAX_UTTERANCE_S:
                     ended = True
@@ -917,15 +937,73 @@ class MateVoiceAdapter(BasePlatformAdapter):
             user_name=user_name,
         )
         self._set_agent_state("thinking")
-        await self.handle_message(MessageEvent(
-            text=hermes_text, message_type=MessageType.TEXT, source=source,
-            message_id=str(int(time.time() * 1000)),
-        ))
+        prev_speaker_id = self._active_turn_speaker_id
+        self._active_turn_speaker_id = speaker_id
+        try:
+            await self.handle_message(MessageEvent(
+                text=hermes_text, message_type=MessageType.TEXT, source=source,
+                message_id=str(int(time.time() * 1000)),
+            ))
+        finally:
+            self._active_turn_speaker_id = prev_speaker_id
         # Tur (tüm send() parçaları dahil) burada gerçekten bitti → şimdi idle.
         self._set_agent_state("idle")
         if self._pending_update_version and not self._update_offer_announced:
             self._update_offer_announced = True
             asyncio.create_task(self._announce_update())
+
+    async def _should_barge_in(self, pcm: bytes) -> bool:
+        if not self.settings.barge_in_speaker_gate:
+            return True
+        sp = self.speaker
+        if sp is None:
+            return True
+        n_samples = len(pcm) // (STT_WIDTH * STT_CHANNELS)
+        if n_samples < int(self.settings.barge_in_speaker_min_seconds * STT_RATE):
+            return False
+        try:
+            emb = await asyncio.to_thread(sp.embed_pcm, pcm, STT_RATE, STT_WIDTH, STT_CHANNELS)
+            target_id = self._active_turn_speaker_id
+            if target_id is not None:
+                name, score = sp.identify(emb)
+                sid = sp.id_for(name) if name else None
+                ok = sid == target_id
+                log.info(
+                    "mate_voice: barge-in speaker gate %s (speaker=%r score=%.3f target=%s)",
+                    "ALLOW" if ok else "block", name, score, target_id,
+                )
+                return ok
+            pending_emb = (self._pending_enroll or {}).get("emb")
+            if pending_emb is not None:
+                score = self._embedding_similarity(emb, pending_emb)
+                ok = score >= self.settings.barge_in_speaker_threshold
+                log.info(
+                    "mate_voice: barge-in enrollment gate %s (score=%.3f)",
+                    "ALLOW" if ok else "block", score,
+                )
+                return ok
+            name, score = sp.identify(emb)
+            ok = name is not None
+            log.info(
+                "mate_voice: barge-in speaker gate %s (speaker=%r score=%.3f)",
+                "ALLOW" if ok else "block", name, score,
+            )
+            return ok
+        except Exception as e:
+            log.warning("mate_voice: barge-in speaker gate failed: %s", e)
+            return False
+
+    @staticmethod
+    def _embedding_similarity(a, b) -> float:
+        try:
+            import numpy as np
+
+            va = np.asarray(a, dtype=np.float32)
+            vb = np.asarray(b, dtype=np.float32)
+            denom = float(np.linalg.norm(va) * np.linalg.norm(vb))
+            return float(np.dot(va, vb) / denom) if denom > 0 else 0.0
+        except Exception:
+            return 0.0
 
     # ── Recognize-first oto-enrollment ─────────────────────────────────────
 
@@ -1073,7 +1151,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
             self._set_agent_state("idle")
             return
         fmt = None
-        frames_pub = 0
+        samples_pub = 0
         try:
             async for kind, value in synthesize_stream(text, voice):
                 if kind == "start":
@@ -1082,9 +1160,10 @@ class MateVoiceAdapter(BasePlatformAdapter):
                     self._debug("tts_start")
                 elif kind == "chunk" and fmt is not None:
                     pcm = to_s16le(value, fmt)
-                    frames_pub += await self._capture_s16le(
+                    samples_pub += await self._capture_s16le(
                         rtc, source, pcm, fmt.rate, fmt.channels
                     )
+            await self._wait_for_tts_playout(source, samples_pub)
             self._debug("tts_end")
         except asyncio.CancelledError:
             log.info("mate_voice: TTS iptal (barge-in)")
@@ -1123,7 +1202,16 @@ class MateVoiceAdapter(BasePlatformAdapter):
             ))
         for frame in frames:
             await source.capture_frame(frame)
-        return len(frames)
+        return sum(getattr(frame, "samples_per_channel", 0) for frame in frames)
+
+    async def _wait_for_tts_playout(self, source, samples_pub: int) -> None:
+        wait_for_playout = getattr(source, "wait_for_playout", None)
+        if callable(wait_for_playout):
+            await wait_for_playout()
+            return
+        if samples_pub <= 0 or PUB_RATE <= 0:
+            return
+        await asyncio.sleep(min(samples_pub / PUB_RATE, AUDIO_QUEUE_MS / 1000.0) + 0.1)
 
     @staticmethod
     def _to_mono(pcm: bytes, channels: int) -> bytes:

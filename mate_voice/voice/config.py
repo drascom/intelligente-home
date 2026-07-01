@@ -196,6 +196,9 @@ class _Settings:
         self.speaker_threshold = _f("SPEAKER_THRESHOLD", 0.45)
         self.speaker_margin = _f("SPEAKER_MARGIN", 0.05)
         self.speaker_min_seconds = _f("SPEAKER_MIN_SECONDS", 1.0)
+        self.barge_in_speaker_gate = _b("BARGE_IN_SPEAKER_GATE", True)
+        self.barge_in_speaker_min_seconds = _f("BARGE_IN_SPEAKER_MIN_SECONDS", 0.6)
+        self.barge_in_speaker_threshold = _f("BARGE_IN_SPEAKER_THRESHOLD", self.speaker_threshold)
 
         # --- Smart-turn v3 EOU ---
         self.turn_detector_enabled = _b("TURN_DETECTOR_ENABLED", True)

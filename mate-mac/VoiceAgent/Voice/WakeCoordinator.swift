@@ -55,6 +55,16 @@ final class WakeCoordinator: ObservableObject {
     private var connected = false
     private var inactivityTask: Task<Void, Never>?
     private var cueHandlerRegistered = false
+    /// Agent durum makinesi (sunucu `lk.agent.state`) konuşma/işleme yapıyor mu.
+    private var agentStateActive = false
+    /// Agent GERÇEKTEN ses üretiyor mu (aktif-konuşmacı listesinde agent var mı).
+    /// Sunucu, TTS tamponu hâlâ çalarken durumu erken "idle" işaretleyebiliyor →
+    /// uyku geri sayımını yalnız bu sinyal de boşa düşünce başlatırız (parça-içi
+    /// veya tampon-drenajı sırasında erken uyku fix).
+    private var agentAudioActive = false
+    /// Agent'in aktif-konuşma sinyalini RoomDelegate üzerinden izleyen gözlemci.
+    private lazy var audioObserver = AgentAudioObserver(coordinator: self)
+    private var audioObserverRegistered = false
     /// Mikrofon agent'e canlı mı (track yayında)? `mate.awake` attribute'unun kaynağı.
     private var isAwake = false
     /// Track'in YAYINDA olması istenen niyet. `setMicrophone` ile güncellenir; reaktif
@@ -102,6 +112,19 @@ final class WakeCoordinator: ObservableObject {
         Task { await session.room.unregisterTextStreamHandler(for: "mate.cue") }
     }
 
+    /// Agent'in aktif-konuşma (TTS sesi) sinyalini dinlemek için RoomDelegate ekle.
+    private func registerAudioObserver() {
+        guard !audioObserverRegistered, let session else { return }
+        audioObserverRegistered = true
+        session.room.add(delegate: audioObserver)
+    }
+
+    private func unregisterAudioObserver() {
+        guard audioObserverRegistered, let session else { return }
+        audioObserverRegistered = false
+        session.room.remove(delegate: audioObserver)
+    }
+
     // MARK: - Wake yakalama (tek yol: sürekli yayınlanan mic track + PCM renderer)
 
     /// PCM renderer'ı bağla + mic track'i SÜREKLI yayınla. Track yayındayken LiveKit
@@ -137,6 +160,7 @@ final class WakeCoordinator: ObservableObject {
         connected = isConnected
         if isConnected {
             registerCueHandler()
+            registerAudioObserver()
             // TEK yol: bağlanır bağlanmaz renderer'ı bağla + mic'i sürekli yayınla.
             // Uyku/uyanık ayrımı setAwake (mate.awake) ile sunucuda yapılır.
             startWakeCapture()
@@ -166,14 +190,30 @@ final class WakeCoordinator: ObservableObject {
     }
 
     func agentStateChanged(_ state: AgentState?) {
-        guard mode == .awake else { return }
         switch state {
         case .listening, .thinking, .speaking:
+            agentStateActive = true
+        case .idle, .initializing, nil:
+            agentStateActive = false
+        }
+        refreshInactivity()
+    }
+
+    /// RoomDelegate'ten gelen "agent ses üretiyor mu" sinyali (aktif-konuşmacı).
+    func agentAudioActivityChanged(_ speaking: Bool) {
+        agentAudioActive = speaking
+        refreshInactivity()
+    }
+
+    /// Agent meşgul (durum aktif VEYA ses üretiyor) → geri sayımı iptal et;
+    /// her ikisi de boşsa → uyku geri sayımını başlat. Böylece sayım, agent'in
+    /// karşıdan gelen KONUŞMASI gerçekten bittikten sonra işler.
+    private func refreshInactivity() {
+        guard mode == .awake else { return }
+        if agentStateActive || agentAudioActive {
             cancelInactivityTimer()
-        case .idle:
+        } else {
             armInactivityTimer()
-        default:
-            break
         }
     }
 
@@ -227,6 +267,9 @@ final class WakeCoordinator: ObservableObject {
     private func enterAwake() {
         Log.line("[Coord] → UYANIK (sunucu kapısını aç: awake=1; mic zaten yayında)")
         mode = .awake
+        // Yeni tur: meşguliyet bayraklarını sıfırla; gerçek sinyaller dolduracak.
+        agentStateActive = false
+        agentAudioActive = false
         // Tanımayı durdur (artık wake aramaya gerek yok). Renderer bağlı kalır;
         // aktif istek olmadığı için appendPCM sessiz no-op olur.
         wake.stop()
@@ -252,10 +295,13 @@ final class WakeCoordinator: ObservableObject {
     private func teardown() {
         cancelInactivityTimer()
         unregisterCueHandler()
+        unregisterAudioObserver()
         wake.stop()
         echo?.stop()
         stopWakeCapture()
         mode = .inactive
+        agentStateActive = false
+        agentAudioActive = false
         playedReady = false
     }
 
@@ -444,6 +490,29 @@ final class WakeCoordinator: ObservableObject {
                 }
             }
             Log.error("[Attr] set 6 denemede başarısız — sunucu mate.awake'i almadı (wake-gate çalışmaz)")
+        }
+    }
+}
+
+/// Agent'in GERÇEK ses çıkışını (TTS) izler: LiveKit aktif-konuşmacı listesinde
+/// agent var mı. Sunucu `lk.agent.state`'i sesin tamamı dağılmadan "idle"
+/// işaretleyebildiğinden (TTS tamponu hâlâ çalarken), uyku geri sayımını bu
+/// gerçek-ses sinyaline de kapılarız → konuşma ortasında erken uyku önlenir.
+///
+/// RoomDelegate callback'leri MainActor dışından gelebilir; bayrağı MainActor'a
+/// hop ederek koordinatöre iletiriz.
+private final class AgentAudioObserver: NSObject, RoomDelegate, @unchecked Sendable {
+    weak var coordinator: WakeCoordinator?
+
+    init(coordinator: WakeCoordinator) {
+        self.coordinator = coordinator
+        super.init()
+    }
+
+    func room(_ room: Room, didUpdateSpeakingParticipants participants: [Participant]) {
+        let speaking = participants.contains { $0.kind == .agent }
+        Task { @MainActor [weak coordinator] in
+            coordinator?.agentAudioActivityChanged(speaking)
         }
     }
 }
