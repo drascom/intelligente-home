@@ -67,6 +67,9 @@ final class WakeCoordinator: ObservableObject {
     private var audioObserverRegistered = false
     /// Mikrofon agent'e canlı mı (track yayında)? `mate.awake` attribute'unun kaynağı.
     private var isAwake = false
+    /// Attribute retry task'leri sıralı değildir; daha yeni bir yayın geldiyse eski
+    /// retry sunucuya stale `mate.awake` yazmasın.
+    private var attributeGeneration = 0
     /// Track'in YAYINDA olması istenen niyet. `setMicrophone` ile güncellenir; reaktif
     /// guard (`microphoneStateChanged`) istenmeden yayınlanan track'i buna göre kapatır.
     private var micShouldBeLive = false
@@ -222,7 +225,11 @@ final class WakeCoordinator: ObservableObject {
     private func evaluate() {
         guard let settings else { return }
         if settings.wakeWordEnabled {
-            if mode != .sleeping { enterSleeping(playCue: false) }
+            if isAwake {
+                if mode != .awake { restoreAwakeAfterReconnect() }
+            } else if mode != .sleeping {
+                enterSleeping(playCue: false)
+            }
         } else {
             unavailableMessage = nil
             disableGate(continuous: true)
@@ -280,6 +287,17 @@ final class WakeCoordinator: ObservableObject {
         // sırasızlık yarışı YOK. Settle de YOK (ilk komut sözcükleri kesilmesin):
         // agent, awake=0 iken başlayan "candan" sözünü zaten yok sayar; awake=1
         // sonrası konuşma işlenir.
+        setAwake(true)
+        armInactivityTimer()
+    }
+
+    private func restoreAwakeAfterReconnect() {
+        Log.line("[Coord] → UYANIK geri yüklendi (reconnect sonrası awake=1 korunur)")
+        mode = .awake
+        agentStateActive = false
+        agentAudioActive = false
+        wake.stop()
+        echo?.start(language: settings?.language ?? "tr")
         setAwake(true)
         armInactivityTimer()
     }
@@ -466,6 +484,8 @@ final class WakeCoordinator: ObservableObject {
     /// Tüm participant attribute'larını (agent ayarları + `mate.awake`) TEK sözlük
     /// olarak yayınlar. Agent `mate.awake == "0"` iken başlayan sözleri yok sayar.
     func publishAttributes() {
+        attributeGeneration += 1
+        let generation = attributeGeneration
         guard let session, session.isConnected else {
             Log.line("[Attr] publishAttributes atlandı — bağlı değil")
             return
@@ -480,11 +500,19 @@ final class WakeCoordinator: ObservableObject {
         // oturana kadar birkaç kez dene; biri başarınca dur.
         Task {
             for attempt in 1 ... 6 {
+                guard generation == self.attributeGeneration else {
+                    Log.line("[Attr] stale set iptal edildi (deneme \(attempt))")
+                    return
+                }
                 do {
                     try await session.room.localParticipant.set(attributes: attrs)
                     Log.line("[Attr] set OK (deneme \(attempt))")
                     return
                 } catch {
+                    guard generation == self.attributeGeneration else {
+                        Log.line("[Attr] stale retry iptal edildi (deneme \(attempt))")
+                        return
+                    }
                     Log.error("[Attr] set FAILED (deneme \(attempt)/6): \(error.localizedDescription)")
                     try? await Task.sleep(for: .milliseconds(400))
                 }
