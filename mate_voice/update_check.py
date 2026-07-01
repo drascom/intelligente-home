@@ -28,7 +28,19 @@ _MANIFEST_RAW_URL = (
     "https://raw.githubusercontent.com/drascom/intelligente-home/main/mate_voice/plugin.yaml"
 )
 _LOCAL_MANIFEST = Path(__file__).resolve().parent / "plugin.yaml"
+_LOCAL_ENV = Path(__file__).resolve().parent / ".env"
 _FETCH_TIMEOUT_S = 10
+_PRESERVE_PATTERNS = (
+    ".env",
+    ".env.*",
+    "*.db",
+    "*.db-*",
+    "*.sqlite",
+    "*.sqlite-*",
+    "*.sqlite3",
+    "*.sqlite3-*",
+)
+_PRESERVE_EXCLUDE_NAMES = {".env.example"}
 
 _AFFIRMATIVE_WORDS = {
     "evet", "güncelle", "guncelle", "yükle", "yukle", "tamam", "olur",
@@ -89,14 +101,58 @@ async def check_for_update() -> Optional[str]:
 
 
 def run_install_force() -> tuple[bool, str]:
+    preserved = _snapshot_local_state()
+
     try:
         result = subprocess.run(
             ["hermes", "plugins", "install", PLUGIN_IDENTIFIER, "--force", "--enable"],
             capture_output=True, text=True, timeout=120,
         )
-        return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+        output = (result.stdout or "") + (result.stderr or "")
+        restored, errors = _restore_local_state(preserved)
+        if restored:
+            names = ", ".join(str(path) for path in restored)
+            output += f"\nmate_voice: lokal state korundu: {names}"
+        for rel_path, error in errors:
+            output += f"\nmate_voice: lokal state geri yazılamadı ({rel_path}): {error!r}"
+        return result.returncode == 0, output
     except Exception as e:
         return False, repr(e)
+
+
+def _snapshot_local_state() -> dict[Path, tuple[bytes, int]]:
+    snapshot: dict[Path, tuple[bytes, int]] = {}
+    for pattern in _PRESERVE_PATTERNS:
+        for path in _LOCAL_ENV.parent.rglob(pattern):
+            if not path.is_file():
+                continue
+            if path.name in _PRESERVE_EXCLUDE_NAMES:
+                continue
+            try:
+                snapshot[path.relative_to(_LOCAL_ENV.parent)] = (
+                    path.read_bytes(),
+                    path.stat().st_mode,
+                )
+            except Exception:
+                continue
+    return snapshot
+
+
+def _restore_local_state(
+    snapshot: dict[Path, tuple[bytes, int]]
+) -> tuple[list[Path], list[tuple[Path, Exception]]]:
+    restored: list[Path] = []
+    errors: list[tuple[Path, Exception]] = []
+    for rel_path, (data, mode) in snapshot.items():
+        path = _LOCAL_ENV.parent / rel_path
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(mode)
+            restored.append(rel_path)
+        except Exception as e:
+            errors.append((rel_path, e))
+    return restored, errors
 
 
 def run_gateway_restart() -> tuple[bool, str]:
