@@ -1060,26 +1060,32 @@ class MateVoiceAdapter(BasePlatformAdapter):
         await self._speak(text, self._attrs(participant).get("voice") or None)
 
     async def _begin_enrollment(self, text, emb, participant) -> None:
-        """1. TUR: bilinmeyen ses → orijinal isteği BEKLET, ismi sor (TR; EN fallback)."""
+        """1. TUR: bilinmeyen ses → içeriğe cevap verme, sadece ismi sor.
+
+        İlk cümle yalnız ses örneği olarak tutulur. Kimlik tamamlandıktan sonra
+        eski cümleyi otomatik cevaplamayız; kullanıcıdan tekrar sormasını isteriz.
+        """
         self._pending_enroll = {"text": text, "emb": emb}
         en = self._is_en(self._attrs(participant).get("language"))
         ask = "I don't recognize you. What's your name?" if en else "Seni tanımıyorum, adın ne?"
-        log.info("mate_voice: enrollment — bilinmeyen ses, isim soruluyor (held=%r)", text[:40])
+        log.info("mate_voice: enrollment — bilinmeyen ses, isim soruluyor (ignored=%r)", text[:40])
         self._publish_speaker(None, None, guest=True)
         await self._enroll_say(ask, participant)
 
     async def _complete_enrollment(self, name_text, name_emb, participant, track) -> None:
         """2. TUR: isim utterance'ı → kişi oluştur + örnek(ler) ekle + reload, sonra
-        'Memnun oldum {name}' + BEKLETİLEN isteği tanınan kullanıcı olarak işle.
-        Fail-open: isim ayrıştırılamaz / DB hatası → guest olarak bekletilen isteğe dön."""
+        kullanıcıdan isteğini tekrar etmesini iste.
+
+        Fail-closed: unknown kişi içerik cevabı alamaz; isim ayrıştırılamaz veya DB
+        yazılamazsa bekletilen ilk cümle Hermes'e gönderilmez.
+        """
         pend = self._pending_enroll or {"text": "", "emb": None}
-        self._pending_enroll = None
         en = self._is_en(self._attrs(participant).get("language"))
         name = self._parse_name(name_text)
         if not name:
-            log.info("mate_voice: enrollment — isim ayrıştırılamadı (%r) → guest", name_text[:40])
-            if pend.get("text"):
-                await self._dispatch_turn(pend["text"], None, None, participant, track)
+            log.info("mate_voice: enrollment — isim ayrıştırılamadı (%r), tekrar soruluyor", name_text[:40])
+            retry = "I didn't catch your name. Can you say it again?" if en else "Adını anlayamadım, tekrar söyler misin?"
+            await self._enroll_say(retry, participant)
             return
         try:
             from .voice.speaker import emb_to_bytes
@@ -1098,20 +1104,24 @@ class MateVoiceAdapter(BasePlatformAdapter):
             await self._load_speakers()
             log.info("mate_voice: enrollment — %r kaydedildi (id=%s)", name, sid)
         except Exception as e:
-            log.warning("mate_voice: enrollment başarısız (%s) → guest fail-open", e)
-            if pend.get("text"):
-                await self._dispatch_turn(pend["text"], None, None, participant, track)
+            self._pending_enroll = None
+            log.warning("mate_voice: enrollment başarısız (%s) → içerik cevabı verilmedi", e)
+            fail = (
+                "I couldn't save your voice right now. Please try again later."
+                if en else "Şu anda seni kaydedemedim. Lütfen biraz sonra tekrar dene."
+            )
+            await self._enroll_say(fail, participant)
             return
-        greet = f"Nice to meet you, {name}." if en else f"Memnun oldum {name}."
+        self._pending_enroll = None
+        greet = (
+            f"Okay {name}, I know you now. What did you want to ask?"
+            if en else f"Tamam {name}, seni tanıdım. Ne sormak istemiştin?"
+        )
         self._publish_speaker(name, sid, guest=False)
         await self._enroll_say(greet, participant)
-        # Yeni kayıt zaten "Memnun oldum" duydu → bu bağlantıda ayrıca "hoş geldin"
+        # Yeni kayıt zaten kimlik onayı duydu → bu bağlantıda ayrıca "hoş geldin"
         # ile karşılama (çift selam olmasın).
         self._greeted_speakers.add(sid)
-        # Bekletilen orijinal isteği şimdi TANINAN kullanıcı olarak işle (kullanıcı
-        # tekrar etmek zorunda kalmasın). Held boşsa sadece selam yeter.
-        if pend.get("text"):
-            await self._dispatch_turn(pend["text"], name, sid, participant, track)
 
     # ── Outbound: Hermes reply → vox TTS → room ───────────────────────────
 
