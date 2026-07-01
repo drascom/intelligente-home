@@ -533,6 +533,11 @@ class MateVoiceAdapter(BasePlatformAdapter):
         def _on_track_subscribed(track, publication, participant):
             if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "assistant":
                 log.info("mate_voice: ses track'i abone (%s)", participant.identity)
+                ident = getattr(participant, "identity", None)
+                if ident:
+                    self._attr_cache.setdefault(ident, {}).update(
+                        dict(getattr(participant, "attributes", None) or {})
+                    )
                 self._start_consume(rtc, track, participant)
 
         @room.on("participant_attributes_changed")
@@ -686,7 +691,7 @@ class MateVoiceAdapter(BasePlatformAdapter):
 
                 if stt is None:
                     attrs = self._attrs(participant)
-                    utterance_awake = attrs.get("mate.awake", "1") != "0"
+                    utterance_awake = attrs.get("mate.awake", "0") != "0"
                     engine_name, stt_host, stt_port = self.settings.resolve_stt_engine(
                         attrs.get("stt_engine")
                     )
