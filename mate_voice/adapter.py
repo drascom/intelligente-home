@@ -1422,11 +1422,12 @@ def register(ctx) -> None:
                 "action",
                 nargs="?",
                 default="reconfigure",
-                choices=["reconfigure", "show-key", "check-update"],
+                choices=["reconfigure", "show-key", "check-update", "clear-database"],
                 help="reconfigure: bağlantı bilgilerini sorup .env'e yazar · "
                      "show-key: client bağlantı kodunu (key+QR) tekrar göster · "
                      "check-update: yeni sürüm var mı kontrol et (6sn'lik periyodik "
-                     "kontrolü beklemeden, çalışan agent dışında manuel)",
+                     "kontrolü beklemeden, çalışan agent dışında manuel) · "
+                     "clear-database: kayıtlı ses kimliklerini temizle",
             )
 
         def _handler(args):
@@ -1440,12 +1441,15 @@ def register(ctx) -> None:
                 from .update_check import run_check_update_cli
 
                 return run_check_update_cli()
+            if action == "clear-database":
+                from .voice.clear_database import run_clear_database
+                return run_clear_database(args)
             from .voice.reconfigure import run_reconfigure
             return run_reconfigure(args)
 
         register_cli(
             "mate_voice",
-            "mate_voice ses eklentisi komutları (reconfigure, show-key, check-update)",
+            "mate_voice ses eklentisi komutları (reconfigure, show-key, check-update, clear-database)",
             _setup,
             _handler,
         )
